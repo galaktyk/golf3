@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Golf Club Viewer</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="viewer-body">
+  <div class="hud">
+    <div class="panel panel-title">
+      <p class="eyebrow">Golf Club Orientation</p>
+      <h1>Viewer</h1>
+    </div>
+    <div class="panel panel-status">
+      <p class="eyebrow">Connection</p>
+      <p id="viewer-status">Waiting for phone connection</p>
+    </div>
+    <div class="panel panel-debug">
+      <p class="eyebrow">Debug</p>
+      <div class="debug-grid">
+        <span class="debug-label">Socket</span>
+        <span id="viewer-socket-state" class="debug-value">Connecting</span>
+        <span class="debug-label">Packet Rate</span>
+        <span id="viewer-packet-rate" class="debug-value">0.0 pkt/s</span>
+        <span class="debug-label">Quaternion</span>
+        <span id="viewer-quaternion" class="debug-value debug-value-wide">(0.000, 0.000, 0.000, 1.000)</span>
+        <span class="debug-label">Camera</span>
+        <span id="viewer-camera-position" class="debug-value debug-value-wide">(0.000, 0.000, 0.000)</span>
+      </div>
+    </div>
+  </div>
+  <canvas id="scene"></canvas>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.js",
+        "three/addons/": "/vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="/static/js/game.js"></script>
+</body>
+</html>

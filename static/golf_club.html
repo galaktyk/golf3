@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Golf Club Controller</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="controller-body">
+  <main class="controller-shell">
+    <section class="panel hero-panel">
+      <p class="eyebrow">Golf Club Orientation</p>
+      <h1>Phone Controller</h1>
+      <p class="body-copy">Grant motion access, then stream your phone orientation to the viewer. Use neutral calibration before swinging.</p>
+    </section>
+    <section class="panel controls-panel">
+      <button id="permission-button" class="action-button primary">Enable Motion</button>
+      <button id="connect-button" class="action-button secondary">Connect</button>
+      <button id="calibrate-button" class="action-button secondary" disabled>Set Neutral</button>
+    </section>
+    <section class="panel status-panel">
+      <p class="eyebrow">Status</p>
+      <p id="controller-status">Idle</p>
+      <p id="controller-debug" class="debug-copy">No orientation yet.</p>
+    </section>
+  </main>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.js"
+      }
+    }
+  </script>
+  <script type="module" src="/static/js/golf_club.js"></script>
+</body>
+</html>
