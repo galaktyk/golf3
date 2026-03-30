@@ -72,6 +72,7 @@ loader.load(
   '/assets/models/maps/blue_lagoon_1.glb',
   (gltf) => {
     disableFrustumCulling(gltf.scene);
+    configureMapMaterials(gltf.scene);
     mapRoot.add(gltf.scene);
     placeMapOriginAtTee(mapRoot);
     mapBounds = new THREE.Box3().setFromObject(mapRoot);
@@ -196,6 +197,40 @@ function positionClubAtTee() {
 function disableFrustumCulling(root) {
   root.traverse((node) => {
     node.frustumCulled = false;
+  });
+}
+
+function configureMapMaterials(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+
+    materials.forEach((material) => {
+      if (!material) {
+        return;
+      }
+
+      const hasAlphaTexture = Boolean(material.map || material.alphaMap);
+
+      if (hasAlphaTexture) {
+        material.alphaTest = Math.max(material.alphaTest ?? 0, 0.01);
+        material.transparent = false;
+        material.depthWrite = true;
+      }
+
+      if (material.transparent || material.opacity < 1) {
+        material.depthWrite = false;
+
+        if (material.side === THREE.DoubleSide) {
+          material.forceSinglePass = true;
+        }
+      }
+
+      material.needsUpdate = true;
+    });
   });
 }
 
