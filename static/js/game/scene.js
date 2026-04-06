@@ -5,6 +5,7 @@ import {
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
   CAMERA_START_DISTANCE,
+  CAMERA_TILT_OFFSET_DEGREES,
   CHARACTER_SETUP_OFFSET,
   WORLD_FORWARD,
   MAP_TEE_ORIGIN,
@@ -12,6 +13,7 @@ import {
 } from '/static/js/game/constants.js';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const CAMERA_TILT_OFFSET_RADIANS = THREE.MathUtils.degToRad(CAMERA_TILT_OFFSET_DEGREES);
 
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
@@ -40,21 +42,8 @@ export function createViewerScene(canvas) {
   keyLight.position.set(4, 5, 3);
   scene.add(keyLight);
 
-  const originCube = new THREE.Mesh(
-    new THREE.BoxGeometry(2, 2, 2),
-    new THREE.MeshBasicMaterial({
-      color: '#d9d9d9',
-      transparent: true,
-      opacity: 0.45,
-    }),
-  );
-  scene.add(originCube);
 
-  const originCubeEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(originCube.geometry),
-    new THREE.LineBasicMaterial({ color: '#101820' }),
-  );
-  scene.add(originCubeEdges);
+
 
   const mapRoot = new THREE.Group();
   const ballRoot = new THREE.Group();
@@ -75,6 +64,30 @@ export function createViewerScene(canvas) {
   const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
   const desiredCameraTarget = new THREE.Vector3();
+  const tiltedCameraTarget = new THREE.Vector3();
+  const cameraTiltAxis = new THREE.Vector3();
+  const cameraTiltDirection = new THREE.Vector3();
+
+  const applyTiltedCameraTarget = (cameraPosition, focusPoint, target) => {
+    cameraTiltDirection.subVectors(focusPoint, cameraPosition);
+    const focusDistance = cameraTiltDirection.length();
+    if (focusDistance <= 1e-6) {
+      target.copy(focusPoint);
+      return target;
+    }
+
+    cameraTiltDirection.multiplyScalar(1 / focusDistance);
+    cameraTiltAxis.crossVectors(cameraTiltDirection, WORLD_UP);
+    if (cameraTiltAxis.lengthSq() <= 1e-8) {
+      target.copy(focusPoint);
+      return target;
+    }
+
+    cameraTiltAxis.normalize();
+    cameraTiltDirection.applyAxisAngle(cameraTiltAxis, CAMERA_TILT_OFFSET_RADIANS);
+    target.copy(cameraPosition).addScaledVector(cameraTiltDirection, focusDistance);
+    return target;
+  };
 
   const setCharacterAddressPosition = (ballPosition) => {
     rotatedCharacterSetupOffset.copy(CHARACTER_SETUP_OFFSET).applyQuaternion(characterRoot.quaternion);
@@ -139,6 +152,11 @@ export function createViewerScene(canvas) {
       return clubHeadCollider;
     },
 
+    applyCameraTilt() {
+      applyTiltedCameraTarget(camera.position, controls.target, tiltedCameraTarget);
+      camera.lookAt(tiltedCameraTarget);
+    },
+
     getCharacterForward(target) {
       return getCharacterForward(target);
     },
@@ -172,6 +190,7 @@ export function createViewerScene(canvas) {
       controls.target.copy(ballPosition);
       camera.position.copy(ballPosition).add(ballCameraOffset);
       controls.update();
+      this.applyCameraTilt();
       characterRoot.updateMatrixWorld(true);
     },
 
@@ -181,19 +200,20 @@ export function createViewerScene(canvas) {
       const clubPosition = clubRoot.position.clone();
       const forward = WORLD_FORWARD.clone().normalize();
       const startPosition = clubPosition.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
-      const lookTarget = BALL_START_POSITION.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
+      const lookFocusPoint = BALL_START_POSITION.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
 
       camera.position.copy(startPosition);
       camera.near = 0.01;
       camera.far = mapBounds && !mapBounds.isEmpty()
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 4, 2000)
         : 2000;
-      controls.target.copy(lookTarget);
+      controls.target.copy(lookFocusPoint);
       controls.maxDistance = mapBounds && !mapBounds.isEmpty()
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
         : 500;
       this.resetBallCameraFollow();
       controls.update();
+      this.applyCameraTilt();
       camera.updateProjectionMatrix();
     },
 
@@ -201,6 +221,7 @@ export function createViewerScene(canvas) {
       const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
       controls.target.copy(followTarget);
       ballCameraOffset.copy(camera.position).sub(followTarget);
+      this.applyCameraTilt();
     },
 
     updateBallFollowCamera(deltaSeconds) {

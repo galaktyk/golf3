@@ -182,6 +182,7 @@ function animate() {
   updateFpsIfNeeded();
   updatePacketRateIfNeeded();
   viewerScene.controls.update();
+  viewerScene.applyCameraTilt();
   updateCameraPositionLabelIfNeeded();
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
