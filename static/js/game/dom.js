@@ -11,7 +11,9 @@ export function getViewerDom() {
     matchFrameLabel: document.querySelector('#viewer-match-frame'),
     cameraPositionLabel: document.querySelector('#viewer-camera-position'),
     socketAxisSelect: document.querySelector('#socket-axis-select'),
+    clubAxisSelect: document.querySelector('#club-axis-select'),
     socketRefAxisSelect: document.querySelector('#socket-ref-axis-select'),
+    clubRefAxisSelect: document.querySelector('#club-ref-axis-select'),
     showAxesCheckbox: document.querySelector('#show-axes-checkbox'),
   };
 }

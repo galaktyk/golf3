@@ -4,8 +4,7 @@ import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/j
 
 const SWING_LOOKUP_SAMPLE_RATE = 240;
 const SWING_LOOKUP_RESAMPLED_COUNT = 180;
-const SWING_MATCH_WINDOW_SECONDS = 0.2;
-const SWING_MATCH_WINDOW_SAMPLES = 36;
+const SWING_MATCH_CONTINUITY_WEIGHT = 0.3;
 const SWING_TIME_SMOOTHING = 14;
 const SWING_SAMPLE_END_EPSILON = 1e-3;
 const QUATERNION_MATCH_WEIGHT = 0;
@@ -20,6 +19,8 @@ const DEBUG_SHOW_SKELETON = DEBUG_PARAMS.get('debugSkeleton') === '1';
 const DEBUG_SHOW_AXES = DEBUG_PARAMS.get('debugAxes') === '1';
 const INITIAL_SOCKET_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('socketAxis'), 'x');
 const INITIAL_SOCKET_REF_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('socketRefAxis'), 'y');
+const INITIAL_CLUB_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('clubAxis'), '-y');
+const INITIAL_CLUB_REF_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('clubRefAxis'), 'x');
 
 export function loadViewerModels(viewerScene, onStatus) {
   const loader = new GLTFLoader();
@@ -86,12 +87,14 @@ export function loadCharacter(viewerScene, onStatus) {
   const referenceSecondaryAxis = new THREE.Vector3();
   const socketShaftAxisLocal = parseAxisParam(INITIAL_SOCKET_AXIS_NAME, new THREE.Vector3(1, 0, 0));
   const socketReferenceAxisLocal = parseAxisParam(INITIAL_SOCKET_REF_AXIS_NAME, new THREE.Vector3(0, 1, 0));
+  const clubShaftAxisLocal = parseAxisParam(INITIAL_CLUB_AXIS_NAME, new THREE.Vector3(0, -1, 0));
+  const clubReferenceAxisLocal = parseAxisParam(INITIAL_CLUB_REF_AXIS_NAME, new THREE.Vector3(1, 0, 0));
   const imuAlignmentOffset = new THREE.Quaternion();
   const inverseImuQuaternion = new THREE.Quaternion();
   const initialSocketQuaternion = new THREE.Quaternion();
   const animatedBoneWorldPosition = new THREE.Vector3();
   const skinnedMeshBoneWorldPosition = new THREE.Vector3();
-  const socketAxesHelper = new THREE.AxesHelper(0.2);
+  const socketAxesHelper = new THREE.AxesHelper(0.3);
   socketAxesHelper.visible = DEBUG_SHOW_AXES;
   let characterMixer = null;
   let characterAction = null;
@@ -105,12 +108,15 @@ export function loadCharacter(viewerScene, onStatus) {
   let currentAnimationTimeSeconds = 0;
   let targetAnimationTimeSeconds = 0;
   let currentMatchFrameIndex = 0;
+  let targetMatchFrameIndex = 0;
   let hasPoseMatch = false;
   let hasImuAlignment = false;
   let hasLoggedFrozenSamples = false;
   let lastMatchDebugLogTime = 0;
   let socketAxisName = INITIAL_SOCKET_AXIS_NAME;
   let socketRefAxisName = INITIAL_SOCKET_REF_AXIS_NAME;
+  let clubAxisName = INITIAL_CLUB_AXIS_NAME;
+  let clubRefAxisName = INITIAL_CLUB_REF_AXIS_NAME;
   let showAxes = DEBUG_SHOW_AXES;
 
   const initializeCharacterControllerIfReady = () => {
@@ -247,6 +253,8 @@ export function loadCharacter(viewerScene, onStatus) {
     console.log('first track names:', trackNames.slice(0, 12));
     console.log('socketAxis:', socketAxisName, socketShaftAxisLocal.toArray());
     console.log('socketRefAxis:', socketRefAxisName, socketReferenceAxisLocal.toArray());
+    console.log('clubAxis:', clubAxisName, clubShaftAxisLocal.toArray());
+    console.log('clubRefAxis:', clubRefAxisName, clubReferenceAxisLocal.toArray());
     console.groupEnd();
 
     if (!hasSampleVariation && !hasLoggedFrozenSamples) {
@@ -331,56 +339,47 @@ export function loadCharacter(viewerScene, onStatus) {
     hasImuAlignment = true;
   };
 
-  const findTargetAnimationTime = (referenceQuaternion) => {
+  const findTargetAnimationSample = (referenceQuaternion) => {
     if (swingSamples.length === 0) {
-      return 0;
+      return null;
     }
 
-    referencePrimaryAxis.copy(socketShaftAxisLocal).applyQuaternion(referenceQuaternion);
-    referenceSecondaryAxis.copy(socketReferenceAxisLocal).applyQuaternion(referenceQuaternion);
-
-    const shouldSearchWholeClip = !hasPoseMatch;
-    const windowStartIndex = Math.max(0, currentMatchFrameIndex - SWING_MATCH_WINDOW_SAMPLES);
-    const windowEndIndex = Math.min(swingSamples.length - 1, currentMatchFrameIndex + SWING_MATCH_WINDOW_SAMPLES);
+    referencePrimaryAxis.copy(clubShaftAxisLocal).applyQuaternion(referenceQuaternion);
+    referenceSecondaryAxis.copy(clubReferenceAxisLocal).applyQuaternion(referenceQuaternion);
 
     let bestSample = null;
     let bestScore = -Infinity;
 
     for (const sample of swingSamples) {
-      if (!shouldSearchWholeClip && (sample.index < windowStartIndex || sample.index > windowEndIndex)) {
-        continue;
-      }
-
       const quaternionScore = Math.abs(referenceQuaternion.dot(sample.quaternion));
       const primaryScore = referencePrimaryAxis.dot(sample.primaryAxis);
       const secondaryScore = referenceSecondaryAxis.dot(sample.secondaryAxis);
+      const continuityPenalty = hasPoseMatch
+        ? (Math.abs(sample.index - currentMatchFrameIndex) / Math.max(swingSamples.length - 1, 1)) * SWING_MATCH_CONTINUITY_WEIGHT
+        : 0;
       const score = (quaternionScore * QUATERNION_MATCH_WEIGHT)
         + (primaryScore * PRIMARY_AXIS_MATCH_WEIGHT)
-        + (secondaryScore * SECONDARY_AXIS_MATCH_WEIGHT);
+        + (secondaryScore * SECONDARY_AXIS_MATCH_WEIGHT)
+        - continuityPenalty;
+
       if (score > bestScore) {
         bestScore = score;
         bestSample = sample;
       }
     }
 
-    if (!bestSample) {
-      for (const sample of swingSamples) {
-        const quaternionScore = Math.abs(referenceQuaternion.dot(sample.quaternion));
-        const primaryScore = referencePrimaryAxis.dot(sample.primaryAxis);
-        const secondaryScore = referenceSecondaryAxis.dot(sample.secondaryAxis);
-        const score = (quaternionScore * QUATERNION_MATCH_WEIGHT)
-          + (primaryScore * PRIMARY_AXIS_MATCH_WEIGHT)
-          + (secondaryScore * SECONDARY_AXIS_MATCH_WEIGHT);
-        if (score > bestScore) {
-          bestScore = score;
-          bestSample = sample;
-        }
-      }
+    return bestSample;
+  };
+
+  const updateTargetMatchFrame = (matchedSample) => {
+    if (!matchedSample) {
+      return;
     }
 
+    currentMatchFrameIndex = matchedSample.index;
+    targetMatchFrameIndex = matchedSample.index;
+    targetAnimationTimeSeconds = matchedSample.time;
     hasPoseMatch = true;
-    currentMatchFrameIndex = bestSample?.index ?? 0;
-    return bestSample?.time ?? 0;
   };
 
   const logMatchDiagnostics = () => {
@@ -458,7 +457,8 @@ export function loadCharacter(viewerScene, onStatus) {
         alignImuToSwing(clubQuaternion);
         if (hasImuAlignment) {
           mappedImuQuaternion.copy(imuAlignmentOffset).multiply(clubQuaternion).normalize();
-          targetAnimationTimeSeconds = findTargetAnimationTime(mappedImuQuaternion);
+          const matchedSample = findTargetAnimationSample(mappedImuQuaternion);
+          updateTargetMatchFrame(matchedSample);
           const smoothedAnimationTime = THREE.MathUtils.damp(
             currentAnimationTimeSeconds,
             targetAnimationTimeSeconds,
@@ -497,6 +497,18 @@ export function loadCharacter(viewerScene, onStatus) {
       });
     },
 
+    setClubAxes(nextClubAxisName, nextClubRefAxisName) {
+      clubAxisName = normalizeAxisParam(nextClubAxisName, clubAxisName);
+      clubRefAxisName = normalizeAxisParam(nextClubRefAxisName, clubRefAxisName);
+      clubShaftAxisLocal.copy(parseAxisParam(clubAxisName, clubShaftAxisLocal));
+      clubReferenceAxisLocal.copy(parseAxisParam(clubRefAxisName, clubReferenceAxisLocal));
+      hasPoseMatch = false;
+      console.log('[swing-debug] updated club axes', {
+        clubAxisName,
+        clubRefAxisName,
+      });
+    },
+
     setDebugAxesVisible(isVisible) {
       showAxes = Boolean(isVisible);
       if (viewerScene.clubAxesHelper) {
@@ -509,6 +521,8 @@ export function loadCharacter(viewerScene, onStatus) {
       return {
         socketAxis: socketAxisName,
         socketRefAxis: socketRefAxisName,
+        clubAxis: clubAxisName,
+        clubRefAxis: clubRefAxisName,
         showAxes,
       };
     },
