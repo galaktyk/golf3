@@ -1,361 +1,84 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { decodeQuaternionPacket } from '/static/js/protocol.js';
+import { CAMERA_LABEL_UPDATE_INTERVAL_MS, FPS_LABEL_UPDATE_INTERVAL_MS } from '/static/js/game/constants.js';
+import { getViewerDom } from '/static/js/game/dom.js';
+import { createViewerHud } from '/static/js/game/hud.js';
+import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
+import { createViewerScene } from '/static/js/game/scene.js';
 
-const canvas = document.querySelector('#scene');
-const statusLabel = document.querySelector('#viewer-status');
-const socketStateLabel = document.querySelector('#viewer-socket-state');
-const fpsLabel = document.querySelector('#viewer-fps');
-const packetRateLabel = document.querySelector('#viewer-packet-rate');
-const quaternionLabel = document.querySelector('#viewer-quaternion');
-const cameraPositionLabel = document.querySelector('#viewer-camera-position');
-
-const MAP_TEE_ORIGIN = new THREE.Vector3(-0.1228, -0.9267, -0.8853);
-const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
-const BALL_RADIUS = 0.02135;
-const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
-const CLUB_FORWARD = new THREE.Vector3(0, 0, -1);
-const CLUB_OFFSET = new THREE.Vector3(-0.3, 0.8, 0);
-const CAMERA_START_DISTANCE = 6;
-const CAMERA_LOOK_AHEAD_DISTANCE = 0;
-const MAX_RENDER_PIXEL_RATIO =  0.65;
-const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
-const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
-updateRendererSize();
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color('#050d18');
-
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 2000);
-camera.position.set(2.6, 1.8, 4.4);
-
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.target.set(0, 0, 0);
-controls.minDistance = 0.01;
-controls.maxDistance = 500;
-controls.update();
-
-const ambientLight = new THREE.HemisphereLight('#d8f8ff', '#18304c', 1.5);
-scene.add(ambientLight);
-
-const keyLight = new THREE.DirectionalLight('#ffffff', 2.4);
-keyLight.position.set(4, 5, 3);
-scene.add(keyLight);
-
-const originCube = new THREE.Mesh(
-  new THREE.BoxGeometry(2, 2, 2),
-  new THREE.MeshBasicMaterial({
-    color: '#d9d9d9',
-    transparent: true,
-    opacity: 0.45,
-  }),
-);
-scene.add(originCube);
-
-const originCubeEdges = new THREE.LineSegments(
-  new THREE.EdgesGeometry(originCube.geometry),
-  new THREE.LineBasicMaterial({ color: '#101820' }),
-);
-scene.add(originCubeEdges);
-
-const mapRoot = new THREE.Group();
-scene.add(mapRoot);
-
-const ballRoot = new THREE.Group();
-scene.add(ballRoot);
-
-const clubRoot = new THREE.Group();
-scene.add(clubRoot);
-
-const characterRoot = new THREE.Group();
-characterRoot.position.set(-2, 0, 0);
-scene.add(characterRoot);
-
-const loader = new GLTFLoader();
 const animationClock = new THREE.Clock();
-let mapBounds = null;
+const incomingQuaternion = new THREE.Quaternion();
+const viewerScene = createViewerScene(getViewerDom().canvas);
+const hud = createViewerHud(getViewerDom());
+const character = loadCharacter(viewerScene, (message) => hud.setStatus(message));
+
 let lastCameraLabelUpdateTime = 0;
 let lastFpsSampleTime = performance.now();
-let characterMixer = null;
-let characterAnimationClip = null;
-
-loader.load(
-  '/assets/models/maps/blue_lagoon_1.glb',
-  (gltf) => {
-    configureUnlitMaterials(gltf.scene);
-    mapRoot.add(gltf.scene);
-    placeMapOriginAtTee(mapRoot);
-    mapBounds = new THREE.Box3().setFromObject(mapRoot);
-    positionClubAtTee();
-    positionLightsForMap(mapBounds);
-    setInitialCameraPose();
-  },
-  undefined,
-  (error) => {
-    statusLabel.textContent = 'Failed to load course model.';
-    console.error(error);
-  },
-);
-
-loader.load(
-  '/assets/models/high_ball_low.glb',
-  (gltf) => {
-    configureFlatShadedMaterials(gltf.scene);
-    ballRoot.position.copy(BALL_START_POSITION);
-    ballRoot.add(gltf.scene);
-  },
-  undefined,
-  (error) => {
-    statusLabel.textContent = 'Failed to load ball model.';
-    console.error(error);
-  },
-);
-
-loader.load(
-  '/assets/models/golf_club.glb',
-  (gltf) => {
-    configureUnlitMaterials(gltf.scene);
-    clubRoot.add(gltf.scene);
-    positionClubAtTee();
-    setInitialCameraPose();
-  },
-  undefined,
-  (error) => {
-    statusLabel.textContent = 'Failed to load golf club model.';
-    console.error(error);
-  },
-);
-
-loader.load(
-  '/assets/models/chara/nuri/nuri_base.glb',
-  (gltf) => {
-    configureUnlitMaterials(gltf.scene);
-    characterRoot.add(gltf.scene);
-    startCharacterAnimationIfReady();
-  },
-  undefined,
-  (error) => {
-    statusLabel.textContent = 'Failed to load character model.';
-    console.error(error);
-  },
-);
-
-loader.load(
-  '/assets/models/chara/nuri/nuri_swing.glb',
-  (gltf) => {
-    characterAnimationClip = gltf.animations[0] ?? null;
-    startCharacterAnimationIfReady();
-  },
-  undefined,
-  (error) => {
-    statusLabel.textContent = 'Failed to load character animation.';
-    console.error(error);
-  },
-);
-
-const incomingQuaternion = new THREE.Quaternion();
+let lastPacketSampleTime = performance.now();
 let packetsSinceLastSample = 0;
 let framesSinceLastSample = 0;
-let lastPacketSampleTime = performance.now();
+
+loadViewerModels(viewerScene, (message) => hud.setStatus(message));
+hud.initialize(viewerScene.camera.position, incomingQuaternion);
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
 
-updateSocketState('Connecting');
-updateFpsLabel(0);
-updatePacketRate(0);
-updateQuaternionLabel(incomingQuaternion);
-updateCameraPositionLabel(camera.position);
-
 socket.addEventListener('open', () => {
-  statusLabel.textContent = 'Viewer connected. Waiting for phone data.';
-  updateSocketState('Connected');
+  hud.setStatus('Viewer connected. Waiting for phone data.');
+  hud.updateSocketState('Connected');
 });
 
 socket.addEventListener('message', (event) => {
   if (typeof event.data === 'string') {
     const payload = JSON.parse(event.data);
     if (payload.type === 'status') {
-      statusLabel.textContent = payload.playerConnected
+      hud.setStatus(payload.playerConnected
         ? 'Phone connected. Streaming live orientation.'
-        : 'Viewer connected. Waiting for phone data.';
+        : 'Viewer connected. Waiting for phone data.');
     }
     return;
   }
 
   decodeQuaternionPacket(event.data, incomingQuaternion);
-  clubRoot.quaternion.copy(incomingQuaternion);
+  viewerScene.clubRoot.quaternion.copy(incomingQuaternion);
   packetsSinceLastSample += 1;
-  updateQuaternionLabel(incomingQuaternion);
+  hud.updateQuaternion(incomingQuaternion);
 });
 
 socket.addEventListener('close', () => {
-  statusLabel.textContent = 'Viewer disconnected from server.';
-  updateSocketState('Disconnected');
-  updatePacketRate(0);
+  hud.setStatus('Viewer disconnected from server.');
+  hud.updateSocketState('Disconnected');
+  hud.updatePacketRate(0);
 });
 
 socket.addEventListener('error', () => {
-  updateSocketState('Error');
+  hud.updateSocketState('Error');
 });
 
-function animate() {
-  requestAnimationFrame(animate);
-  const deltaSeconds = animationClock.getDelta();
-  framesSinceLastSample += 1;
-  characterMixer?.update(deltaSeconds);
-  updateFpsIfNeeded();
-  updatePacketRateIfNeeded();
-  controls.update();
-  updateCameraPositionLabelIfNeeded();
-  renderer.render(scene, camera);
-}
+window.addEventListener('resize', () => {
+  viewerScene.resize();
+  hud.updateCameraPosition(viewerScene.camera.position);
+});
 
 animate();
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  updateRendererSize();
-  updateCameraPositionLabel(camera.position);
-});
+function animate() {
+  requestAnimationFrame(animate);
+
+  const deltaSeconds = animationClock.getDelta();
+  framesSinceLastSample += 1;
+  character.update(deltaSeconds);
+  updateFpsIfNeeded();
+  updatePacketRateIfNeeded();
+  viewerScene.controls.update();
+  updateCameraPositionLabelIfNeeded();
+  viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
+}
 
 function getWebSocketBaseUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}`;
-}
-
-function placeMapOriginAtTee(object) {
-  object.position.set(-MAP_TEE_ORIGIN.x, -MAP_TEE_ORIGIN.y, -MAP_TEE_ORIGIN.z);
-}
-
-function setInitialCameraPose() {
-  const clubPosition = clubRoot.position.clone();
-  const forward = CLUB_FORWARD.clone().normalize();
-  const startPosition = clubPosition.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
-  const lookTarget = clubPosition.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
-
-  camera.position.copy(startPosition);
-  camera.near = 0.01;
-  camera.far = mapBounds && !mapBounds.isEmpty()
-    ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 4, 2000)
-    : 2000;
-  controls.target.copy(lookTarget);
-  controls.maxDistance = mapBounds && !mapBounds.isEmpty()
-    ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
-    : 500;
-  controls.update();
-  camera.updateProjectionMatrix();
-}
-
-function positionClubAtTee() {
-  clubRoot.position.copy(TEE_ORIGIN).add(CLUB_OFFSET);
-}
-
-function configureUnlitMaterials(root) {
-  root.traverse((node) => {
-    if (!node.isMesh) {
-      return;
-    }
-
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const unlitMaterials = materials.map((material) => createUnlitMaterial(material));
-
-    node.material = Array.isArray(node.material) ? unlitMaterials : unlitMaterials[0];
-  });
-}
-
-function configureFlatShadedMaterials(root) {
-  root.traverse((node) => {
-    if (!node.isMesh) {
-      return;
-    }
-
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const flatShadedMaterials = materials.map((material) => createFlatShadedMaterial(material));
-
-    node.material = Array.isArray(node.material) ? flatShadedMaterials : flatShadedMaterials[0];
-  });
-}
-
-function createUnlitMaterial(sourceMaterial) {
-  if (!sourceMaterial) {
-    return new THREE.MeshBasicMaterial({ color: '#ffffff' });
-  }
-
-  const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
-  const isTransparent = sourceMaterial.transparent || sourceMaterial.opacity < 1;
-  const alphaTest = hasAlphaTexture && !isTransparent
-    ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
-    : 0;
-
-  return new THREE.MeshBasicMaterial({
-    name: sourceMaterial.name,
-    color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
-    map: sourceMaterial.map ?? null,
-    alphaMap: sourceMaterial.alphaMap ?? null,
-    side: sourceMaterial.side,
-    transparent: isTransparent,
-    opacity: sourceMaterial.opacity,
-    alphaTest,
-    depthWrite: !isTransparent,
-  });
-}
-
-function createFlatShadedMaterial(sourceMaterial) {
-  if (!sourceMaterial) {
-    return new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true });
-  }
-
-  const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
-  const isTransparent = sourceMaterial.transparent || sourceMaterial.opacity < 1;
-  const alphaTest = hasAlphaTexture && !isTransparent
-    ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
-    : 0;
-
-  return new THREE.MeshLambertMaterial({
-    name: sourceMaterial.name,
-    color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
-    map: sourceMaterial.map ?? null,
-    alphaMap: sourceMaterial.alphaMap ?? null,
-    side: sourceMaterial.side,
-    transparent: isTransparent,
-    opacity: sourceMaterial.opacity,
-    alphaTest,
-    depthWrite: !isTransparent,
-    flatShading: true,
-  });
-}
-
-function startCharacterAnimationIfReady() {
-  if (!characterAnimationClip || characterRoot.children.length === 0 || characterMixer) {
-    return;
-  }
-
-  characterMixer = new THREE.AnimationMixer(characterRoot);
-  const action = characterMixer.clipAction(characterAnimationClip);
-  action.setLoop(THREE.LoopRepeat, Infinity);
-  action.play();
-}
-
-function updateRendererSize() {
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
-}
-
-function positionLightsForMap(bounds) {
-  if (!bounds || bounds.isEmpty()) {
-    return;
-  }
-
-  const size = bounds.getSize(new THREE.Vector3());
-  const maxDimension = Math.max(size.x, size.y, size.z, 1);
-  keyLight.position.set(maxDimension * 0.35, maxDimension * 0.6, maxDimension * 0.3);
 }
 
 function updatePacketRateIfNeeded() {
@@ -366,7 +89,7 @@ function updatePacketRateIfNeeded() {
   }
 
   const packetsPerSecond = packetsSinceLastSample / (elapsedMs / 1000);
-  updatePacketRate(packetsPerSecond);
+  hud.updatePacketRate(packetsPerSecond);
   packetsSinceLastSample = 0;
   lastPacketSampleTime = now;
 }
@@ -379,7 +102,7 @@ function updateFpsIfNeeded() {
   }
 
   const framesPerSecond = framesSinceLastSample / (elapsedMs / 1000);
-  updateFpsLabel(framesPerSecond);
+  hud.updateFps(framesPerSecond);
   framesSinceLastSample = 0;
   lastFpsSampleTime = now;
 }
@@ -390,35 +113,6 @@ function updateCameraPositionLabelIfNeeded() {
     return;
   }
 
-  updateCameraPositionLabel(camera.position);
+  hud.updateCameraPosition(viewerScene.camera.position);
   lastCameraLabelUpdateTime = now;
-}
-
-function updateSocketState(state) {
-  socketStateLabel.textContent = state;
-}
-
-function updatePacketRate(value) {
-  packetRateLabel.textContent = `${value.toFixed(1)} pkt/s`;
-}
-
-function updateFpsLabel(value) {
-  fpsLabel.textContent = `${value.toFixed(1)} fps`;
-}
-
-function updateQuaternionLabel(quaternion) {
-  quaternionLabel.textContent = formatQuaternion(quaternion);
-}
-
-function updateCameraPositionLabel(position) {
-  cameraPositionLabel.textContent = formatVector3(position);
-}
-
-function formatQuaternion(quaternion) {
-  const { x, y, z, w } = quaternion;
-  return `(${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)})`;
-}
-
-function formatVector3(vector) {
-  return `(${vector.x.toFixed(3)}, ${vector.y.toFixed(3)}, ${vector.z.toFixed(3)})`;
 }
