@@ -104,6 +104,7 @@ export function loadCharacter(viewerScene, onStatus) {
   const inverseCharacterWorldQuaternion = new THREE.Quaternion();
   const clubSocketPosition = new THREE.Vector3();
   const clubHeadWorldPosition = new THREE.Vector3();
+  const clubHeadWorldQuaternion = new THREE.Quaternion();
   const clubHeadPreviousWorldPosition = new THREE.Vector3();
   const lastClubHeadWorldPosition = new THREE.Vector3();
   const clubHeadWorldVelocity = new THREE.Vector3();
@@ -298,6 +299,7 @@ export function loadCharacter(viewerScene, onStatus) {
       }
 
       clubHeadCollider.getWorldPosition(clubHeadWorldPosition);
+      clubHeadCollider.getWorldQuaternion(clubHeadWorldQuaternion);
       if (!hasClubHeadSample || deltaSeconds <= 1e-6) {
         clubHeadPreviousWorldPosition.copy(clubHeadWorldPosition);
         clubHeadWorldVelocity.set(0, 0, 0);
@@ -316,6 +318,7 @@ export function loadCharacter(viewerScene, onStatus) {
         boneQuaternion: liveSocketWorldQuaternion,
         clubHeadPreviousPosition: clubHeadPreviousWorldPosition,
         clubHeadPosition: clubHeadWorldPosition,
+        clubHeadQuaternion: clubHeadWorldQuaternion,
         clubHeadVelocity: clubHeadWorldVelocity,
         clubHeadSpeedMetersPerSecond: clubHeadWorldVelocity.length(),
         characterFacingForward,

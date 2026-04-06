@@ -11,7 +11,10 @@ import {
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
   CLUB_HEAD_IMPACT_MIN_SPEED,
+  CLUB_HEAD_LAUNCH_DIRECTION_LOCAL,
   CLUB_HEAD_TO_BALL_SPEED_FACTOR,
+  CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
+  CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
   FPS_LABEL_UPDATE_INTERVAL_MS,
 } from '/static/js/game/constants.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
@@ -43,10 +46,14 @@ let rotateCharacterRight = false;
 const CLUB_HEAD_SWEEP = new THREE.Vector3();
 const CLUB_HEAD_TO_CLOSEST_POINT = new THREE.Vector3();
 const CLUB_TO_BALL = new THREE.Vector3();
+const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
+const CLUB_HEAD_PITCH_DIRECTION = new THREE.Vector3();
+const CLUB_HEAD_SIDE_AXIS = new THREE.Vector3();
 const HORIZONTAL_ARRIVAL_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_FACING_FORWARD = new THREE.Vector3();
 const SWEEP_CLOSEST_POINT = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
@@ -291,7 +298,7 @@ function buildImpactLaunchData(characterTelemetry) {
 
   return {
     ballSpeed: characterTelemetry.clubHeadSpeedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
-    verticalLaunchAngle: BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
+    verticalLaunchAngle: getVerticalLaunchAngleDegrees(characterTelemetry),
     horizontalLaunchAngle: getSignedHorizontalAngleDegrees(
       HORIZONTAL_FACING_FORWARD,
       HORIZONTAL_ARRIVAL_DIRECTION,
@@ -306,6 +313,53 @@ function getSignedHorizontalAngleDegrees(fromDirection, toDirection) {
   SIGNED_ANGLE_CROSS.crossVectors(fromDirection, toDirection);
   const radians = Math.atan2(SIGNED_ANGLE_CROSS.y, dot);
   return THREE.MathUtils.radToDeg(radians);
+}
+
+function getVerticalLaunchAngleDegrees(characterTelemetry) {
+  if (!characterTelemetry.clubHeadQuaternion) {
+    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  }
+
+  CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
+    .applyQuaternion(characterTelemetry.clubHeadQuaternion);
+  if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
+    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  }
+
+  CLUB_HEAD_LAUNCH_DIRECTION.normalize();
+  if (CLUB_HEAD_LAUNCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
+    CLUB_HEAD_LAUNCH_DIRECTION.multiplyScalar(-1);
+  }
+
+  CLUB_HEAD_SIDE_AXIS.crossVectors(HORIZONTAL_ARRIVAL_DIRECTION, WORLD_UP);
+  if (CLUB_HEAD_SIDE_AXIS.lengthSq() <= 1e-8) {
+    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  }
+
+  CLUB_HEAD_SIDE_AXIS.normalize();
+  CLUB_HEAD_PITCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION);
+  CLUB_HEAD_PITCH_DIRECTION.addScaledVector(
+    CLUB_HEAD_SIDE_AXIS,
+    -CLUB_HEAD_PITCH_DIRECTION.dot(CLUB_HEAD_SIDE_AXIS),
+  );
+  if (CLUB_HEAD_PITCH_DIRECTION.lengthSq() <= 1e-8) {
+    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  }
+
+  CLUB_HEAD_PITCH_DIRECTION.normalize();
+  if (CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
+    CLUB_HEAD_PITCH_DIRECTION.multiplyScalar(-1);
+  }
+
+  const radians = Math.atan2(
+    CLUB_HEAD_PITCH_DIRECTION.y,
+    Math.max(CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION), 1e-6),
+  );
+  return THREE.MathUtils.clamp(
+    THREE.MathUtils.radToDeg(radians),
+    CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
+    CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
+  );
 }
 
 function launchBall(launchData, referenceForward) {
