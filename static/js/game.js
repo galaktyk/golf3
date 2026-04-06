@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { decodeQuaternionPacket } from '/static/js/protocol.js';
-import { CAMERA_LABEL_UPDATE_INTERVAL_MS, FPS_LABEL_UPDATE_INTERVAL_MS } from '/static/js/game/constants.js';
+import {
+  CAMERA_LABEL_UPDATE_INTERVAL_MS,
+  FPS_LABEL_UPDATE_INTERVAL_MS,
+} from '/static/js/game/constants.js';
+import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { createViewerHud } from '/static/js/game/hud.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
@@ -12,6 +16,7 @@ const dom = getViewerDom();
 const viewerScene = createViewerScene(dom.canvas);
 const hud = createViewerHud(dom);
 const character = loadCharacter(viewerScene, (message) => hud.setStatus(message));
+const ballPhysics = createBallPhysics(viewerScene);
 
 let hasIncomingOrientation = false;
 let lastCameraLabelUpdateTime = 0;
@@ -63,6 +68,21 @@ window.addEventListener('resize', () => {
   hud.updateCameraPosition(viewerScene.camera.position);
 });
 
+window.addEventListener('keydown', (event) => {
+  if (event.repeat) {
+    return;
+  }
+
+  if (event.code === 'KeyL') {
+    ballPhysics.launch();
+    return;
+  }
+
+  if (event.code === 'KeyR') {
+    ballPhysics.reset();
+  }
+});
+
 animate();
 
 function animate() {
@@ -71,7 +91,12 @@ function animate() {
   const deltaSeconds = animationClock.getDelta();
   framesSinceLastSample += 1;
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
+  ballPhysics.update(deltaSeconds);
+  viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
+  viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
+  viewerScene.updateBallFollowCamera(deltaSeconds);
   updateCharacterDebugTelemetry();
+  updateBallDebugTelemetry();
   updateFpsIfNeeded();
   updatePacketRateIfNeeded();
   viewerScene.controls.update();
@@ -92,6 +117,11 @@ function updateCharacterDebugTelemetry() {
     telemetry.sampleCount,
     telemetry.targetAnimationTimeSeconds,
   );
+}
+
+function updateBallDebugTelemetry() {
+  const telemetry = ballPhysics.getDebugTelemetry();
+  hud.updateBallState(telemetry.mode, telemetry.speedMetersPerSecond);
 }
 
 function updatePacketRateIfNeeded() {

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { buildCourseCollision } from '/static/js/game/collision.js';
+import { BALL_RADIUS } from '/static/js/game/constants.js';
 import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/js/game/materials.js';
 import { createSwingMatcher } from '/static/js/game/swingMatcher.js';
 
@@ -10,6 +12,9 @@ const DEBUG_SHOW_AXES = DEBUG_PARAMS.get('debugAxes') === '1';
 export function loadViewerModels(viewerScene, onStatus) {
   const loader = new GLTFLoader();
   const clubAxesHelper = new THREE.AxesHelper(0.35);
+  const ballBounds = new THREE.Box3();
+  const ballSize = new THREE.Vector3();
+  const ballCenter = new THREE.Vector3();
   clubAxesHelper.visible = DEBUG_SHOW_AXES;
   viewerScene.clubAxesHelper = clubAxesHelper;
 
@@ -20,9 +25,17 @@ export function loadViewerModels(viewerScene, onStatus) {
       viewerScene.mapRoot.add(gltf.scene);
       viewerScene.placeMapOriginAtTee();
       viewerScene.setMapBounds(new THREE.Box3().setFromObject(viewerScene.mapRoot));
+      viewerScene.setCourseCollision(buildCourseCollision(viewerScene.mapRoot));
       viewerScene.positionClubAtTee();
       viewerScene.positionLightsForMap();
       viewerScene.setInitialCameraPose();
+      if (viewerScene.courseCollision?.triangleCount) {
+        console.info(
+          `[collision] Built static course BVH with ${viewerScene.courseCollision.triangleCount} triangles from ${viewerScene.courseCollision.meshCount} meshes.`,
+        );
+      } else {
+        onStatus('Course model loaded, but no collision triangles were found.');
+      }
     },
     undefined,
     (error) => {
@@ -35,6 +48,19 @@ export function loadViewerModels(viewerScene, onStatus) {
     '/assets/models/high_ball_low.glb',
     (gltf) => {
       configureFlatShadedMaterials(gltf.scene);
+      gltf.scene.updateMatrixWorld(true);
+      ballBounds.setFromObject(gltf.scene);
+      if (!ballBounds.isEmpty()) {
+        ballBounds.getCenter(ballCenter);
+        ballBounds.getSize(ballSize);
+        const visualRadius = Math.max(ballSize.x, ballSize.y, ballSize.z) * 0.5;
+
+        gltf.scene.position.sub(ballCenter);
+        if (visualRadius > 1e-6) {
+          gltf.scene.scale.multiplyScalar(BALL_RADIUS / visualRadius);
+        }
+      }
+
       viewerScene.positionBallAtStart();
       viewerScene.ballRoot.add(gltf.scene);
     },

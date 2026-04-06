@@ -1,6 +1,16 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
+
+
+
+
+
+i want to implement the shot to launch the ball
+
+
+but have my own data structure like this and don't want to rely on physic engine
+
 {
   "type": "shot",
   "shot": {
@@ -11,3 +21,7 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
     "spinAxis": -0.5
   }
 }
+
+
+
+use metric system 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   BALL_START_POSITION,
+  CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
   CAMERA_START_DISTANCE,
   CLUB_FORWARD,
@@ -62,6 +63,19 @@ export function createViewerScene(canvas) {
   scene.add(characterRoot);
 
   let mapBounds = null;
+  let courseCollision = null;
+  let ballCameraFollowEnabled = true;
+  const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
+  const desiredCameraPosition = new THREE.Vector3();
+  const desiredCameraTarget = new THREE.Vector3();
+
+  controls.addEventListener('change', () => {
+    if (!ballCameraFollowEnabled) {
+      return;
+    }
+
+    ballCameraOffset.copy(camera.position).sub(controls.target);
+  });
 
   updateRendererSize(renderer);
 
@@ -80,8 +94,23 @@ export function createViewerScene(canvas) {
       return mapBounds;
     },
 
+    get courseCollision() {
+      return courseCollision;
+    },
+
     setMapBounds(bounds) {
       mapBounds = bounds;
+    },
+
+    setCourseCollision(nextCourseCollision) {
+      courseCollision = nextCourseCollision;
+    },
+
+    setBallCameraFollowEnabled(enabled) {
+      ballCameraFollowEnabled = enabled;
+      if (enabled) {
+        this.resetBallCameraFollow();
+      }
     },
 
     placeMapOriginAtTee() {
@@ -90,6 +119,9 @@ export function createViewerScene(canvas) {
 
     positionBallAtStart() {
       ballRoot.position.copy(BALL_START_POSITION);
+      if (ballCameraFollowEnabled) {
+        this.resetBallCameraFollow();
+      }
     },
 
     positionClubAtTee() {
@@ -100,7 +132,7 @@ export function createViewerScene(canvas) {
       const clubPosition = clubRoot.position.clone();
       const forward = CLUB_FORWARD.clone().normalize();
       const startPosition = clubPosition.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
-      const lookTarget = clubPosition.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
+      const lookTarget = BALL_START_POSITION.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
 
       camera.position.copy(startPosition);
       camera.near = 0.01;
@@ -111,8 +143,27 @@ export function createViewerScene(canvas) {
       controls.maxDistance = mapBounds && !mapBounds.isEmpty()
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
         : 500;
+      this.resetBallCameraFollow();
       controls.update();
       camera.updateProjectionMatrix();
+    },
+
+    resetBallCameraFollow() {
+      const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
+      controls.target.copy(followTarget);
+      ballCameraOffset.copy(camera.position).sub(followTarget);
+    },
+
+    updateBallFollowCamera(deltaSeconds) {
+      if (!ballCameraFollowEnabled) {
+        return;
+      }
+
+      const followAlpha = 1 - Math.exp(-CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
+      desiredCameraTarget.copy(ballRoot.position);
+      desiredCameraPosition.copy(ballRoot.position).add(ballCameraOffset);
+      controls.target.lerp(desiredCameraTarget, followAlpha);
+      camera.position.lerp(desiredCameraPosition, followAlpha);
     },
 
     positionLightsForMap() {

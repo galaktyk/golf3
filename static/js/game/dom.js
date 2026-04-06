@@ -9,5 +9,7 @@ export function getViewerDom() {
     boneQuaternionLabel: document.querySelector('#viewer-bone01-quaternion'),
     matchFrameLabel: document.querySelector('#viewer-match-frame'),
     cameraPositionLabel: document.querySelector('#viewer-camera-position'),
+    ballStateLabel: document.querySelector('#viewer-ball-state'),
+    ballSpeedLabel: document.querySelector('#viewer-ball-speed'),
   };
 }

@@ -10,6 +10,7 @@ export function createViewerHud(dom) {
       this.updateBoneQuaternion(incomingQuaternion);
       this.updateMatchFrame(0, 0, 0);
       this.updateCameraPosition(cameraPosition);
+      this.updateBallState('waiting', 0);
     },
 
     setStatus(message) {
@@ -50,6 +51,15 @@ export function createViewerHud(dom) {
 
     updateCameraPosition(position) {
       dom.cameraPositionLabel.textContent = formatVector3(position);
+    },
+
+    updateBallState(mode, speedMetersPerSecond) {
+      if (!dom.ballStateLabel || !dom.ballSpeedLabel) {
+        return;
+      }
+
+      dom.ballStateLabel.textContent = mode;
+      dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(2)} m/s`;
     },
   };
 }

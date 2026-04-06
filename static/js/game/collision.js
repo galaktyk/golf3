@@ -1,0 +1,595 @@
+import * as THREE from 'three';
+
+const LEAF_TRIANGLE_COUNT = 12;
+const MAX_BUILD_DEPTH = 32;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const WORLD_DOWN = new THREE.Vector3(0, -1, 0);
+const WORKING_CENTROID_SIZE = new THREE.Vector3();
+const WORKING_CLOSEST_POINT = new THREE.Vector3();
+const WORKING_LEFT_CENTER = new THREE.Vector3();
+const WORKING_RIGHT_CENTER = new THREE.Vector3();
+const WORKING_RAY_POINT = new THREE.Vector3();
+const RAYCAST_NORMAL = new THREE.Vector3();
+
+export function buildCourseCollision(mapRoot) {
+  mapRoot.updateWorldMatrix(true, true);
+
+  const triangles = [];
+  let meshCount = 0;
+
+  mapRoot.traverse((node) => {
+    if (!node.isMesh || !node.geometry || node.isSkinnedMesh) {
+      return;
+    }
+
+    const positionAttribute = node.geometry.getAttribute('position');
+    if (!positionAttribute) {
+      return;
+    }
+
+    const index = node.geometry.getIndex();
+    const triangleCount = index ? index.count / 3 : positionAttribute.count / 3;
+
+    if (!triangleCount) {
+      return;
+    }
+
+    meshCount += 1;
+
+    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
+      const aIndex = index ? index.getX(triangleIndex * 3) : triangleIndex * 3;
+      const bIndex = index ? index.getX(triangleIndex * 3 + 1) : triangleIndex * 3 + 1;
+      const cIndex = index ? index.getX(triangleIndex * 3 + 2) : triangleIndex * 3 + 2;
+
+      const a = new THREE.Vector3().fromBufferAttribute(positionAttribute, aIndex).applyMatrix4(node.matrixWorld);
+      const b = new THREE.Vector3().fromBufferAttribute(positionAttribute, bIndex).applyMatrix4(node.matrixWorld);
+      const c = new THREE.Vector3().fromBufferAttribute(positionAttribute, cIndex).applyMatrix4(node.matrixWorld);
+      const triangle = new THREE.Triangle(a, b, c);
+
+      if (triangle.getArea() <= Number.EPSILON) {
+        continue;
+      }
+
+      const normal = triangle.getNormal(new THREE.Vector3());
+      const bounds = new THREE.Box3().setFromPoints([a, b, c]);
+      const centroid = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+
+      triangles.push({ triangle, normal, bounds, centroid });
+    }
+  });
+
+  const root = triangles.length > 0 ? buildNode(triangles, 0) : null;
+
+  return {
+    bounds: root ? root.bounds.clone() : new THREE.Box3(),
+    meshCount,
+    root,
+    triangleCount: triangles.length,
+  };
+}
+
+export function sweepSphereBVH(courseCollision, start, displacement, radius, options = {}) {
+  const nextPosition = start.clone();
+  const hitNormal = new THREE.Vector3(0, 1, 0);
+  const root = courseCollision?.root;
+  const skin = options.skin ?? 0.001;
+  const maxIterations = options.maxIterations ?? 4;
+
+  if (!root) {
+    nextPosition.add(displacement);
+    return {
+      collided: false,
+      hitNormal,
+      position: nextPosition,
+      travelFraction: 1,
+    };
+  }
+
+  resolveSpherePenetration(root, nextPosition, radius, skin, maxIterations);
+
+  if (displacement.lengthSq() === 0) {
+    return {
+      collided: false,
+      hitNormal,
+      position: nextPosition,
+      travelFraction: 1,
+    };
+  }
+
+  const sweepRadius = radius + skin;
+  const sweepEnd = nextPosition.clone().add(displacement);
+  const sweptBounds = new THREE.Box3().setFromPoints([nextPosition, sweepEnd]).expandByScalar(sweepRadius);
+  const hit = sweepSphereNode(root, nextPosition, displacement, sweepRadius, sweptBounds, null);
+
+  if (!hit) {
+    nextPosition.copy(sweepEnd);
+    return {
+      collided: false,
+      hitNormal,
+      position: nextPosition,
+      travelFraction: 1,
+    };
+  }
+
+  nextPosition.addScaledVector(displacement, hit.time);
+  hitNormal.copy(hit.normal);
+
+  return {
+    collided: true,
+    hitNormal,
+    position: nextPosition,
+    travelFraction: hit.time,
+  };
+}
+
+export function resolveSphereOverlapBVH(courseCollision, center, radius, options = {}) {
+  const root = courseCollision?.root;
+  const position = center.clone();
+  const hitNormal = new THREE.Vector3(0, 1, 0);
+
+  if (!root) {
+    return {
+      collided: false,
+      hitNormal,
+      position,
+    };
+  }
+
+  const skin = options.skin ?? 0.001;
+  const maxIterations = options.maxIterations ?? 4;
+  const resolution = resolveSpherePenetration(root, position, radius, skin, maxIterations);
+
+  if (resolution.collided) {
+    hitNormal.copy(resolution.hitNormal);
+  }
+
+  return {
+    collided: resolution.collided,
+    hitNormal,
+    position,
+  };
+}
+
+export function findGroundSupport(courseCollision, center, radius, maxSnapDistance) {
+  const root = courseCollision?.root;
+  if (!root) {
+    return null;
+  }
+
+  const rayOrigin = center.clone().addScaledVector(WORLD_UP, maxSnapDistance);
+  const maxDistance = radius + maxSnapDistance * 2;
+  const ray = new THREE.Ray(rayOrigin, WORLD_DOWN);
+  const hit = raycastNode(root, ray, maxDistance, null);
+
+  if (!hit) {
+    return null;
+  }
+
+  const normal = hit.normal.clone();
+  if (normal.y < 0) {
+    normal.negate();
+  }
+
+  return {
+    distance: hit.distance,
+    normal,
+    point: hit.point.clone(),
+    separation: hit.distance - maxSnapDistance - radius,
+  };
+}
+
+function buildNode(triangles, depth) {
+  const bounds = computeTriangleBounds(triangles);
+  if (triangles.length <= LEAF_TRIANGLE_COUNT || depth >= MAX_BUILD_DEPTH) {
+    return { bounds, triangles };
+  }
+
+  const centroidBounds = new THREE.Box3();
+  for (const triangleRecord of triangles) {
+    centroidBounds.expandByPoint(triangleRecord.centroid);
+  }
+
+  centroidBounds.getSize(WORKING_CENTROID_SIZE);
+  const splitAxis = longestAxisIndex(WORKING_CENTROID_SIZE);
+
+  if (WORKING_CENTROID_SIZE.getComponent(splitAxis) <= 1e-6) {
+    return { bounds, triangles };
+  }
+
+  const sortedTriangles = triangles.slice().sort(
+    (left, right) => left.centroid.getComponent(splitAxis) - right.centroid.getComponent(splitAxis),
+  );
+  const midpoint = Math.floor(sortedTriangles.length / 2);
+
+  return {
+    bounds,
+    left: buildNode(sortedTriangles.slice(0, midpoint), depth + 1),
+    right: buildNode(sortedTriangles.slice(midpoint), depth + 1),
+  };
+}
+
+function computeTriangleBounds(triangles) {
+  const bounds = new THREE.Box3();
+  for (const triangleRecord of triangles) {
+    bounds.union(triangleRecord.bounds);
+  }
+  return bounds;
+}
+
+function longestAxisIndex(vector) {
+  if (vector.x >= vector.y && vector.x >= vector.z) {
+    return 0;
+  }
+
+  if (vector.y >= vector.z) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
+  const hitNormal = new THREE.Vector3();
+  let collided = false;
+
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    const nearestHit = findNearestTrianglePoint(root, center, radius + skin, {
+      distanceSq: Infinity,
+      normal: null,
+      point: null,
+    });
+
+    if (!nearestHit || nearestHit.point === null) {
+      break;
+    }
+
+    const distance = Math.sqrt(nearestHit.distanceSq);
+    if (distance >= radius - skin) {
+      break;
+    }
+
+    const separationNormal = center.clone().sub(nearestHit.point);
+    if (separationNormal.lengthSq() > 1e-10) {
+      separationNormal.normalize();
+    } else {
+      separationNormal.copy(nearestHit.normal ?? WORLD_UP);
+    }
+
+    center.addScaledVector(separationNormal, radius - distance + skin);
+    hitNormal.add(separationNormal);
+    collided = true;
+  }
+
+  if (!collided) {
+    return { collided: false, hitNormal };
+  }
+
+  if (hitNormal.lengthSq() === 0) {
+    hitNormal.copy(WORLD_UP);
+  } else {
+    hitNormal.normalize();
+  }
+
+  return { collided: true, hitNormal };
+}
+
+function sweepSphereNode(node, start, displacement, radius, sweptBounds, bestHit) {
+  if (!node || !node.bounds.intersectsBox(sweptBounds)) {
+    return bestHit;
+  }
+
+  if (node.triangles) {
+    for (const triangleRecord of node.triangles) {
+      if (!triangleRecord.bounds.intersectsBox(sweptBounds)) {
+        continue;
+      }
+
+      const triangleHit = sweepSphereTriangle(start, displacement, radius, triangleRecord, bestHit?.time ?? Infinity);
+      if (!triangleHit || (bestHit && triangleHit.time >= bestHit.time)) {
+        continue;
+      }
+
+      bestHit = triangleHit;
+    }
+
+    return bestHit;
+  }
+
+  const leftDistanceSq = distanceSqToBox(start, node.left.bounds);
+  const rightDistanceSq = distanceSqToBox(start, node.right.bounds);
+  const firstChild = leftDistanceSq <= rightDistanceSq ? node.left : node.right;
+  const secondChild = firstChild === node.left ? node.right : node.left;
+
+  bestHit = sweepSphereNode(firstChild, start, displacement, radius, sweptBounds, bestHit);
+  bestHit = sweepSphereNode(secondChild, start, displacement, radius, sweptBounds, bestHit);
+  return bestHit;
+}
+
+function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTime) {
+  const triangle = triangleRecord.triangle;
+  const directionLength = displacement.length();
+  const closestPoint = triangle.closestPointToPoint(start, new THREE.Vector3());
+  const startDistanceSq = start.distanceToSquared(closestPoint);
+
+  if (startDistanceSq <= radius * radius) {
+    const overlapNormal = start.clone().sub(closestPoint);
+    if (overlapNormal.lengthSq() <= 1e-10) {
+      overlapNormal.copy(orientNormalAgainstMotion(triangleRecord.normal, displacement));
+    } else {
+      overlapNormal.normalize();
+    }
+
+    return {
+      normal: overlapNormal,
+      time: 0,
+    };
+  }
+
+  if (directionLength <= 1e-8) {
+    return null;
+  }
+
+  const direction = displacement.clone().divideScalar(directionLength);
+  const maxDistance = Math.min(maxTime * directionLength, directionLength);
+  let bestDistance = Infinity;
+  let bestNormal = null;
+
+  const faceHit = intersectSweptSphereTriangleFace(start, direction, maxDistance, radius, triangleRecord);
+  if (faceHit) {
+    bestDistance = faceHit.distance;
+    bestNormal = faceHit.normal;
+  }
+
+  const edgeHits = [
+    intersectRayCapsule(start, direction, maxDistance, triangle.a, triangle.b, radius),
+    intersectRayCapsule(start, direction, maxDistance, triangle.b, triangle.c, radius),
+    intersectRayCapsule(start, direction, maxDistance, triangle.c, triangle.a, radius),
+  ];
+
+  for (const edgeHit of edgeHits) {
+    if (!edgeHit || edgeHit.distance >= bestDistance) {
+      continue;
+    }
+
+    bestDistance = edgeHit.distance;
+    bestNormal = edgeHit.normal;
+  }
+
+  if (bestNormal === null || bestDistance > maxDistance) {
+    return null;
+  }
+
+  return {
+    normal: bestNormal,
+    time: bestDistance / directionLength,
+  };
+}
+
+function intersectSweptSphereTriangleFace(start, direction, maxDistance, radius, triangleRecord) {
+  const triangle = triangleRecord.triangle;
+  const planeNormal = triangleRecord.normal;
+  const startDistance = planeNormal.dot(start) - planeNormal.dot(triangle.a);
+  const directionDotNormal = planeNormal.dot(direction);
+
+  if (Math.abs(directionDotNormal) <= 1e-8) {
+    return null;
+  }
+
+  const targetDistance = startDistance >= 0 ? radius : -radius;
+  const hitDistance = (targetDistance - startDistance) / directionDotNormal;
+
+  if (hitDistance < 0 || hitDistance > maxDistance) {
+    return null;
+  }
+
+  const hitCenter = start.clone().addScaledVector(direction, hitDistance);
+  const contactPoint = hitCenter.clone().addScaledVector(planeNormal, -targetDistance);
+  if (!triangle.containsPoint(contactPoint)) {
+    return null;
+  }
+
+  return {
+    distance: hitDistance,
+    normal: orientNormalAgainstMotion(planeNormal.clone().multiplyScalar(Math.sign(targetDistance) || 1), direction),
+  };
+}
+
+function intersectRayCapsule(origin, direction, maxDistance, start, end, radius) {
+  const axis = end.clone().sub(start);
+  if (axis.lengthSq() <= 1e-10) {
+    return intersectRaySphere(origin, direction, maxDistance, start, radius);
+  }
+
+  const offset = origin.clone().sub(start);
+  const axisLengthSq = axis.lengthSq();
+  const axisDotDirection = axis.dot(direction);
+  const axisDotOffset = axis.dot(offset);
+  const directionDotOffset = direction.dot(offset);
+  const offsetLengthSq = offset.lengthSq();
+  const quadraticA = axisLengthSq - axisDotDirection * axisDotDirection;
+  const quadraticB = axisLengthSq * directionDotOffset - axisDotOffset * axisDotDirection;
+  const quadraticC = axisLengthSq * offsetLengthSq - axisDotOffset * axisDotOffset - radius * radius * axisLengthSq;
+
+  let bestHit = null;
+
+  if (Math.abs(quadraticA) > 1e-8) {
+    const discriminant = quadraticB * quadraticB - quadraticA * quadraticC;
+    if (discriminant >= 0) {
+      const hitDistance = (-quadraticB - Math.sqrt(discriminant)) / quadraticA;
+      const axisPosition = axisDotOffset + hitDistance * axisDotDirection;
+      if (hitDistance >= 0 && hitDistance <= maxDistance && axisPosition > 0 && axisPosition < axisLengthSq) {
+        const hitPoint = origin.clone().addScaledVector(direction, hitDistance);
+        const closestPoint = start.clone().addScaledVector(axis, axisPosition / axisLengthSq);
+        bestHit = {
+          distance: hitDistance,
+          normal: hitPoint.sub(closestPoint).normalize(),
+        };
+      }
+    }
+  }
+
+  const sphereHits = [
+    intersectRaySphere(origin, direction, maxDistance, start, radius),
+    intersectRaySphere(origin, direction, maxDistance, end, radius),
+  ];
+
+  for (const sphereHit of sphereHits) {
+    if (!sphereHit || (bestHit && sphereHit.distance >= bestHit.distance)) {
+      continue;
+    }
+
+    bestHit = sphereHit;
+  }
+
+  return bestHit;
+}
+
+function intersectRaySphere(origin, direction, maxDistance, center, radius) {
+  const offset = origin.clone().sub(center);
+  const b = offset.dot(direction);
+  const c = offset.lengthSq() - radius * radius;
+  const discriminant = b * b - c;
+
+  if (discriminant < 0) {
+    return null;
+  }
+
+  const hitDistance = -b - Math.sqrt(discriminant);
+  if (hitDistance < 0 || hitDistance > maxDistance) {
+    return null;
+  }
+
+  const hitPoint = origin.clone().addScaledVector(direction, hitDistance);
+  return {
+    distance: hitDistance,
+    normal: hitPoint.sub(center).normalize(),
+  };
+}
+
+function orientNormalAgainstMotion(normal, motion) {
+  const orientedNormal = normal.clone();
+  if (orientedNormal.dot(motion) > 0) {
+    orientedNormal.negate();
+  }
+
+  return orientedNormal;
+}
+
+function findNearestTrianglePoint(node, point, maxDistance, bestHit) {
+  if (!node) {
+    return bestHit;
+  }
+
+  const maxDistanceSq = maxDistance * maxDistance;
+  const nodeDistanceSq = distanceSqToBox(point, node.bounds);
+  if (nodeDistanceSq > maxDistanceSq || nodeDistanceSq > bestHit.distanceSq) {
+    return bestHit;
+  }
+
+  if (node.triangles) {
+    for (const triangleRecord of node.triangles) {
+      triangleRecord.triangle.closestPointToPoint(point, WORKING_CLOSEST_POINT);
+      const distanceSq = point.distanceToSquared(WORKING_CLOSEST_POINT);
+
+      if (distanceSq >= bestHit.distanceSq || distanceSq > maxDistanceSq) {
+        continue;
+      }
+
+      bestHit.distanceSq = distanceSq;
+      bestHit.normal = triangleRecord.normal;
+      bestHit.point = WORKING_CLOSEST_POINT.clone();
+    }
+
+    return bestHit;
+  }
+
+  const leftDistanceSq = distanceSqToBox(point, node.left.bounds);
+  const rightDistanceSq = distanceSqToBox(point, node.right.bounds);
+  const firstChild = leftDistanceSq <= rightDistanceSq ? node.left : node.right;
+  const secondChild = firstChild === node.left ? node.right : node.left;
+
+  findNearestTrianglePoint(firstChild, point, maxDistance, bestHit);
+  findNearestTrianglePoint(secondChild, point, maxDistance, bestHit);
+  return bestHit;
+}
+
+function distanceSqToBox(point, bounds) {
+  let distanceSq = 0;
+
+  if (point.x < bounds.min.x) {
+    const delta = bounds.min.x - point.x;
+    distanceSq += delta * delta;
+  } else if (point.x > bounds.max.x) {
+    const delta = point.x - bounds.max.x;
+    distanceSq += delta * delta;
+  }
+
+  if (point.y < bounds.min.y) {
+    const delta = bounds.min.y - point.y;
+    distanceSq += delta * delta;
+  } else if (point.y > bounds.max.y) {
+    const delta = point.y - bounds.max.y;
+    distanceSq += delta * delta;
+  }
+
+  if (point.z < bounds.min.z) {
+    const delta = bounds.min.z - point.z;
+    distanceSq += delta * delta;
+  } else if (point.z > bounds.max.z) {
+    const delta = point.z - bounds.max.z;
+    distanceSq += delta * delta;
+  }
+
+  return distanceSq;
+}
+
+function raycastNode(node, ray, maxDistance, bestHit) {
+  if (!node || !ray.intersectsBox(node.bounds)) {
+    return bestHit;
+  }
+
+  if (node.triangles) {
+    for (const triangleRecord of node.triangles) {
+      const hitPoint = ray.intersectTriangle(
+        triangleRecord.triangle.a,
+        triangleRecord.triangle.b,
+        triangleRecord.triangle.c,
+        false,
+        WORKING_RAY_POINT,
+      );
+
+      if (!hitPoint) {
+        continue;
+      }
+
+      const hitDistance = ray.origin.distanceTo(hitPoint);
+      if (hitDistance > maxDistance || (bestHit && hitDistance >= bestHit.distance)) {
+        continue;
+      }
+
+      RAYCAST_NORMAL.copy(triangleRecord.normal);
+      if (RAYCAST_NORMAL.dot(ray.direction) > 0) {
+        RAYCAST_NORMAL.negate();
+      }
+
+      bestHit = {
+        distance: hitDistance,
+        normal: RAYCAST_NORMAL.clone(),
+        point: hitPoint.clone(),
+      };
+    }
+
+    return bestHit;
+  }
+
+  const leftCenter = node.left.bounds.getCenter(WORKING_LEFT_CENTER);
+  const rightCenter = node.right.bounds.getCenter(WORKING_RIGHT_CENTER);
+  const leftDistance = leftCenter.distanceToSquared(ray.origin);
+  const rightDistance = rightCenter.distanceToSquared(ray.origin);
+  const firstChild = leftDistance <= rightDistance ? node.left : node.right;
+  const secondChild = firstChild === node.left ? node.right : node.left;
+
+  bestHit = raycastNode(firstChild, ray, maxDistance, bestHit);
+  bestHit = raycastNode(secondChild, ray, maxDistance, bestHit);
+  return bestHit;
+}
