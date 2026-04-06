@@ -10,7 +10,6 @@ export function createViewerHud(dom) {
       this.updateBoneQuaternion(incomingQuaternion);
       this.updateMatchFrame(0, 0, 0);
       this.updateCameraPosition(cameraPosition);
-      this.updateMappingSummary('x', 'y', '-y', 'x', false);
     },
 
     setStatus(message) {
@@ -51,14 +50,6 @@ export function createViewerHud(dom) {
 
     updateCameraPosition(position) {
       dom.cameraPositionLabel.textContent = formatVector3(position);
-    },
-
-    updateMappingSummary(socketAxis, socketRefAxis, clubAxis, clubRefAxis, showAxes) {
-      if (!dom.mappingSummaryLabel) {
-        return;
-      }
-
-      dom.mappingSummaryLabel.textContent = `Socket ${socketAxis}/${socketRefAxis} | Club ${clubAxis}/${clubRefAxis}${showAxes ? ', axes visible' : ''}`;
     },
   };
 }

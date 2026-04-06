@@ -22,7 +22,6 @@ let framesSinceLastSample = 0;
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
-initializeMappingControls();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
@@ -83,40 +82,6 @@ function animate() {
 function getWebSocketBaseUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}`;
-}
-
-function initializeMappingControls() {
-  const config = character.getDebugConfig();
-
-  if (!dom.socketAxisSelect || !dom.clubAxisSelect || !dom.socketRefAxisSelect || !dom.clubRefAxisSelect || !dom.showAxesCheckbox) {
-    return;
-  }
-
-  dom.socketAxisSelect.value = config.socketAxis;
-  dom.clubAxisSelect.value = config.clubAxis;
-  dom.socketRefAxisSelect.value = config.socketRefAxis;
-  dom.clubRefAxisSelect.value = config.clubRefAxis;
-  dom.showAxesCheckbox.checked = config.showAxes;
-  hud.updateMappingSummary(config.socketAxis, config.socketRefAxis, config.clubAxis, config.clubRefAxis, config.showAxes);
-
-  dom.socketAxisSelect.addEventListener('change', applyMappingControls);
-  dom.clubAxisSelect.addEventListener('change', applyMappingControls);
-  dom.socketRefAxisSelect.addEventListener('change', applyMappingControls);
-  dom.clubRefAxisSelect.addEventListener('change', applyMappingControls);
-  dom.showAxesCheckbox.addEventListener('change', applyMappingControls);
-}
-
-function applyMappingControls() {
-  const socketAxis = dom.socketAxisSelect.value;
-  const clubAxis = dom.clubAxisSelect.value;
-  const socketRefAxis = dom.socketRefAxisSelect.value;
-  const clubRefAxis = dom.clubRefAxisSelect.value;
-  const showAxes = dom.showAxesCheckbox.checked;
-
-  character.setSocketAxes(socketAxis, socketRefAxis);
-  character.setClubAxes(clubAxis, clubRefAxis);
-  character.setDebugAxesVisible(showAxes);
-  hud.updateMappingSummary(socketAxis, socketRefAxis, clubAxis, clubRefAxis, showAxes);
 }
 
 function updateCharacterDebugTelemetry() {

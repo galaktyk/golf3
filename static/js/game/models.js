@@ -1,26 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/js/game/materials.js';
+import { createSwingMatcher } from '/static/js/game/swingMatcher.js';
 
-const SWING_LOOKUP_SAMPLE_RATE = 240;
-const SWING_LOOKUP_RESAMPLED_COUNT = 180;
-const SWING_MATCH_CONTINUITY_WEIGHT = 0.3;
-const SWING_TIME_SMOOTHING = 14;
-const SWING_SAMPLE_END_EPSILON = 1e-3;
-const QUATERNION_MATCH_WEIGHT = 0;
-const PRIMARY_AXIS_MATCH_WEIGHT = 0.85;
-const SECONDARY_AXIS_MATCH_WEIGHT = 0.15;
 const DEBUG_PARAMS = new URLSearchParams(window.location.search);
-const DEBUG_SWING_MODE = DEBUG_PARAMS.get('debugSwing');
-const DEBUG_SWING_SWEEP_RATE = 0.35;
-const SAMPLE_VARIATION_EPSILON = 1e-4;
-const DEBUG_MATCH_LOG_INTERVAL_MS = 250;
 const DEBUG_SHOW_SKELETON = DEBUG_PARAMS.get('debugSkeleton') === '1';
 const DEBUG_SHOW_AXES = DEBUG_PARAMS.get('debugAxes') === '1';
-const INITIAL_SOCKET_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('socketAxis'), 'x');
-const INITIAL_SOCKET_REF_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('socketRefAxis'), 'y');
-const INITIAL_CLUB_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('clubAxis'), '-y');
-const INITIAL_CLUB_REF_AXIS_NAME = normalizeAxisParam(DEBUG_PARAMS.get('clubRefAxis'), 'x');
 
 export function loadViewerModels(viewerScene, onStatus) {
   const loader = new GLTFLoader();
@@ -79,22 +64,12 @@ export function loadViewerModels(viewerScene, onStatus) {
 
 export function loadCharacter(viewerScene, onStatus) {
   const loader = new GLTFLoader();
+  const swingMatcher = createSwingMatcher({ onStatus });
   const clubSocketPosition = new THREE.Vector3();
-  const socketWorldQuaternion = new THREE.Quaternion();
   const liveSocketWorldQuaternion = new THREE.Quaternion();
-  const mappedImuQuaternion = new THREE.Quaternion();
-  const referencePrimaryAxis = new THREE.Vector3();
-  const referenceSecondaryAxis = new THREE.Vector3();
-  const socketShaftAxisLocal = parseAxisParam(INITIAL_SOCKET_AXIS_NAME, new THREE.Vector3(1, 0, 0));
-  const socketReferenceAxisLocal = parseAxisParam(INITIAL_SOCKET_REF_AXIS_NAME, new THREE.Vector3(0, 1, 0));
-  const clubShaftAxisLocal = parseAxisParam(INITIAL_CLUB_AXIS_NAME, new THREE.Vector3(0, -1, 0));
-  const clubReferenceAxisLocal = parseAxisParam(INITIAL_CLUB_REF_AXIS_NAME, new THREE.Vector3(1, 0, 0));
-  const imuAlignmentOffset = new THREE.Quaternion();
-  const inverseImuQuaternion = new THREE.Quaternion();
-  const initialSocketQuaternion = new THREE.Quaternion();
   const animatedBoneWorldPosition = new THREE.Vector3();
   const skinnedMeshBoneWorldPosition = new THREE.Vector3();
-  const socketAxesHelper = new THREE.AxesHelper(0.3);
+  const socketAxesHelper = new THREE.AxesHelper(0.9);
   socketAxesHelper.visible = DEBUG_SHOW_AXES;
   let characterMixer = null;
   let characterAction = null;
@@ -103,21 +78,8 @@ export function loadCharacter(viewerScene, onStatus) {
   let characterSceneRoot = null;
   let characterSkinnedMeshes = [];
   let skeletonHelper = null;
-  let swingSamples = [];
   let swingDurationSeconds = 0;
   let currentAnimationTimeSeconds = 0;
-  let targetAnimationTimeSeconds = 0;
-  let currentMatchFrameIndex = 0;
-  let targetMatchFrameIndex = 0;
-  let hasPoseMatch = false;
-  let hasImuAlignment = false;
-  let hasLoggedFrozenSamples = false;
-  let lastMatchDebugLogTime = 0;
-  let socketAxisName = INITIAL_SOCKET_AXIS_NAME;
-  let socketRefAxisName = INITIAL_SOCKET_REF_AXIS_NAME;
-  let clubAxisName = INITIAL_CLUB_AXIS_NAME;
-  let clubRefAxisName = INITIAL_CLUB_REF_AXIS_NAME;
-  let showAxes = DEBUG_SHOW_AXES;
 
   const initializeCharacterControllerIfReady = () => {
     if (!characterAnimationClip || !characterSocketBone || characterMixer) {
@@ -133,135 +95,18 @@ export function loadCharacter(viewerScene, onStatus) {
     characterAction.setEffectiveTimeScale(1);
     characterAction.play();
     swingDurationSeconds = characterAnimationClip.duration;
-    swingSamples = buildSwingSamples();
+    swingMatcher.initialize({
+      durationSeconds: swingDurationSeconds,
+      clipName: characterAnimationClip.name,
+      trackNames: characterAnimationClip.tracks.map((track) => track.name),
+      sampleSocketQuaternionAtTime(sampleTime, targetQuaternion) {
+        setCharacterAnimationTime(sampleTime);
+        characterSocketBone.getWorldQuaternion(targetQuaternion);
+      },
+    });
     characterAction.reset();
     characterAction.play();
     setCharacterAnimationTime(0);
-    logSwingDiagnostics();
-  };
-
-  const buildSwingSamples = () => {
-    const denseSamples = [];
-    const sampleCount = Math.max(2, Math.ceil(swingDurationSeconds * SWING_LOOKUP_SAMPLE_RATE) + 1);
-    const sampleDurationSeconds = Math.max(0, swingDurationSeconds - SWING_SAMPLE_END_EPSILON);
-    const sampleStepSeconds = sampleDurationSeconds / (sampleCount - 1);
-
-    for (let index = 0; index < sampleCount; index += 1) {
-      const sampleTime = sampleStepSeconds * index;
-      setCharacterAnimationTime(sampleTime);
-      characterSocketBone.getWorldQuaternion(socketWorldQuaternion);
-      denseSamples.push({
-        index,
-        time: sampleTime,
-        quaternion: socketWorldQuaternion.clone(),
-        primaryAxis: socketShaftAxisLocal.clone().applyQuaternion(socketWorldQuaternion),
-        secondaryAxis: socketReferenceAxisLocal.clone().applyQuaternion(socketWorldQuaternion),
-      });
-    }
-
-    return resampleSwingSamplesByPoseDistance(denseSamples);
-  };
-
-  const resampleSwingSamplesByPoseDistance = (denseSamples) => {
-    if (denseSamples.length <= 2) {
-      return denseSamples;
-    }
-
-    const cumulativeDistances = [0];
-    for (let index = 1; index < denseSamples.length; index += 1) {
-      const previousSample = denseSamples[index - 1];
-      const currentSample = denseSamples[index];
-      cumulativeDistances.push(
-        cumulativeDistances[index - 1] + getPoseDistance(previousSample, currentSample),
-      );
-    }
-
-    const totalDistance = cumulativeDistances[cumulativeDistances.length - 1];
-    if (totalDistance <= 0) {
-      return denseSamples;
-    }
-
-    const lookupSamples = [];
-    const lookupCount = Math.max(2, SWING_LOOKUP_RESAMPLED_COUNT);
-    let denseIndex = 1;
-
-    for (let lookupIndex = 0; lookupIndex < lookupCount; lookupIndex += 1) {
-      const targetDistance = totalDistance * (lookupIndex / (lookupCount - 1));
-      while (denseIndex < cumulativeDistances.length - 1 && cumulativeDistances[denseIndex] < targetDistance) {
-        denseIndex += 1;
-      }
-
-      const previousIndex = Math.max(0, denseIndex - 1);
-      const nextIndex = denseIndex;
-      const distanceStart = cumulativeDistances[previousIndex];
-      const distanceEnd = cumulativeDistances[nextIndex];
-      const distanceSpan = Math.max(distanceEnd - distanceStart, Number.EPSILON);
-      const interpolationAlpha = THREE.MathUtils.clamp(
-        (targetDistance - distanceStart) / distanceSpan,
-        0,
-        1,
-      );
-
-      const previousSample = denseSamples[previousIndex];
-      const nextSample = denseSamples[nextIndex];
-      const interpolatedQuaternion = new THREE.Quaternion().slerpQuaternions(
-        previousSample.quaternion,
-        nextSample.quaternion,
-        interpolationAlpha,
-      );
-
-      lookupSamples.push({
-        index: lookupIndex,
-        time: THREE.MathUtils.lerp(previousSample.time, nextSample.time, interpolationAlpha),
-        quaternion: interpolatedQuaternion,
-        primaryAxis: socketShaftAxisLocal.clone().applyQuaternion(interpolatedQuaternion),
-        secondaryAxis: socketReferenceAxisLocal.clone().applyQuaternion(interpolatedQuaternion),
-      });
-    }
-
-    return lookupSamples;
-  };
-
-  const getPoseDistance = (previousSample, currentSample) => {
-    const quaternionDistance = 1 - Math.abs(previousSample.quaternion.dot(currentSample.quaternion));
-    const primaryDistance = 1 - previousSample.primaryAxis.dot(currentSample.primaryAxis);
-    const secondaryDistance = 1 - previousSample.secondaryAxis.dot(currentSample.secondaryAxis);
-    return (quaternionDistance * Math.max(QUATERNION_MATCH_WEIGHT, 0.1))
-      + (primaryDistance * PRIMARY_AXIS_MATCH_WEIGHT)
-      + (secondaryDistance * SECONDARY_AXIS_MATCH_WEIGHT);
-  };
-
-  const logSwingDiagnostics = () => {
-    if (!characterAnimationClip || !characterSocketBone || swingSamples.length === 0) {
-      return;
-    }
-
-    const firstQuaternion = swingSamples[0].quaternion;
-    const hasSampleVariation = swingSamples.some((sample) => (
-      1 - Math.abs(firstQuaternion.dot(sample.quaternion)) > SAMPLE_VARIATION_EPSILON
-    ));
-    const trackNames = characterAnimationClip.tracks.map((track) => track.name);
-
-    console.groupCollapsed('[swing-debug] character animation diagnostics');
-    console.log('clip name:', characterAnimationClip.name || '(unnamed)');
-    console.log('duration:', swingDurationSeconds);
-    console.log('track count:', trackNames.length);
-    console.log('sample count:', swingSamples.length);
-    console.log('lookup sample rate:', SWING_LOOKUP_SAMPLE_RATE);
-    console.log('lookup resampled count:', SWING_LOOKUP_RESAMPLED_COUNT);
-    console.log('Bone01 sampled variation:', hasSampleVariation);
-    console.log('first track names:', trackNames.slice(0, 12));
-    console.log('socketAxis:', socketAxisName, socketShaftAxisLocal.toArray());
-    console.log('socketRefAxis:', socketRefAxisName, socketReferenceAxisLocal.toArray());
-    console.log('clubAxis:', clubAxisName, clubShaftAxisLocal.toArray());
-    console.log('clubRefAxis:', clubRefAxisName, clubReferenceAxisLocal.toArray());
-    console.groupEnd();
-
-    if (!hasSampleVariation && !hasLoggedFrozenSamples) {
-      hasLoggedFrozenSamples = true;
-      onStatus('Swing clip loaded, but Bone01 does not change across sampled frames. Check browser console.');
-      console.warn('[swing-debug] Bone01 stayed effectively unchanged across sampled frames. The clip may not be bound to this rig, or Bone01 may not be animated in the source clip.');
-    }
   };
 
   const logCharacterMeshDiagnostics = () => {
@@ -321,86 +166,6 @@ export function loadCharacter(viewerScene, onStatus) {
     viewerScene.characterRoot.updateMatrixWorld(true);
   };
 
-  const refreshSwingSampleAxes = () => {
-    for (const sample of swingSamples) {
-      sample.primaryAxis.copy(socketShaftAxisLocal).applyQuaternion(sample.quaternion);
-      sample.secondaryAxis.copy(socketReferenceAxisLocal).applyQuaternion(sample.quaternion);
-    }
-  };
-
-  const alignImuToSwing = (imuQuaternion) => {
-    if (hasImuAlignment || swingSamples.length === 0) {
-      return;
-    }
-
-    initialSocketQuaternion.copy(swingSamples[0].quaternion);
-    inverseImuQuaternion.copy(imuQuaternion).invert();
-    imuAlignmentOffset.copy(initialSocketQuaternion).multiply(inverseImuQuaternion).normalize();
-    hasImuAlignment = true;
-  };
-
-  const findTargetAnimationSample = (referenceQuaternion) => {
-    if (swingSamples.length === 0) {
-      return null;
-    }
-
-    referencePrimaryAxis.copy(clubShaftAxisLocal).applyQuaternion(referenceQuaternion);
-    referenceSecondaryAxis.copy(clubReferenceAxisLocal).applyQuaternion(referenceQuaternion);
-
-    let bestSample = null;
-    let bestScore = -Infinity;
-
-    for (const sample of swingSamples) {
-      const quaternionScore = Math.abs(referenceQuaternion.dot(sample.quaternion));
-      const primaryScore = referencePrimaryAxis.dot(sample.primaryAxis);
-      const secondaryScore = referenceSecondaryAxis.dot(sample.secondaryAxis);
-      const continuityPenalty = hasPoseMatch
-        ? (Math.abs(sample.index - currentMatchFrameIndex) / Math.max(swingSamples.length - 1, 1)) * SWING_MATCH_CONTINUITY_WEIGHT
-        : 0;
-      const score = (quaternionScore * QUATERNION_MATCH_WEIGHT)
-        + (primaryScore * PRIMARY_AXIS_MATCH_WEIGHT)
-        + (secondaryScore * SECONDARY_AXIS_MATCH_WEIGHT)
-        - continuityPenalty;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestSample = sample;
-      }
-    }
-
-    return bestSample;
-  };
-
-  const updateTargetMatchFrame = (matchedSample) => {
-    if (!matchedSample) {
-      return;
-    }
-
-    currentMatchFrameIndex = matchedSample.index;
-    targetMatchFrameIndex = matchedSample.index;
-    targetAnimationTimeSeconds = matchedSample.time;
-    hasPoseMatch = true;
-  };
-
-  const logMatchDiagnostics = () => {
-    if (DEBUG_SWING_MODE !== 'match') {
-      return;
-    }
-
-    const now = performance.now();
-    if (now - lastMatchDebugLogTime < DEBUG_MATCH_LOG_INTERVAL_MS) {
-      return;
-    }
-
-    lastMatchDebugLogTime = now;
-    console.log('[swing-debug] match', {
-      currentAnimationTimeSeconds: Number(currentAnimationTimeSeconds.toFixed(3)),
-      targetAnimationTimeSeconds: Number(targetAnimationTimeSeconds.toFixed(3)),
-      hasImuAlignment,
-      hasPoseMatch,
-    });
-  };
-
   loader.load(
     '/assets/models/chara/nuri/nuri_base.glb',
     (gltf) => {
@@ -450,24 +215,13 @@ export function loadCharacter(viewerScene, onStatus) {
 
   return {
     update(deltaSeconds, clubQuaternion) {
-      if (DEBUG_SWING_MODE === 'sweep' && swingDurationSeconds > 0) {
-        const sweepTimeSeconds = ((performance.now() / 1000) * DEBUG_SWING_SWEEP_RATE) % swingDurationSeconds;
-        setCharacterAnimationTime(sweepTimeSeconds);
-      } else if (clubQuaternion) {
-        alignImuToSwing(clubQuaternion);
-        if (hasImuAlignment) {
-          mappedImuQuaternion.copy(imuAlignmentOffset).multiply(clubQuaternion).normalize();
-          const matchedSample = findTargetAnimationSample(mappedImuQuaternion);
-          updateTargetMatchFrame(matchedSample);
-          const smoothedAnimationTime = THREE.MathUtils.damp(
-            currentAnimationTimeSeconds,
-            targetAnimationTimeSeconds,
-            SWING_TIME_SMOOTHING,
-            deltaSeconds,
-          );
-          setCharacterAnimationTime(smoothedAnimationTime);
-          logMatchDiagnostics();
-        }
+      const nextAnimationTimeSeconds = swingMatcher.update(
+        deltaSeconds,
+        clubQuaternion,
+        currentAnimationTimeSeconds,
+      );
+      if (nextAnimationTimeSeconds !== currentAnimationTimeSeconds) {
+        setCharacterAnimationTime(nextAnimationTimeSeconds);
       }
 
       if (clubQuaternion) {
@@ -484,90 +238,12 @@ export function loadCharacter(viewerScene, onStatus) {
       viewerScene.clubRoot.position.copy(clubSocketPosition);
     },
 
-    setSocketAxes(nextSocketAxisName, nextSocketRefAxisName) {
-      socketAxisName = normalizeAxisParam(nextSocketAxisName, socketAxisName);
-      socketRefAxisName = normalizeAxisParam(nextSocketRefAxisName, socketRefAxisName);
-      socketShaftAxisLocal.copy(parseAxisParam(socketAxisName, socketShaftAxisLocal));
-      socketReferenceAxisLocal.copy(parseAxisParam(socketRefAxisName, socketReferenceAxisLocal));
-      refreshSwingSampleAxes();
-      hasPoseMatch = false;
-      console.log('[swing-debug] updated socket axes', {
-        socketAxisName,
-        socketRefAxisName,
-      });
-    },
-
-    setClubAxes(nextClubAxisName, nextClubRefAxisName) {
-      clubAxisName = normalizeAxisParam(nextClubAxisName, clubAxisName);
-      clubRefAxisName = normalizeAxisParam(nextClubRefAxisName, clubRefAxisName);
-      clubShaftAxisLocal.copy(parseAxisParam(clubAxisName, clubShaftAxisLocal));
-      clubReferenceAxisLocal.copy(parseAxisParam(clubRefAxisName, clubReferenceAxisLocal));
-      hasPoseMatch = false;
-      console.log('[swing-debug] updated club axes', {
-        clubAxisName,
-        clubRefAxisName,
-      });
-    },
-
-    setDebugAxesVisible(isVisible) {
-      showAxes = Boolean(isVisible);
-      if (viewerScene.clubAxesHelper) {
-        viewerScene.clubAxesHelper.visible = showAxes;
-      }
-      socketAxesHelper.visible = showAxes;
-    },
-
-    getDebugConfig() {
-      return {
-        socketAxis: socketAxisName,
-        socketRefAxis: socketRefAxisName,
-        clubAxis: clubAxisName,
-        clubRefAxis: clubRefAxisName,
-        showAxes,
-      };
-    },
-
     getDebugTelemetry() {
       return {
         boneQuaternion: liveSocketWorldQuaternion,
         currentAnimationTimeSeconds,
-        targetAnimationTimeSeconds,
-        currentMatchFrameIndex,
-        sampleCount: swingSamples.length,
+        ...swingMatcher.getDebugTelemetry(),
       };
     },
   };
-}
-
-function parseAxisParam(axisName, fallbackAxis) {
-  switch ((axisName ?? '').toLowerCase()) {
-    case 'x':
-      return new THREE.Vector3(1, 0, 0);
-    case '-x':
-      return new THREE.Vector3(-1, 0, 0);
-    case 'y':
-      return new THREE.Vector3(0, 1, 0);
-    case '-y':
-      return new THREE.Vector3(0, -1, 0);
-    case 'z':
-      return new THREE.Vector3(0, 0, 1);
-    case '-z':
-      return new THREE.Vector3(0, 0, -1);
-    default:
-      return fallbackAxis.clone();
-  }
-}
-
-function normalizeAxisParam(axisName, fallbackAxisName) {
-  switch ((axisName ?? '').toLowerCase()) {
-    case 'x':
-    case '-x':
-    case 'y':
-    case '-y':
-    case 'z':
-    case '-z':
-      return axisName.toLowerCase();
-    default:
-      return fallbackAxisName;
-  }
 }
