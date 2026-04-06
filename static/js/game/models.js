@@ -26,7 +26,6 @@ export function loadViewerModels(viewerScene, onStatus) {
       viewerScene.placeMapOriginAtTee();
       viewerScene.setMapBounds(new THREE.Box3().setFromObject(viewerScene.mapRoot));
       viewerScene.setCourseCollision(buildCourseCollision(viewerScene.mapRoot));
-      viewerScene.positionClubAtTee();
       viewerScene.positionLightsForMap();
       viewerScene.setInitialCameraPose();
       if (viewerScene.courseCollision?.triangleCount) {
@@ -77,7 +76,6 @@ export function loadViewerModels(viewerScene, onStatus) {
       configureUnlitMaterials(gltf.scene);
       viewerScene.clubRoot.add(gltf.scene);
       viewerScene.clubRoot.add(clubAxesHelper);
-      viewerScene.positionClubAtTee();
       viewerScene.setInitialCameraPose();
     },
     undefined,

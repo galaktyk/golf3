@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { decodeQuaternionPacket } from '/static/js/protocol.js';
 import {
+  BALL_DEFAULT_LAUNCH_DATA,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
   FPS_LABEL_UPDATE_INTERVAL_MS,
 } from '/static/js/game/constants.js';
@@ -74,7 +75,10 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.code === 'KeyL') {
-    ballPhysics.launch();
+    ballPhysics.launch({
+      ...BALL_DEFAULT_LAUNCH_DATA,
+      horizontalLaunchAngle: 0,
+    });
     return;
   }
 

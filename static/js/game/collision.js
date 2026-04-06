@@ -319,10 +319,12 @@ function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTim
       overlapNormal.normalize();
     }
 
-    return {
-      normal: overlapNormal,
-      time: 0,
-    };
+    if (displacement.dot(overlapNormal) < -1e-6) {
+      return {
+        normal: overlapNormal,
+        time: 0,
+      };
+    }
   }
 
   if (directionLength <= 1e-8) {
@@ -372,6 +374,15 @@ function intersectSweptSphereTriangleFace(start, direction, maxDistance, radius,
   const directionDotNormal = planeNormal.dot(direction);
 
   if (Math.abs(directionDotNormal) <= 1e-8) {
+    return null;
+  }
+
+  // Do not collide if moving away from the front/back face respectively
+  if (startDistance >= 0 && directionDotNormal >= 0) {
+    return null;
+  }
+  
+  if (startDistance < 0 && directionDotNormal <= 0) {
     return null;
   }
 

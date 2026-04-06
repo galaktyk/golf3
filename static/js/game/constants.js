@@ -9,8 +9,8 @@ export const BALL_MAX_FIXED_STEPS_PER_FRAME = 8;
 export const BALL_GRAVITY_ACCELERATION = 9.81;
 export const BALL_AIR_DRAG = 0.04;
 export const BALL_BOUNCE_RESTITUTION = 0.3;
-export const BALL_IMPACT_FRICTION = 0.18;
-export const BALL_ROLLING_FRICTION = 0.14;
+export const BALL_IMPACT_FRICTION = 0.06;
+export const BALL_ROLLING_FRICTION = 0.15;
 export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.45;
 export const BALL_GROUND_CAPTURE_SPEED = 2.4;
 export const BALL_STOP_SPEED = 0.08;
@@ -21,9 +21,15 @@ export const BALL_MAX_COLLISION_SUBSTEPS = 12;
 export const BALL_MAX_COLLISION_ITERATIONS = 4;
 export const BALL_GROUND_SNAP_DISTANCE = 0.06;
 export const BALL_GROUNDED_NORMAL_MIN_Y = 0.6;
-export const BALL_TEST_LAUNCH_VELOCITY = new THREE.Vector3(0, 4.2, -9.5);
-export const BALL_TEST_LAUNCH_FORWARD_SPEED = 9.5;
-export const BALL_TEST_LAUNCH_UPWARD_SPEED = 5.4;
+
+// In metric units, for debugging purposes only
+export const BALL_DEFAULT_LAUNCH_DATA = {
+  ballSpeed: 45.2, // m/s (approx 101 mph)
+  verticalLaunchAngle: 15.4,
+  horizontalLaunchAngle: -2.1,
+  spinSpeed: 3021, // RPM, not being use right now
+  spinAxis: -0.5 // degrees, not being use right now
+};
 export const WORLD_FORWARD = new THREE.Vector3(0, 0, -1);
 export const CAMERA_START_DISTANCE = 6;
 export const CAMERA_LOOK_AHEAD_DISTANCE = 0;

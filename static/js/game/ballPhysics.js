@@ -16,9 +16,7 @@ import {
   BALL_ROLLING_FRICTION,
   BALL_START_POSITION,
   BALL_STOP_SPEED,
-  BALL_TEST_LAUNCH_FORWARD_SPEED,
-  BALL_TEST_LAUNCH_UPWARD_SPEED,
-  BALL_TEST_LAUNCH_VELOCITY,
+  BALL_DEFAULT_LAUNCH_DATA,
 } from '/static/js/game/constants.js';
 import { findGroundSupport, resolveSphereOverlapBVH, sweepSphereBVH } from '/static/js/game/collision.js';
 
@@ -94,7 +92,7 @@ export function createBallPhysics(viewerScene) {
 
     if (DEBUG_AUTO_LAUNCH && !debugAutoLaunchConsumed) {
       debugAutoLaunchConsumed = true;
-      launch(BALL_TEST_LAUNCH_VELOCITY);
+      launch();
     }
   };
 
@@ -230,13 +228,9 @@ export function createBallPhysics(viewerScene) {
     stepAir(deltaSeconds);
   };
 
-  const launch = (launchVelocity = BALL_TEST_LAUNCH_VELOCITY) => {
+  const launch = (launchData = BALL_DEFAULT_LAUNCH_DATA) => {
     ensureCourseContact();
-    if (launchVelocity === BALL_TEST_LAUNCH_VELOCITY) {
-      velocity.copy(buildDefaultLaunchVelocity(viewerScene));
-    } else {
-      velocity.copy(launchVelocity);
-    }
+    velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene));
     mode = 'air';
   };
 
@@ -275,8 +269,8 @@ export function createBallPhysics(viewerScene) {
       return renderOrientation;
     },
 
-    launch(launchVelocity = BALL_TEST_LAUNCH_VELOCITY) {
-      launch(launchVelocity);
+    launch(launchData = BALL_DEFAULT_LAUNCH_DATA) {
+      launch(launchData);
     },
 
     reset() {
@@ -354,7 +348,7 @@ function shouldEnterGroundMode(velocity, hitNormal) {
     && velocity.lengthSq() <= BALL_GROUND_CAPTURE_SPEED * BALL_GROUND_CAPTURE_SPEED;
 }
 
-function buildDefaultLaunchVelocity(viewerScene) {
+function buildVelocityFromLaunchData(launchData, viewerScene) {
   viewerScene.camera.getWorldDirection(CAMERA_FORWARD);
   HORIZONTAL_FORWARD.copy(CAMERA_FORWARD);
   HORIZONTAL_FORWARD.y = 0;
@@ -365,9 +359,21 @@ function buildDefaultLaunchVelocity(viewerScene) {
     HORIZONTAL_FORWARD.normalize();
   }
 
-  return LAUNCH_VELOCITY.copy(HORIZONTAL_FORWARD)
-    .multiplyScalar(BALL_TEST_LAUNCH_FORWARD_SPEED)
-    .addScaledVector(THREE.Object3D.DEFAULT_UP, BALL_TEST_LAUNCH_UPWARD_SPEED);
+  // Use ball speed directly in m/s
+  const speedMpS = launchData.ballSpeed;
+  const vertAngleRad = THREE.MathUtils.degToRad(launchData.verticalLaunchAngle);
+  const horizAngleRad = THREE.MathUtils.degToRad(launchData.horizontalLaunchAngle);
+
+  // Rotate horizontal forward vector by horizontal launch angle
+  const launchDir = HORIZONTAL_FORWARD.clone().applyAxisAngle(THREE.Object3D.DEFAULT_UP, -horizAngleRad);
+  
+  // Apply vertical launch angle
+  const forwardSpeed = speedMpS * Math.cos(vertAngleRad);
+  const upwardSpeed = speedMpS * Math.sin(vertAngleRad);
+
+  return LAUNCH_VELOCITY.copy(launchDir)
+    .multiplyScalar(forwardSpeed)
+    .addScaledVector(THREE.Object3D.DEFAULT_UP, upwardSpeed);
 }
 
 function resolveImpactVelocity(velocity, hitNormal) {
