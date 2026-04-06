@@ -8,10 +8,12 @@ import { createViewerScene } from '/static/js/game/scene.js';
 
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
-const viewerScene = createViewerScene(getViewerDom().canvas);
-const hud = createViewerHud(getViewerDom());
+const dom = getViewerDom();
+const viewerScene = createViewerScene(dom.canvas);
+const hud = createViewerHud(dom);
 const character = loadCharacter(viewerScene, (message) => hud.setStatus(message));
 
+let hasIncomingOrientation = false;
 let lastCameraLabelUpdateTime = 0;
 let lastFpsSampleTime = performance.now();
 let lastPacketSampleTime = performance.now();
@@ -20,6 +22,7 @@ let framesSinceLastSample = 0;
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
+initializeMappingControls();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
@@ -41,7 +44,7 @@ socket.addEventListener('message', (event) => {
   }
 
   decodeQuaternionPacket(event.data, incomingQuaternion);
-  viewerScene.clubRoot.quaternion.copy(incomingQuaternion);
+  hasIncomingOrientation = true;
   packetsSinceLastSample += 1;
   hud.updateQuaternion(incomingQuaternion);
 });
@@ -68,7 +71,8 @@ function animate() {
 
   const deltaSeconds = animationClock.getDelta();
   framesSinceLastSample += 1;
-  character.update(deltaSeconds);
+  character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
+  updateCharacterDebugTelemetry();
   updateFpsIfNeeded();
   updatePacketRateIfNeeded();
   viewerScene.controls.update();
@@ -79,6 +83,43 @@ function animate() {
 function getWebSocketBaseUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}`;
+}
+
+function initializeMappingControls() {
+  const config = character.getDebugConfig();
+
+  if (!dom.socketAxisSelect || !dom.socketRefAxisSelect || !dom.showAxesCheckbox) {
+    return;
+  }
+
+  dom.socketAxisSelect.value = config.socketAxis;
+  dom.socketRefAxisSelect.value = config.socketRefAxis;
+  dom.showAxesCheckbox.checked = config.showAxes;
+  hud.updateMappingSummary(config.socketAxis, config.socketRefAxis, config.showAxes);
+
+  dom.socketAxisSelect.addEventListener('change', applyMappingControls);
+  dom.socketRefAxisSelect.addEventListener('change', applyMappingControls);
+  dom.showAxesCheckbox.addEventListener('change', applyMappingControls);
+}
+
+function applyMappingControls() {
+  const socketAxis = dom.socketAxisSelect.value;
+  const socketRefAxis = dom.socketRefAxisSelect.value;
+  const showAxes = dom.showAxesCheckbox.checked;
+
+  character.setSocketAxes(socketAxis, socketRefAxis);
+  character.setDebugAxesVisible(showAxes);
+  hud.updateMappingSummary(socketAxis, socketRefAxis, showAxes);
+}
+
+function updateCharacterDebugTelemetry() {
+  const telemetry = character.getDebugTelemetry();
+  hud.updateBoneQuaternion(telemetry.boneQuaternion);
+  hud.updateMatchFrame(
+    telemetry.currentMatchFrameIndex,
+    telemetry.sampleCount,
+    telemetry.targetAnimationTimeSeconds,
+  );
 }
 
 function updatePacketRateIfNeeded() {

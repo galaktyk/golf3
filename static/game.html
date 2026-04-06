@@ -22,8 +22,46 @@
         <span id="viewer-packet-rate" class="debug-value">0.0 pkt/s</span>
         <span class="debug-label">Quaternion</span>
         <span id="viewer-quaternion" class="debug-value debug-value-wide">(0.000, 0.000, 0.000, 1.000)</span>
+        <span class="debug-label">Bone01</span>
+        <span id="viewer-bone01-quaternion" class="debug-value debug-value-wide">(0.000, 0.000, 0.000, 1.000)</span>
+        <span class="debug-label">Match</span>
+        <span id="viewer-match-frame" class="debug-value debug-value-wide">Frame 0 @ 0.000s</span>
         <span class="debug-label">Camera</span>
         <span id="viewer-camera-position" class="debug-value debug-value-wide">(0.000, 0.000, 0.000)</span>
+      </div>
+    </div>
+    <div class="panel panel-debug panel-mapping">
+      <div class="panel-heading">
+        <p class="eyebrow">Swing Mapping</p>
+        <p id="viewer-mapping-summary" class="panel-status-text">Socket axis x, ref axis y</p>
+      </div>
+      <div class="mapping-controls">
+        <label class="mapping-field" for="socket-axis-select">
+          <span class="debug-label">Socket Axis</span>
+          <select id="socket-axis-select" class="mapping-select">
+            <option value="x">+X</option>
+            <option value="-x">-X</option>
+            <option value="y">+Y</option>
+            <option value="-y">-Y</option>
+            <option value="z">+Z</option>
+            <option value="-z">-Z</option>
+          </select>
+        </label>
+        <label class="mapping-field" for="socket-ref-axis-select">
+          <span class="debug-label">Ref Axis</span>
+          <select id="socket-ref-axis-select" class="mapping-select">
+            <option value="x">+X</option>
+            <option value="-x">-X</option>
+            <option value="y">+Y</option>
+            <option value="-y">-Y</option>
+            <option value="z">+Z</option>
+            <option value="-z">-Z</option>
+          </select>
+        </label>
+        <label class="mapping-toggle" for="show-axes-checkbox">
+          <input id="show-axes-checkbox" type="checkbox">
+          <span>Show axes</span>
+        </label>
       </div>
     </div>
   </div>

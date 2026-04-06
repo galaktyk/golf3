@@ -7,7 +7,7 @@ export function configureUnlitMaterials(root) {
     }
 
     const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const unlitMaterials = materials.map((material) => createUnlitMaterial(material));
+    const unlitMaterials = materials.map((material) => createUnlitMaterial(material, node));
 
     node.material = Array.isArray(node.material) ? unlitMaterials : unlitMaterials[0];
   });
@@ -20,15 +20,15 @@ export function configureFlatShadedMaterials(root) {
     }
 
     const materials = Array.isArray(node.material) ? node.material : [node.material];
-    const flatShadedMaterials = materials.map((material) => createFlatShadedMaterial(material));
+    const flatShadedMaterials = materials.map((material) => createFlatShadedMaterial(material, node));
 
     node.material = Array.isArray(node.material) ? flatShadedMaterials : flatShadedMaterials[0];
   });
 }
 
-function createUnlitMaterial(sourceMaterial) {
+function createUnlitMaterial(sourceMaterial, sourceNode) {
   if (!sourceMaterial) {
-    return new THREE.MeshBasicMaterial({ color: '#ffffff' });
+    return applyAnimationMaterialFlags(new THREE.MeshBasicMaterial({ color: '#ffffff' }), sourceNode, null);
   }
 
   const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
@@ -37,7 +37,7 @@ function createUnlitMaterial(sourceMaterial) {
     ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
     : 0;
 
-  return new THREE.MeshBasicMaterial({
+  return applyAnimationMaterialFlags(new THREE.MeshBasicMaterial({
     name: sourceMaterial.name,
     color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
     map: sourceMaterial.map ?? null,
@@ -47,12 +47,12 @@ function createUnlitMaterial(sourceMaterial) {
     opacity: sourceMaterial.opacity,
     alphaTest,
     depthWrite: !isTransparent,
-  });
+  }), sourceNode, sourceMaterial);
 }
 
-function createFlatShadedMaterial(sourceMaterial) {
+function createFlatShadedMaterial(sourceMaterial, sourceNode) {
   if (!sourceMaterial) {
-    return new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true });
+    return applyAnimationMaterialFlags(new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true }), sourceNode, null);
   }
 
   const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
@@ -61,7 +61,7 @@ function createFlatShadedMaterial(sourceMaterial) {
     ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
     : 0;
 
-  return new THREE.MeshLambertMaterial({
+  return applyAnimationMaterialFlags(new THREE.MeshLambertMaterial({
     name: sourceMaterial.name,
     color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
     map: sourceMaterial.map ?? null,
@@ -72,5 +72,22 @@ function createFlatShadedMaterial(sourceMaterial) {
     alphaTest,
     depthWrite: !isTransparent,
     flatShading: true,
-  });
+  }), sourceNode, sourceMaterial);
+}
+
+function applyAnimationMaterialFlags(material, sourceNode, sourceMaterial) {
+  if (sourceNode?.isSkinnedMesh) {
+    material.skinning = true;
+  }
+
+  if (sourceMaterial?.morphTargets) {
+    material.morphTargets = true;
+  }
+
+  if (sourceMaterial?.morphNormals) {
+    material.morphNormals = true;
+  }
+
+  material.needsUpdate = true;
+  return material;
 }

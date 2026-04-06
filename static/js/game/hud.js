@@ -7,7 +7,10 @@ export function createViewerHud(dom) {
       this.updateFps(0);
       this.updatePacketRate(0);
       this.updateQuaternion(incomingQuaternion);
+      this.updateBoneQuaternion(incomingQuaternion);
+      this.updateMatchFrame(0, 0, 0);
       this.updateCameraPosition(cameraPosition);
+      this.updateMappingSummary('x', 'y', false);
     },
 
     setStatus(message) {
@@ -30,8 +33,32 @@ export function createViewerHud(dom) {
       dom.quaternionLabel.textContent = formatQuaternion(quaternion);
     },
 
+    updateBoneQuaternion(quaternion) {
+      if (!dom.boneQuaternionLabel) {
+        return;
+      }
+
+      dom.boneQuaternionLabel.textContent = formatQuaternion(quaternion);
+    },
+
+    updateMatchFrame(frameIndex, sampleCount, timeSeconds) {
+      if (!dom.matchFrameLabel) {
+        return;
+      }
+
+      dom.matchFrameLabel.textContent = `Frame ${frameIndex}/${Math.max(sampleCount - 1, 0)} @ ${timeSeconds.toFixed(3)}s`;
+    },
+
     updateCameraPosition(position) {
       dom.cameraPositionLabel.textContent = formatVector3(position);
+    },
+
+    updateMappingSummary(socketAxis, socketRefAxis, showAxes) {
+      if (!dom.mappingSummaryLabel) {
+        return;
+      }
+
+      dom.mappingSummaryLabel.textContent = `Socket axis ${socketAxis}, ref axis ${socketRefAxis}${showAxes ? ', axes visible' : ''}`;
     },
   };
 }
