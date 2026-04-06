@@ -31,7 +31,7 @@ export const BALL_GROUNDED_NORMAL_MIN_Y = 0.6;
 export const BALL_DEFAULT_LAUNCH_DATA = {
   ballSpeed: 45.2, // m/s (approx 101 mph)
   verticalLaunchAngle: 15.4,
-  horizontalLaunchAngle: -2.1,
+  horizontalLaunchAngle: 0,
   spinSpeed: 3021, // RPM, not being use right now
   spinAxis: -0.5 // degrees, not being use right now
 };

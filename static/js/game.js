@@ -123,7 +123,7 @@ window.addEventListener('keydown', (event) => {
     launchBall({
       ...BALL_DEFAULT_LAUNCH_DATA,
       horizontalLaunchAngle: 0,
-    }, character.getDebugTelemetry().characterFacingForward);
+    });
     return;
   }
 
