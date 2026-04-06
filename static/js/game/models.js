@@ -1,7 +1,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildCourseCollision } from '/static/js/game/collision.js';
-import { BALL_RADIUS } from '/static/js/game/constants.js';
+import {
+  BALL_RADIUS,
+  CLUB_HEAD_COLLIDER_RADIUS,
+  CLUB_HEAD_COLLIDER_TIP_BACKOFF,
+  CLUB_HEAD_COLLIDER_SIDE_OFFSET,
+  WORLD_FORWARD,
+} from '/static/js/game/constants.js';
 import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/js/game/materials.js';
 import { createSwingMatcher } from '/static/js/game/swingMatcher.js';
 
@@ -74,8 +80,13 @@ export function loadViewerModels(viewerScene, onStatus) {
     '/assets/models/golf_club.glb',
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
+      gltf.scene.updateMatrixWorld(true);
+      const clubBounds = new THREE.Box3().setFromObject(gltf.scene);
+      const clubHeadCollider = createClubHeadColliderMesh(clubBounds);
       viewerScene.clubRoot.add(gltf.scene);
+      viewerScene.clubRoot.add(clubHeadCollider);
       viewerScene.clubRoot.add(clubAxesHelper);
+      viewerScene.setClubHeadCollider(clubHeadCollider);
       viewerScene.setInitialCameraPose();
     },
     undefined,
@@ -90,6 +101,11 @@ export function loadCharacter(viewerScene, onStatus) {
   const loader = new GLTFLoader();
   const swingMatcher = createSwingMatcher({ onStatus });
   const clubSocketPosition = new THREE.Vector3();
+  const clubHeadWorldPosition = new THREE.Vector3();
+  const clubHeadPreviousWorldPosition = new THREE.Vector3();
+  const lastClubHeadWorldPosition = new THREE.Vector3();
+  const clubHeadWorldVelocity = new THREE.Vector3();
+  const characterFacingForward = WORLD_FORWARD.clone();
   const liveSocketWorldQuaternion = new THREE.Quaternion();
   const animatedBoneWorldPosition = new THREE.Vector3();
   const skinnedMeshBoneWorldPosition = new THREE.Vector3();
@@ -104,6 +120,7 @@ export function loadCharacter(viewerScene, onStatus) {
   let skeletonHelper = null;
   let swingDurationSeconds = 0;
   let currentAnimationTimeSeconds = 0;
+  let hasClubHeadSample = false;
 
   const initializeCharacterControllerIfReady = () => {
     if (!characterAnimationClip || !characterSocketBone || characterMixer) {
@@ -260,14 +277,57 @@ export function loadCharacter(viewerScene, onStatus) {
       characterSocketBone.getWorldPosition(clubSocketPosition);
       characterSocketBone.getWorldQuaternion(liveSocketWorldQuaternion);
       viewerScene.clubRoot.position.copy(clubSocketPosition);
+      viewerScene.clubRoot.updateMatrixWorld(true);
+      viewerScene.getCharacterForward(characterFacingForward);
+
+      const clubHeadCollider = viewerScene.getClubHeadCollider();
+      if (!clubHeadCollider) {
+        clubHeadWorldVelocity.set(0, 0, 0);
+        return;
+      }
+
+      clubHeadCollider.getWorldPosition(clubHeadWorldPosition);
+      if (!hasClubHeadSample || deltaSeconds <= 1e-6) {
+        clubHeadPreviousWorldPosition.copy(clubHeadWorldPosition);
+        clubHeadWorldVelocity.set(0, 0, 0);
+      } else {
+        clubHeadPreviousWorldPosition.copy(lastClubHeadWorldPosition);
+        clubHeadWorldVelocity.subVectors(clubHeadWorldPosition, lastClubHeadWorldPosition)
+          .multiplyScalar(1 / deltaSeconds);
+      }
+
+      lastClubHeadWorldPosition.copy(clubHeadWorldPosition);
+      hasClubHeadSample = true;
     },
 
     getDebugTelemetry() {
       return {
         boneQuaternion: liveSocketWorldQuaternion,
+        clubHeadPreviousPosition: clubHeadPreviousWorldPosition,
+        clubHeadPosition: clubHeadWorldPosition,
+        clubHeadVelocity: clubHeadWorldVelocity,
+        clubHeadSpeedMetersPerSecond: clubHeadWorldVelocity.length(),
+        characterFacingForward,
         currentAnimationTimeSeconds,
+        hasClubHeadSample,
         ...swingMatcher.getDebugTelemetry(),
       };
     },
   };
+}
+
+function createClubHeadColliderMesh(clubBounds) {
+  const collider = new THREE.Mesh(
+    new THREE.SphereGeometry(CLUB_HEAD_COLLIDER_RADIUS, 16, 12),
+    new THREE.MeshBasicMaterial({
+      color: '#5ce1b9',
+      transparent: true,
+      opacity: 0.24,
+      wireframe: true,
+    }),
+  );
+
+  const tipY = clubBounds.isEmpty() ? 0 : clubBounds.max.y;
+  collider.position.set(CLUB_HEAD_COLLIDER_SIDE_OFFSET, tipY - CLUB_HEAD_COLLIDER_TIP_BACKOFF, 0);
+  return collider;
 }

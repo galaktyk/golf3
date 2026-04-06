@@ -5,7 +5,8 @@ import {
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
   CAMERA_START_DISTANCE,
-   WORLD_FORWARD,
+  CHARACTER_SETUP_OFFSET,
+  WORLD_FORWARD,
   MAP_TEE_ORIGIN,
   MAX_RENDER_PIXEL_RATIO,
 } from '/static/js/game/constants.js';
@@ -53,8 +54,9 @@ export function createViewerScene(canvas) {
   const ballRoot = new THREE.Group();
   const clubRoot = new THREE.Group();
   const characterRoot = new THREE.Group();
+  const rotatedCharacterSetupOffset = new THREE.Vector3();
+  const characterForward = new THREE.Vector3();
 
-  characterRoot.position.set(-2, 0, 0);
   scene.add(mapRoot);
   scene.add(ballRoot);
   scene.add(clubRoot);
@@ -62,10 +64,29 @@ export function createViewerScene(canvas) {
 
   let mapBounds = null;
   let courseCollision = null;
+  let clubHeadCollider = null;
   let ballCameraFollowEnabled = true;
   const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
   const desiredCameraTarget = new THREE.Vector3();
+
+  const setCharacterAddressPosition = (ballPosition) => {
+    rotatedCharacterSetupOffset.copy(CHARACTER_SETUP_OFFSET).applyQuaternion(characterRoot.quaternion);
+    characterRoot.position.copy(ballPosition).add(rotatedCharacterSetupOffset);
+  };
+
+  const getCharacterForward = (target) => {
+    target.copy(WORLD_FORWARD).applyQuaternion(characterRoot.quaternion);
+    target.y = 0;
+    if (target.lengthSq() <= 1e-8) {
+      target.copy(WORLD_FORWARD);
+      return target;
+    }
+
+    return target.normalize();
+  };
+
+  setCharacterAddressPosition(BALL_START_POSITION);
 
   controls.addEventListener('change', () => {
     if (!ballCameraFollowEnabled) {
@@ -104,6 +125,18 @@ export function createViewerScene(canvas) {
       courseCollision = nextCourseCollision;
     },
 
+    setClubHeadCollider(nextClubHeadCollider) {
+      clubHeadCollider = nextClubHeadCollider;
+    },
+
+    getClubHeadCollider() {
+      return clubHeadCollider;
+    },
+
+    getCharacterForward(target) {
+      return getCharacterForward(target);
+    },
+
     setBallCameraFollowEnabled(enabled) {
       ballCameraFollowEnabled = enabled;
       if (enabled) {
@@ -120,6 +153,10 @@ export function createViewerScene(canvas) {
       if (ballCameraFollowEnabled) {
         this.resetBallCameraFollow();
       }
+    },
+
+    positionCharacterForBall(ballPosition) {
+      setCharacterAddressPosition(ballPosition);
     },
 
 

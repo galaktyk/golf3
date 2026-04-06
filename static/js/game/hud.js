@@ -10,7 +10,10 @@ export function createViewerHud(dom) {
       this.updateBoneQuaternion(incomingQuaternion);
       this.updateMatchFrame(0, 0, 0);
       this.updateCameraPosition(cameraPosition);
-      this.updateBallState('waiting', 0);
+      this.updateBallState('ready', null, 0);
+      this.updateShotStates('control', 'ready', null);
+      this.clearLaunchData();
+      this.updateLaunchPanelVisible(false);
     },
 
     setStatus(message) {
@@ -53,13 +56,57 @@ export function createViewerHud(dom) {
       dom.cameraPositionLabel.textContent = formatVector3(position);
     },
 
-    updateBallState(mode, speedMetersPerSecond) {
+    updateBallState(phase, movementState, speedMetersPerSecond) {
       if (!dom.ballStateLabel || !dom.ballSpeedLabel) {
         return;
       }
 
-      dom.ballStateLabel.textContent = mode;
+      dom.ballStateLabel.textContent = phase === 'moving' && movementState
+        ? `moving/${movementState}`
+        : phase;
       dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(2)} m/s`;
+    },
+
+    updateLaunchData(launchData) {
+      if (!dom.launchBallSpeedLabel) {
+        return;
+      }
+
+      dom.launchBallSpeedLabel.textContent = `${launchData.ballSpeed.toFixed(2)} m/s`;
+      dom.launchVerticalAngleLabel.textContent = `${launchData.verticalLaunchAngle.toFixed(1)} deg`;
+      dom.launchHorizontalAngleLabel.textContent = `${launchData.horizontalLaunchAngle.toFixed(1)} deg`;
+      dom.launchSpinSpeedLabel.textContent = `${launchData.spinSpeed.toFixed(0)} rpm`;
+      dom.launchSpinAxisLabel.textContent = `${launchData.spinAxis.toFixed(1)} deg`;
+    },
+
+    clearLaunchData() {
+      if (!dom.launchBallSpeedLabel) {
+        return;
+      }
+
+      dom.launchBallSpeedLabel.textContent = '-';
+      dom.launchVerticalAngleLabel.textContent = '-';
+      dom.launchHorizontalAngleLabel.textContent = '-';
+      dom.launchSpinSpeedLabel.textContent = '-';
+      dom.launchSpinAxisLabel.textContent = '-';
+    },
+
+    updateLaunchPanelVisible(visible) {
+      if (!dom.launchPanel) {
+        return;
+      }
+
+      dom.launchPanel.hidden = !visible;
+    },
+
+    updateShotStates(playerState, ballPhase, movementState) {
+      if (!dom.playerStateLabel || !dom.ballPhaseLabel || !dom.ballMovementLabel) {
+        return;
+      }
+
+      dom.playerStateLabel.textContent = playerState;
+      dom.ballPhaseLabel.textContent = ballPhase;
+      dom.ballMovementLabel.textContent = movementState ?? '-';
     },
   };
 }

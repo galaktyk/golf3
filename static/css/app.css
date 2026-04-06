@@ -69,6 +69,11 @@ body::before {
   gap: 10px;
 }
 
+.hud-right {
+  left: auto;
+  right: 10px;
+}
+
 .controller-body {
   display: grid;
   place-items: center;
@@ -221,6 +226,12 @@ p {
     top: 8px;
     left: 8px;
     width: calc(100vw - 16px);
+  }
+
+  .hud-right {
+    top: auto;
+    right: auto;
+    bottom: 8px;
   }
 
   .panel {

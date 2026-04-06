@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+
+// Character position related to ball
+export const CHARACTER_BALL_X_OFFSET = -0.87;
+export const CHARACTER_BALL_Z_OFFSET = 0.05;
+
 export const MAP_TEE_ORIGIN = new THREE.Vector3(-0.1228, -0.9267, -0.8853);
 export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
 export const BALL_RADIUS = 0.02135;
@@ -30,6 +35,18 @@ export const BALL_DEFAULT_LAUNCH_DATA = {
   spinSpeed: 3021, // RPM, not being use right now
   spinAxis: -0.5 // degrees, not being use right now
 };
+export const BALL_IMPACT_VERTICAL_LAUNCH_ANGLE = 15;
+export const BALL_IMPACT_DEBUG_SPIN_SPEED = 0;
+export const BALL_IMPACT_DEBUG_SPIN_AXIS = 0;
+
+export const CLUB_HEAD_COLLIDER_RADIUS = 0.12;
+export const CLUB_HEAD_COLLIDER_TIP_BACKOFF = 0.1;
+export const CLUB_HEAD_COLLIDER_SIDE_OFFSET = 0.1;
+export const CLUB_HEAD_IMPACT_MIN_SPEED = 1;
+export const CLUB_HEAD_TO_BALL_SPEED_FACTOR = 1;
+export const CLUB_HEAD_CONTACT_RELEASE_DISTANCE = 0.18;
+
+export const CHARACTER_SETUP_OFFSET = new THREE.Vector3(CHARACTER_BALL_X_OFFSET, -BALL_RADIUS, CHARACTER_BALL_Z_OFFSET);
 export const WORLD_FORWARD = new THREE.Vector3(0, 0, -1);
 export const CAMERA_START_DISTANCE = 6;
 export const CAMERA_LOOK_AHEAD_DISTANCE = 0;

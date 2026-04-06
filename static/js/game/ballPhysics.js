@@ -29,6 +29,7 @@ const WORKING_NORMAL_COMPONENT = new THREE.Vector3();
 const SUPPORT_PROJECTED_GRAVITY = new THREE.Vector3();
 const CAMERA_FORWARD = new THREE.Vector3();
 const HORIZONTAL_FORWARD = new THREE.Vector3();
+const LAUNCH_DIRECTION = new THREE.Vector3();
 const LAUNCH_VELOCITY = new THREE.Vector3();
 const STEP_TRANSLATION = new THREE.Vector3();
 const ROLL_AXIS = new THREE.Vector3();
@@ -47,9 +48,11 @@ export function createBallPhysics(viewerScene) {
   const renderOrientation = orientation.clone();
   const supportNormal = new THREE.Vector3(0, 1, 0);
   let accumulatorSeconds = 0;
-  let mode = 'waiting';
+  let phase = 'ready';
+  let movementState = 'waiting';
   let hasCourseContact = false;
   let debugAutoLaunchConsumed = false;
+  let shotSettled = false;
 
   const snapToGround = (maxSnapDistance) => {
     const support = findGroundSupport(viewerScene.courseCollision, position, BALL_RADIUS, maxSnapDistance);
@@ -75,7 +78,10 @@ export function createBallPhysics(viewerScene) {
 
     SUPPORT_PROJECTED_GRAVITY.copy(GRAVITY);
     SUPPORT_PROJECTED_GRAVITY.addScaledVector(supportNormal, -SUPPORT_PROJECTED_GRAVITY.dot(supportNormal));
-    mode = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY) ? 'rest' : 'ground';
+    movementState = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY) ? 'rest' : 'ground';
+    if (phase === 'moving' && movementState === 'rest') {
+      shotSettled = true;
+    }
     return true;
   };
 
@@ -85,7 +91,7 @@ export function createBallPhysics(viewerScene) {
     }
 
     if (!snapToGround(BALL_GROUND_SNAP_DISTANCE * 2)) {
-      mode = velocity.lengthSq() > 0 ? 'air' : 'waiting';
+      movementState = velocity.lengthSq() > 0 ? 'air' : 'waiting';
     }
 
     hasCourseContact = true;
@@ -113,7 +119,7 @@ export function createBallPhysics(viewerScene) {
       position.copy(sweep.position);
 
       if (!sweep.collided) {
-        mode = 'air';
+        movementState = 'air';
         applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
         return;
       }
@@ -130,7 +136,7 @@ export function createBallPhysics(viewerScene) {
       }
 
       position.addScaledVector(sweep.hitNormal, BALL_COLLISION_SKIN * 2);
-      mode = 'air';
+      movementState = 'air';
     }
     applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
   };
@@ -161,13 +167,16 @@ export function createBallPhysics(viewerScene) {
     }
 
     if (!snapToGround(BALL_GROUND_SNAP_DISTANCE)) {
-      mode = 'air';
+      movementState = 'air';
       return;
     }
 
     if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
       velocity.set(0, 0, 0);
-      mode = 'rest';
+      movementState = 'rest';
+      if (phase === 'moving') {
+        shotSettled = true;
+      }
     }
 
     applyRollingRotation(groundPrevPosition, position, supportNormal);
@@ -176,7 +185,7 @@ export function createBallPhysics(viewerScene) {
   const stepRest = () => {
     const support = findGroundSupport(viewerScene.courseCollision, position, BALL_RADIUS, BALL_GROUND_SNAP_DISTANCE);
     if (!support || support.normal.y < BALL_GROUNDED_NORMAL_MIN_Y) {
-      mode = 'air';
+      movementState = 'air';
       return;
     }
 
@@ -185,7 +194,7 @@ export function createBallPhysics(viewerScene) {
     SUPPORT_PROJECTED_GRAVITY.addScaledVector(supportNormal, -SUPPORT_PROJECTED_GRAVITY.dot(supportNormal));
 
     if (!shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY)) {
-      mode = 'ground';
+      movementState = 'ground';
       return;
     }
 
@@ -199,28 +208,31 @@ export function createBallPhysics(viewerScene) {
     }
 
     velocity.set(0, 0, 0);
-    mode = 'rest';
+    movementState = 'rest';
+    if (phase === 'moving') {
+      shotSettled = true;
+    }
   };
 
   const step = (deltaSeconds) => {
     if (!viewerScene.courseCollision) {
       if (velocity.lengthSq() === 0) {
-        mode = 'waiting';
+        movementState = 'waiting';
         return;
       }
 
       velocity.addScaledVector(GRAVITY, deltaSeconds);
       position.addScaledVector(velocity, deltaSeconds);
-      mode = 'air';
+      movementState = 'air';
       return;
     }
 
-    if (mode === 'ground') {
+    if (movementState === 'ground') {
       stepGround(deltaSeconds);
       return;
     }
 
-    if (mode === 'rest') {
+    if (movementState === 'rest') {
       stepRest();
       return;
     }
@@ -228,10 +240,12 @@ export function createBallPhysics(viewerScene) {
     stepAir(deltaSeconds);
   };
 
-  const launch = (launchData = BALL_DEFAULT_LAUNCH_DATA) => {
+  const launch = (launchData = BALL_DEFAULT_LAUNCH_DATA, referenceForward = null) => {
     ensureCourseContact();
-    velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene));
-    mode = 'air';
+    velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene, referenceForward));
+    phase = 'moving';
+    movementState = 'air';
+    shotSettled = false;
   };
 
   const reset = () => {
@@ -241,7 +255,9 @@ export function createBallPhysics(viewerScene) {
     supportNormal.set(0, 1, 0);
     accumulatorSeconds = 0;
     hasCourseContact = false;
-    mode = 'waiting';
+    phase = 'ready';
+    movementState = 'waiting';
+    shotSettled = false;
     ensureCourseContact();
     previousPosition.copy(position);
     previousOrientation.copy(orientation);
@@ -249,15 +265,42 @@ export function createBallPhysics(viewerScene) {
     renderOrientation.copy(orientation);
   };
 
+  const prepareForNextShot = () => {
+    if (velocity.lengthSq() < BALL_STOP_SPEED * BALL_STOP_SPEED) {
+      velocity.set(0, 0, 0);
+    }
+
+    phase = 'ready';
+    shotSettled = false;
+  };
+
   ensureCourseContact();
 
   return {
+    consumeShotSettled() {
+      if (!shotSettled) {
+        return false;
+      }
+
+      shotSettled = false;
+      return true;
+    },
+
     getDebugTelemetry() {
       return {
-        mode,
+        mode: phase === 'moving' ? `moving/${movementState}` : 'ready',
+        movementState: phase === 'moving' ? movementState : null,
+        phase,
         position,
         speedMetersPerSecond: velocity.length(),
         velocity,
+      };
+    },
+
+    getStateSnapshot() {
+      return {
+        movementState: phase === 'moving' ? movementState : null,
+        phase,
       };
     },
 
@@ -269,8 +312,12 @@ export function createBallPhysics(viewerScene) {
       return renderOrientation;
     },
 
-    launch(launchData = BALL_DEFAULT_LAUNCH_DATA) {
-      launch(launchData);
+    launch(launchData = BALL_DEFAULT_LAUNCH_DATA, referenceForward = null) {
+      launch(launchData, referenceForward);
+    },
+
+    prepareForNextShot() {
+      prepareForNextShot();
     },
 
     reset() {
@@ -348,9 +395,14 @@ function shouldEnterGroundMode(velocity, hitNormal) {
     && velocity.lengthSq() <= BALL_GROUND_CAPTURE_SPEED * BALL_GROUND_CAPTURE_SPEED;
 }
 
-function buildVelocityFromLaunchData(launchData, viewerScene) {
-  viewerScene.camera.getWorldDirection(CAMERA_FORWARD);
-  HORIZONTAL_FORWARD.copy(CAMERA_FORWARD);
+function buildVelocityFromLaunchData(launchData, viewerScene, referenceForward = null) {
+  if (referenceForward && referenceForward.lengthSq() > 1e-8) {
+    HORIZONTAL_FORWARD.copy(referenceForward);
+  } else {
+    viewerScene.camera.getWorldDirection(CAMERA_FORWARD);
+    HORIZONTAL_FORWARD.copy(CAMERA_FORWARD);
+  }
+
   HORIZONTAL_FORWARD.y = 0;
 
   if (HORIZONTAL_FORWARD.lengthSq() <= 1e-8) {
@@ -365,7 +417,7 @@ function buildVelocityFromLaunchData(launchData, viewerScene) {
   const horizAngleRad = THREE.MathUtils.degToRad(launchData.horizontalLaunchAngle);
 
   // Rotate horizontal forward vector by horizontal launch angle
-  const launchDir = HORIZONTAL_FORWARD.clone().applyAxisAngle(THREE.Object3D.DEFAULT_UP, -horizAngleRad);
+  const launchDir = LAUNCH_DIRECTION.copy(HORIZONTAL_FORWARD).applyAxisAngle(THREE.Object3D.DEFAULT_UP, horizAngleRad);
   
   // Apply vertical launch angle
   const forwardSpeed = speedMpS * Math.cos(vertAngleRad);
