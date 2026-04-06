@@ -5,11 +5,9 @@ import {
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
   CAMERA_START_DISTANCE,
-  CLUB_FORWARD,
-  CLUB_OFFSET,
+   WORLD_FORWARD,
   MAP_TEE_ORIGIN,
   MAX_RENDER_PIXEL_RATIO,
-  TEE_ORIGIN,
 } from '/static/js/game/constants.js';
 
 export function createViewerScene(canvas) {
@@ -124,13 +122,11 @@ export function createViewerScene(canvas) {
       }
     },
 
-    positionClubAtTee() {
-      clubRoot.position.copy(TEE_ORIGIN).add(CLUB_OFFSET);
-    },
+
 
     setInitialCameraPose() {
       const clubPosition = clubRoot.position.clone();
-      const forward = CLUB_FORWARD.clone().normalize();
+      const forward = WORLD_FORWARD.clone().normalize();
       const startPosition = clubPosition.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
       const lookTarget = BALL_START_POSITION.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
 

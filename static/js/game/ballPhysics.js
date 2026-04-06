@@ -15,7 +15,6 @@ import {
   BALL_RADIUS,
   BALL_ROLLING_FRICTION,
   BALL_START_POSITION,
-  BALL_STATIC_FRICTION_SPEED,
   BALL_STOP_SPEED,
   BALL_TEST_LAUNCH_FORWARD_SPEED,
   BALL_TEST_LAUNCH_UPWARD_SPEED,
@@ -61,16 +60,14 @@ export function createBallPhysics(viewerScene) {
     }
 
     supportNormal.copy(support.normal);
-    if (Math.abs(support.separation) > BALL_COLLISION_SKIN) {
-      position.copy(support.point).addScaledVector(support.normal, BALL_RADIUS + BALL_COLLISION_SKIN);
-      const overlapResolution = resolveSphereOverlapBVH(viewerScene.courseCollision, position, BALL_RADIUS, {
-        maxIterations: BALL_MAX_COLLISION_ITERATIONS,
-        skin: BALL_COLLISION_SKIN,
-      });
-      position.copy(overlapResolution.position);
-      if (overlapResolution.collided && overlapResolution.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y) {
-        supportNormal.copy(overlapResolution.hitNormal);
-      }
+    position.copy(support.point).addScaledVector(support.normal, BALL_RADIUS + BALL_COLLISION_SKIN);
+    const overlapResolution = resolveSphereOverlapBVH(viewerScene.courseCollision, position, BALL_RADIUS, {
+      maxIterations: BALL_MAX_COLLISION_ITERATIONS,
+      skin: BALL_COLLISION_SKIN,
+    });
+    position.copy(overlapResolution.position);
+    if (overlapResolution.collided && overlapResolution.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y) {
+      supportNormal.copy(overlapResolution.hitNormal);
     }
     projectOntoPlane(velocity, support.normal);
 
@@ -145,16 +142,13 @@ export function createBallPhysics(viewerScene) {
     PROJECTED_GRAVITY.copy(GRAVITY);
     PROJECTED_GRAVITY.addScaledVector(supportNormal, -PROJECTED_GRAVITY.dot(supportNormal));
 
-    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
-      velocity.set(0, 0, 0);
-    } else {
-      velocity.addScaledVector(PROJECTED_GRAVITY, deltaSeconds);
-    }
+    velocity.addScaledVector(PROJECTED_GRAVITY, deltaSeconds);
 
     applyRollingFriction(velocity, deltaSeconds);
     DISPLACEMENT.copy(velocity).multiplyScalar(deltaSeconds);
 
-    const sweep = sweepSphereBVH(viewerScene.courseCollision, position, DISPLACEMENT, BALL_RADIUS, {
+    const groundSweepRadius = Math.max(BALL_RADIUS - BALL_COLLISION_SKIN, BALL_RADIUS * 0.5);
+    const sweep = sweepSphereBVH(viewerScene.courseCollision, position, DISPLACEMENT, groundSweepRadius, {
       maxIterations: BALL_MAX_COLLISION_ITERATIONS,
       skin: BALL_COLLISION_SKIN,
     });
@@ -334,7 +328,7 @@ function applyRollingFriction(velocity, deltaSeconds) {
   }
 
   const deceleration = BALL_ROLLING_FRICTION * BALL_GRAVITY_ACCELERATION * deltaSeconds;
-  if (speed <= deceleration || speed <= BALL_STOP_SPEED) {
+  if (speed <= deceleration) {
     velocity.set(0, 0, 0);
     return;
   }
@@ -343,7 +337,7 @@ function applyRollingFriction(velocity, deltaSeconds) {
 }
 
 function shouldHoldAgainstSlope(velocity, projectedGravity) {
-  if (velocity.lengthSq() > BALL_STATIC_FRICTION_SPEED * BALL_STATIC_FRICTION_SPEED) {
+  if (velocity.lengthSq() > BALL_STOP_SPEED * BALL_STOP_SPEED) {
     return false;
   }
 
