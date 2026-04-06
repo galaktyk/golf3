@@ -9,6 +9,7 @@ const TRAIL_RADIUS_SCALE = 0.74;
 const TRAIL_MIN_POINT_DISTANCE = 0.001;
 const TRAIL_TUBULAR_SEGMENTS_PER_SPAN = 3;
 const TRAIL_RADIAL_SEGMENTS = 10;
+const TRAIL_FADE_TEXTURE_WIDTH = 256;
 const POINT_DISTANCE = new THREE.Vector3();
 
 export function createBallTrail(ballRadius) {
@@ -18,11 +19,13 @@ export function createBallTrail(ballRadius) {
   const curvePoints = [];
   const lastSamplePosition = new THREE.Vector3();
   const currentPosition = new THREE.Vector3();
+  const tailFadeTexture = createTailFadeTexture();
   const trailMaterial = new THREE.MeshBasicMaterial({
     color: '#ffffff',
     transparent: true,
     opacity: 0,
     depthWrite: false,
+    alphaMap: tailFadeTexture,
     toneMapped: false,
     blending: THREE.NormalBlending,
     premultipliedAlpha: true,
@@ -153,4 +156,28 @@ export function createBallTrail(ballRadius) {
 
     curvePoints.push(position.clone());
   }
+}
+
+function createTailFadeTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = TRAIL_FADE_TEXTURE_WIDTH;
+  canvas.height = 1;
+
+  const context = canvas.getContext('2d');
+  const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+  gradient.addColorStop(0, 'rgb(0, 0, 0)');
+  gradient.addColorStop(0.18, 'rgb(20, 20, 20)');
+  gradient.addColorStop(0.45, 'rgb(115, 115, 115)');
+  gradient.addColorStop(1, 'rgb(255, 255, 255)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
 }
