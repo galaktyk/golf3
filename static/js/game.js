@@ -18,6 +18,7 @@ import {
   FPS_LABEL_UPDATE_INTERVAL_MS,
 } from '/static/js/game/constants.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
+import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { createViewerHud } from '/static/js/game/hud.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
@@ -30,6 +31,9 @@ const viewerScene = createViewerScene(dom.canvas);
 const hud = createViewerHud(dom);
 const character = loadCharacter(viewerScene, (message) => hud.setStatus(message));
 const ballPhysics = createBallPhysics(viewerScene);
+const ballTrail = createBallTrail(BALL_RADIUS);
+
+viewerScene.scene.add(ballTrail.root);
 
 let hasIncomingOrientation = false;
 let lastCameraLabelUpdateTime = 0;
@@ -163,6 +167,7 @@ function animate() {
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
   let ballTelemetry = ballPhysics.getDebugTelemetry();
+  const trailTelemetry = ballTelemetry;
 
   if (playerState === 'waiting' && ballPhysics.consumeShotSettled()) {
     viewerScene.positionCharacterForBall(ballTelemetry.position);
@@ -175,6 +180,7 @@ function animate() {
 
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
   viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
+  ballTrail.update(ballPhysics.getPosition(), trailTelemetry, deltaSeconds);
   viewerScene.updateBallFollowCamera(deltaSeconds);
   updateCharacterDebugTelemetry(characterTelemetry);
   updateBallDebugTelemetry(ballTelemetry);
@@ -372,6 +378,7 @@ function launchBall(launchData, referenceForward) {
     spinAxis: launchData.spinAxis,
   };
   playerState = 'waiting';
+  ballTrail.reset();
   ballPhysics.launch(launchData, referenceForward);
 }
 
@@ -387,6 +394,7 @@ function releaseClubBallContactLatch(clubHeadPosition) {
 
 function resetShotFlow() {
   ballPhysics.reset();
+  ballTrail.reset();
   viewerScene.positionCharacterForBall(ballPhysics.getPosition());
   playerState = 'control';
   currentLaunchData = null;
