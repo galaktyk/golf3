@@ -15,7 +15,7 @@ const CLUB_FORWARD = new THREE.Vector3(0, 0, -1);
 const CLUB_OFFSET = new THREE.Vector3(-0.3, 0.8, 0);
 const CAMERA_START_DISTANCE = 6;
 const CAMERA_LOOK_AHEAD_DISTANCE = 0;
-const MAX_RENDER_PIXEL_RATIO = 1.25;
+const MAX_RENDER_PIXEL_RATIO =  0.65;
 const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
@@ -44,10 +44,8 @@ scene.add(keyLight);
 
 const originCube = new THREE.Mesh(
   new THREE.BoxGeometry(2, 2, 2),
-  new THREE.MeshStandardMaterial({
+  new THREE.MeshBasicMaterial({
     color: '#d9d9d9',
-    roughness: 0.7,
-    metalness: 0.05,
     transparent: true,
     opacity: 0.45,
   }),
@@ -80,7 +78,7 @@ let characterAnimationClip = null;
 loader.load(
   '/assets/models/maps/blue_lagoon_1.glb',
   (gltf) => {
-    configureMapMaterials(gltf.scene);
+    configureUnlitMaterials(gltf.scene);
     mapRoot.add(gltf.scene);
     placeMapOriginAtTee(mapRoot);
     mapBounds = new THREE.Box3().setFromObject(mapRoot);
@@ -98,6 +96,7 @@ loader.load(
 loader.load(
   '/assets/models/golf_club.glb',
   (gltf) => {
+    configureUnlitMaterials(gltf.scene);
     clubRoot.add(gltf.scene);
     positionClubAtTee();
     setInitialCameraPose();
@@ -112,6 +111,7 @@ loader.load(
 loader.load(
   '/assets/models/chara/nuri/nuri_base.glb',
   (gltf) => {
+    configureUnlitMaterials(gltf.scene);
     characterRoot.add(gltf.scene);
     startCharacterAnimationIfReady();
   },
@@ -230,6 +230,43 @@ function positionClubAtTee() {
   clubRoot.position.copy(CLUB_OFFSET);
 }
 
+function configureUnlitMaterials(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    const unlitMaterials = materials.map((material) => createUnlitMaterial(material));
+
+    node.material = Array.isArray(node.material) ? unlitMaterials : unlitMaterials[0];
+  });
+}
+
+function createUnlitMaterial(sourceMaterial) {
+  if (!sourceMaterial) {
+    return new THREE.MeshBasicMaterial({ color: '#ffffff' });
+  }
+
+  const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
+  const isTransparent = sourceMaterial.transparent || sourceMaterial.opacity < 1;
+  const alphaTest = hasAlphaTexture && !isTransparent
+    ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
+    : 0;
+
+  return new THREE.MeshBasicMaterial({
+    name: sourceMaterial.name,
+    color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
+    map: sourceMaterial.map ?? null,
+    alphaMap: sourceMaterial.alphaMap ?? null,
+    side: sourceMaterial.side,
+    transparent: isTransparent,
+    opacity: sourceMaterial.opacity,
+    alphaTest,
+    depthWrite: !isTransparent,
+  });
+}
+
 function startCharacterAnimationIfReady() {
   if (!characterAnimationClip || characterRoot.children.length === 0 || characterMixer) {
     return;
@@ -244,40 +281,6 @@ function startCharacterAnimationIfReady() {
 function updateRendererSize() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-}
-
-function configureMapMaterials(root) {
-  root.traverse((node) => {
-    if (!node.isMesh) {
-      return;
-    }
-
-    const materials = Array.isArray(node.material) ? node.material : [node.material];
-
-    materials.forEach((material) => {
-      if (!material) {
-        return;
-      }
-
-      const hasAlphaTexture = Boolean(material.map || material.alphaMap);
-
-      if (hasAlphaTexture) {
-        material.alphaTest = Math.max(material.alphaTest ?? 0, 0.01);
-        material.transparent = false;
-        material.depthWrite = true;
-      }
-
-      if (material.transparent || material.opacity < 1) {
-        material.depthWrite = false;
-
-        if (material.side === THREE.DoubleSide) {
-          material.forceSinglePass = true;
-        }
-      }
-
-      material.needsUpdate = true;
-    });
-  });
 }
 
 function positionLightsForMap(bounds) {
