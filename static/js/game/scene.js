@@ -11,6 +11,8 @@ import {
   MAX_RENDER_PIXEL_RATIO,
 } from '/static/js/game/constants.js';
 
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
   const scene = new THREE.Scene();
@@ -22,6 +24,10 @@ export function createViewerScene(canvas) {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.enableRotate = false;
+  controls.enableZoom = false;
+  controls.enabled = false;
   controls.target.set(0, 0, 0);
   controls.minDistance = 0.01;
   controls.maxDistance = 500;
@@ -157,6 +163,16 @@ export function createViewerScene(canvas) {
 
     positionCharacterForBall(ballPosition) {
       setCharacterAddressPosition(ballPosition);
+    },
+
+    rotateCharacterAroundBall(ballPosition, angleRadians) {
+      characterRoot.rotateY(angleRadians);
+      setCharacterAddressPosition(ballPosition);
+      ballCameraOffset.applyAxisAngle(WORLD_UP, angleRadians);
+      controls.target.copy(ballPosition);
+      camera.position.copy(ballPosition).add(ballCameraOffset);
+      controls.update();
+      characterRoot.updateMatrixWorld(true);
     },
 
 

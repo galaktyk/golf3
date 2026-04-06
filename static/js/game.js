@@ -7,6 +7,7 @@ import {
   BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
+  CHARACTER_ROTATION_SPEED_DEGREES,
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
   CLUB_HEAD_IMPACT_MIN_SPEED,
@@ -36,6 +37,8 @@ let framesSinceLastSample = 0;
 let playerState = 'control';
 let currentLaunchData = null;
 let clubBallContactLatched = false;
+let rotateCharacterLeft = false;
+let rotateCharacterRight = false;
 
 const CLUB_HEAD_SWEEP = new THREE.Vector3();
 const CLUB_HEAD_TO_CLOSEST_POINT = new THREE.Vector3();
@@ -44,6 +47,7 @@ const HORIZONTAL_ARRIVAL_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_FACING_FORWARD = new THREE.Vector3();
 const SWEEP_CLOSEST_POINT = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
+const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
@@ -89,6 +93,17 @@ window.addEventListener('resize', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+    if (event.code === 'ArrowLeft') {
+      rotateCharacterLeft = true;
+    } else {
+      rotateCharacterRight = true;
+    }
+
+    event.preventDefault();
+    return;
+  }
+
   if (event.repeat) {
     return;
   }
@@ -110,6 +125,24 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
+window.addEventListener('keyup', (event) => {
+  if (event.code === 'ArrowLeft') {
+    rotateCharacterLeft = false;
+    event.preventDefault();
+    return;
+  }
+
+  if (event.code === 'ArrowRight') {
+    rotateCharacterRight = false;
+    event.preventDefault();
+  }
+});
+
+window.addEventListener('blur', () => {
+  rotateCharacterLeft = false;
+  rotateCharacterRight = false;
+});
+
 animate();
 
 function animate() {
@@ -117,6 +150,7 @@ function animate() {
 
   const deltaSeconds = animationClock.getDelta();
   framesSinceLastSample += 1;
+  updateCharacterRotationInput(deltaSeconds);
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
   detectClubBallImpact(characterTelemetry);
@@ -148,6 +182,22 @@ function animate() {
 function getWebSocketBaseUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}`;
+}
+
+function updateCharacterRotationInput(deltaSeconds) {
+  if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+    return;
+  }
+
+  const rotationDirection = Number(rotateCharacterLeft) - Number(rotateCharacterRight);
+  if (rotationDirection === 0) {
+    return;
+  }
+
+  viewerScene.rotateCharacterAroundBall(
+    ballPhysics.getPosition(),
+    rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
+  );
 }
 
 function updateCharacterDebugTelemetry(telemetry) {

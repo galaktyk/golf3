@@ -100,12 +100,15 @@ export function loadViewerModels(viewerScene, onStatus) {
 export function loadCharacter(viewerScene, onStatus) {
   const loader = new GLTFLoader();
   const swingMatcher = createSwingMatcher({ onStatus });
+  const characterWorldQuaternion = new THREE.Quaternion();
+  const inverseCharacterWorldQuaternion = new THREE.Quaternion();
   const clubSocketPosition = new THREE.Vector3();
   const clubHeadWorldPosition = new THREE.Vector3();
   const clubHeadPreviousWorldPosition = new THREE.Vector3();
   const lastClubHeadWorldPosition = new THREE.Vector3();
   const clubHeadWorldVelocity = new THREE.Vector3();
   const characterFacingForward = WORLD_FORWARD.clone();
+  const worldClubQuaternion = new THREE.Quaternion();
   const liveSocketWorldQuaternion = new THREE.Quaternion();
   const animatedBoneWorldPosition = new THREE.Vector3();
   const skinnedMeshBoneWorldPosition = new THREE.Vector3();
@@ -142,7 +145,10 @@ export function loadCharacter(viewerScene, onStatus) {
       trackNames: characterAnimationClip.tracks.map((track) => track.name),
       sampleSocketQuaternionAtTime(sampleTime, targetQuaternion) {
         setCharacterAnimationTime(sampleTime);
+        viewerScene.characterRoot.getWorldQuaternion(characterWorldQuaternion);
+        inverseCharacterWorldQuaternion.copy(characterWorldQuaternion).invert();
         characterSocketBone.getWorldQuaternion(targetQuaternion);
+        targetQuaternion.premultiply(inverseCharacterWorldQuaternion).normalize();
       },
     });
     characterAction.reset();
@@ -256,6 +262,11 @@ export function loadCharacter(viewerScene, onStatus) {
 
   return {
     update(deltaSeconds, clubQuaternion) {
+      if (clubQuaternion) {
+        viewerScene.characterRoot.getWorldQuaternion(characterWorldQuaternion);
+        worldClubQuaternion.copy(characterWorldQuaternion).multiply(clubQuaternion).normalize();
+      }
+
       const nextAnimationTimeSeconds = swingMatcher.update(
         deltaSeconds,
         clubQuaternion,
@@ -266,7 +277,7 @@ export function loadCharacter(viewerScene, onStatus) {
       }
 
       if (clubQuaternion) {
-        viewerScene.clubRoot.quaternion.copy(clubQuaternion);
+        viewerScene.clubRoot.quaternion.copy(worldClubQuaternion);
       }
 
       if (!characterSocketBone) {
@@ -320,7 +331,7 @@ function createClubHeadColliderMesh(clubBounds) {
   const collider = new THREE.Mesh(
     new THREE.SphereGeometry(CLUB_HEAD_COLLIDER_RADIUS, 16, 12),
     new THREE.MeshBasicMaterial({
-      color: '#5ce1b9',
+      color: '#ec146e',
       transparent: true,
       opacity: 0.24,
       wireframe: true,
