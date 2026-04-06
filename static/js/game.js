@@ -6,6 +6,7 @@ import { decodeQuaternionPacket } from '/static/js/protocol.js';
 const canvas = document.querySelector('#scene');
 const statusLabel = document.querySelector('#viewer-status');
 const socketStateLabel = document.querySelector('#viewer-socket-state');
+const fpsLabel = document.querySelector('#viewer-fps');
 const packetRateLabel = document.querySelector('#viewer-packet-rate');
 const quaternionLabel = document.querySelector('#viewer-quaternion');
 const cameraPositionLabel = document.querySelector('#viewer-camera-position');
@@ -17,6 +18,7 @@ const CAMERA_START_DISTANCE = 6;
 const CAMERA_LOOK_AHEAD_DISTANCE = 0;
 const MAX_RENDER_PIXEL_RATIO =  0.65;
 const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
+const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
 updateRendererSize();
@@ -72,6 +74,7 @@ const loader = new GLTFLoader();
 const animationClock = new THREE.Clock();
 let mapBounds = null;
 let lastCameraLabelUpdateTime = 0;
+let lastFpsSampleTime = performance.now();
 let characterMixer = null;
 let characterAnimationClip = null;
 
@@ -137,12 +140,14 @@ loader.load(
 
 const incomingQuaternion = new THREE.Quaternion();
 let packetsSinceLastSample = 0;
+let framesSinceLastSample = 0;
 let lastPacketSampleTime = performance.now();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
 
 updateSocketState('Connecting');
+updateFpsLabel(0);
 updatePacketRate(0);
 updateQuaternionLabel(incomingQuaternion);
 updateCameraPositionLabel(camera.position);
@@ -182,7 +187,9 @@ socket.addEventListener('error', () => {
 function animate() {
   requestAnimationFrame(animate);
   const deltaSeconds = animationClock.getDelta();
+  framesSinceLastSample += 1;
   characterMixer?.update(deltaSeconds);
+  updateFpsIfNeeded();
   updatePacketRateIfNeeded();
   controls.update();
   updateCameraPositionLabelIfNeeded();
@@ -306,6 +313,19 @@ function updatePacketRateIfNeeded() {
   lastPacketSampleTime = now;
 }
 
+function updateFpsIfNeeded() {
+  const now = performance.now();
+  const elapsedMs = now - lastFpsSampleTime;
+  if (elapsedMs < FPS_LABEL_UPDATE_INTERVAL_MS) {
+    return;
+  }
+
+  const framesPerSecond = framesSinceLastSample / (elapsedMs / 1000);
+  updateFpsLabel(framesPerSecond);
+  framesSinceLastSample = 0;
+  lastFpsSampleTime = now;
+}
+
 function updateCameraPositionLabelIfNeeded() {
   const now = performance.now();
   if (now - lastCameraLabelUpdateTime < CAMERA_LABEL_UPDATE_INTERVAL_MS) {
@@ -322,6 +342,10 @@ function updateSocketState(state) {
 
 function updatePacketRate(value) {
   packetRateLabel.textContent = `${value.toFixed(1)} pkt/s`;
+}
+
+function updateFpsLabel(value) {
+  fpsLabel.textContent = `${value.toFixed(1)} fps`;
 }
 
 function updateQuaternionLabel(quaternion) {

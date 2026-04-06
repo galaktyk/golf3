@@ -1,14 +1,22 @@
+@font-face {
+  font-family: "B GenJyuu Gothic X";
+  src: url("/assets/fonts/B_GenJyuuGothicX.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #07111f;
   --bg-accent: #10243d;
-  --panel: rgba(7, 17, 31, 0.76);
-  --panel-border: rgba(166, 205, 255, 0.18);
+  --panel: rgba(7, 12, 18, 0.78);
+  --panel-border: rgba(255, 255, 255, 0.14);
   --text: #f4f8ff;
-  --muted: #afc4e0;
-  --accent: #7ef0c8;
-  --accent-strong: #1ed59b;
+  --muted: #9eb0c4;
+  --accent: #9ad3ff;
+  --accent-strong: #62b3eb;
   --warning: #ffd27d;
-  --shadow: 0 24px 80px rgba(2, 8, 16, 0.45);
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -19,7 +27,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  font-family: "Segoe UI Variable", "Aptos", "Bahnschrift", sans-serif;
+  font-family: "B GenJyuu Gothic X", "Segoe UI Variable", "Aptos", sans-serif;
   color: var(--text);
   background:
     radial-gradient(circle at top, rgba(30, 213, 155, 0.16), transparent 28%),
@@ -41,6 +49,10 @@ body::before {
   overflow: hidden;
 }
 
+.viewer-body::before {
+  display: none;
+}
+
 #scene {
   display: block;
   width: 100vw;
@@ -49,12 +61,10 @@ body::before {
 
 .hud {
   position: fixed;
-  top: 20px;
-  left: 20px;
+  top: 10px;
+  left: 10px;
   z-index: 2;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+  width: min(320px, calc(100vw - 20px));
 }
 
 .controller-body {
@@ -71,21 +81,16 @@ body::before {
 
 .panel {
   position: relative;
-  padding: 22px;
+  padding: 10px 12px;
   border: 1px solid var(--panel-border);
-  border-radius: 24px;
+  border-radius: 8px;
   background: var(--panel);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(6px);
   box-shadow: var(--shadow);
 }
 
 .panel::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 40%);
-  pointer-events: none;
+  display: none;
 }
 
 .panel-title,
@@ -93,19 +98,31 @@ body::before {
 .panel-debug,
 .hero-panel,
 .status-panel {
-  max-width: 320px;
+  max-width: 100%;
 }
 
 .panel-debug {
-  min-width: 280px;
+  min-width: 0;
+}
+
+.panel-heading {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.panel-status-text {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--accent);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
 }
 
 h1 {
@@ -173,22 +190,23 @@ p {
 .debug-grid {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px 14px;
+  gap: 6px 10px;
   align-items: start;
 }
 
 .debug-label {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
 }
 
 .debug-value {
-  font-family: "Consolas", "Cascadia Mono", monospace;
-  font-size: 0.92rem;
+  font-family: inherit;
+  font-size: 0.76rem;
   color: var(--text);
   text-align: right;
+  line-height: 1.35;
 }
 
 .debug-value-wide {
@@ -198,14 +216,13 @@ p {
 
 @media (max-width: 720px) {
   .hud {
-    top: 14px;
-    left: 14px;
-    right: 14px;
+    top: 8px;
+    left: 8px;
+    width: calc(100vw - 16px);
   }
 
   .panel {
-    padding: 18px;
-    border-radius: 20px;
+    padding: 9px 10px;
   }
 
   h1 {

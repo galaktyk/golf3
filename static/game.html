@@ -8,19 +8,16 @@
 </head>
 <body class="viewer-body">
   <div class="hud">
-    <div class="panel panel-title">
-      <p class="eyebrow">Golf Club Orientation</p>
-      <h1>Viewer</h1>
-    </div>
-    <div class="panel panel-status">
-      <p class="eyebrow">Connection</p>
-      <p id="viewer-status">Waiting for phone connection</p>
-    </div>
     <div class="panel panel-debug">
-      <p class="eyebrow">Debug</p>
+      <div class="panel-heading">
+        <p class="eyebrow">Viewer Debug</p>
+        <p id="viewer-status" class="panel-status-text">Waiting for phone connection</p>
+      </div>
       <div class="debug-grid">
         <span class="debug-label">Socket</span>
         <span id="viewer-socket-state" class="debug-value">Connecting</span>
+        <span class="debug-label">FPS</span>
+        <span id="viewer-fps" class="debug-value">0.0</span>
         <span class="debug-label">Packet Rate</span>
         <span id="viewer-packet-rate" class="debug-value">0.0 pkt/s</span>
         <span class="debug-label">Quaternion</span>
