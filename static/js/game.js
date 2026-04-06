@@ -15,10 +15,11 @@ const CLUB_FORWARD = new THREE.Vector3(0, 0, -1);
 const CLUB_OFFSET = new THREE.Vector3(-0.3, 0.8, 0);
 const CAMERA_START_DISTANCE = 6;
 const CAMERA_LOOK_AHEAD_DISTANCE = 0;
+const MAX_RENDER_PIXEL_RATIO = 1.25;
+const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, canvas });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
+updateRendererSize();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#050d18');
@@ -65,13 +66,20 @@ scene.add(mapRoot);
 const clubRoot = new THREE.Group();
 scene.add(clubRoot);
 
+const characterRoot = new THREE.Group();
+characterRoot.position.set(5, 0, 5);
+scene.add(characterRoot);
+
 const loader = new GLTFLoader();
+const animationClock = new THREE.Clock();
 let mapBounds = null;
+let lastCameraLabelUpdateTime = 0;
+let characterMixer = null;
+let characterAnimationClip = null;
 
 loader.load(
   '/assets/models/maps/blue_lagoon_1.glb',
   (gltf) => {
-    disableFrustumCulling(gltf.scene);
     configureMapMaterials(gltf.scene);
     mapRoot.add(gltf.scene);
     placeMapOriginAtTee(mapRoot);
@@ -90,7 +98,6 @@ loader.load(
 loader.load(
   '/assets/models/golf_club.glb',
   (gltf) => {
-    disableFrustumCulling(gltf.scene);
     clubRoot.add(gltf.scene);
     positionClubAtTee();
     setInitialCameraPose();
@@ -98,6 +105,32 @@ loader.load(
   undefined,
   (error) => {
     statusLabel.textContent = 'Failed to load golf club model.';
+    console.error(error);
+  },
+);
+
+loader.load(
+  '/assets/models/chara/nuri/nuri_base.glb',
+  (gltf) => {
+    characterRoot.add(gltf.scene);
+    startCharacterAnimationIfReady();
+  },
+  undefined,
+  (error) => {
+    statusLabel.textContent = 'Failed to load character model.';
+    console.error(error);
+  },
+);
+
+loader.load(
+  '/assets/models/chara/nuri/nuri_swing.glb',
+  (gltf) => {
+    characterAnimationClip = gltf.animations[0] ?? null;
+    startCharacterAnimationIfReady();
+  },
+  undefined,
+  (error) => {
+    statusLabel.textContent = 'Failed to load character animation.';
     console.error(error);
   },
 );
@@ -147,11 +180,13 @@ socket.addEventListener('error', () => {
 });
 
 function animate() {
+  requestAnimationFrame(animate);
+  const deltaSeconds = animationClock.getDelta();
+  characterMixer?.update(deltaSeconds);
   updatePacketRateIfNeeded();
   controls.update();
-  updateCameraPositionLabel(camera.position);
+  updateCameraPositionLabelIfNeeded();
   renderer.render(scene, camera);
-  requestAnimationFrame(animate);
 }
 
 animate();
@@ -159,7 +194,8 @@ animate();
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  updateRendererSize();
+  updateCameraPositionLabel(camera.position);
 });
 
 function getWebSocketBaseUrl() {
@@ -194,10 +230,20 @@ function positionClubAtTee() {
   clubRoot.position.copy(CLUB_OFFSET);
 }
 
-function disableFrustumCulling(root) {
-  root.traverse((node) => {
-    node.frustumCulled = false;
-  });
+function startCharacterAnimationIfReady() {
+  if (!characterAnimationClip || characterRoot.children.length === 0 || characterMixer) {
+    return;
+  }
+
+  characterMixer = new THREE.AnimationMixer(characterRoot);
+  const action = characterMixer.clipAction(characterAnimationClip);
+  action.setLoop(THREE.LoopRepeat, Infinity);
+  action.play();
+}
+
+function updateRendererSize() {
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_RENDER_PIXEL_RATIO));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
 }
 
 function configureMapMaterials(root) {
@@ -255,6 +301,16 @@ function updatePacketRateIfNeeded() {
   updatePacketRate(packetsPerSecond);
   packetsSinceLastSample = 0;
   lastPacketSampleTime = now;
+}
+
+function updateCameraPositionLabelIfNeeded() {
+  const now = performance.now();
+  if (now - lastCameraLabelUpdateTime < CAMERA_LABEL_UPDATE_INTERVAL_MS) {
+    return;
+  }
+
+  updateCameraPositionLabel(camera.position);
+  lastCameraLabelUpdateTime = now;
 }
 
 function updateSocketState(state) {
