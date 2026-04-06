@@ -11,7 +11,10 @@ const packetRateLabel = document.querySelector('#viewer-packet-rate');
 const quaternionLabel = document.querySelector('#viewer-quaternion');
 const cameraPositionLabel = document.querySelector('#viewer-camera-position');
 
-const TEE_ORIGIN = new THREE.Vector3(-0.1228, -0.9267, -0.8853);
+const MAP_TEE_ORIGIN = new THREE.Vector3(-0.1228, -0.9267, -0.8853);
+const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
+const BALL_RADIUS = 0.02135;
+const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
 const CLUB_FORWARD = new THREE.Vector3(0, 0, -1);
 const CLUB_OFFSET = new THREE.Vector3(-0.3, 0.8, 0);
 const CAMERA_START_DISTANCE = 6;
@@ -63,11 +66,14 @@ scene.add(originCubeEdges);
 const mapRoot = new THREE.Group();
 scene.add(mapRoot);
 
+const ballRoot = new THREE.Group();
+scene.add(ballRoot);
+
 const clubRoot = new THREE.Group();
 scene.add(clubRoot);
 
 const characterRoot = new THREE.Group();
-characterRoot.position.set(5, 0, 5);
+characterRoot.position.set(-2, 0, 0);
 scene.add(characterRoot);
 
 const loader = new GLTFLoader();
@@ -92,6 +98,20 @@ loader.load(
   undefined,
   (error) => {
     statusLabel.textContent = 'Failed to load course model.';
+    console.error(error);
+  },
+);
+
+loader.load(
+  '/assets/models/high_ball_low.glb',
+  (gltf) => {
+    configureFlatShadedMaterials(gltf.scene);
+    ballRoot.position.copy(BALL_START_POSITION);
+    ballRoot.add(gltf.scene);
+  },
+  undefined,
+  (error) => {
+    statusLabel.textContent = 'Failed to load ball model.';
     console.error(error);
   },
 );
@@ -211,7 +231,7 @@ function getWebSocketBaseUrl() {
 }
 
 function placeMapOriginAtTee(object) {
-  object.position.set(-TEE_ORIGIN.x, -TEE_ORIGIN.y, -TEE_ORIGIN.z);
+  object.position.set(-MAP_TEE_ORIGIN.x, -MAP_TEE_ORIGIN.y, -MAP_TEE_ORIGIN.z);
 }
 
 function setInitialCameraPose() {
@@ -234,7 +254,7 @@ function setInitialCameraPose() {
 }
 
 function positionClubAtTee() {
-  clubRoot.position.copy(CLUB_OFFSET);
+  clubRoot.position.copy(TEE_ORIGIN).add(CLUB_OFFSET);
 }
 
 function configureUnlitMaterials(root) {
@@ -247,6 +267,19 @@ function configureUnlitMaterials(root) {
     const unlitMaterials = materials.map((material) => createUnlitMaterial(material));
 
     node.material = Array.isArray(node.material) ? unlitMaterials : unlitMaterials[0];
+  });
+}
+
+function configureFlatShadedMaterials(root) {
+  root.traverse((node) => {
+    if (!node.isMesh) {
+      return;
+    }
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    const flatShadedMaterials = materials.map((material) => createFlatShadedMaterial(material));
+
+    node.material = Array.isArray(node.material) ? flatShadedMaterials : flatShadedMaterials[0];
   });
 }
 
@@ -271,6 +304,31 @@ function createUnlitMaterial(sourceMaterial) {
     opacity: sourceMaterial.opacity,
     alphaTest,
     depthWrite: !isTransparent,
+  });
+}
+
+function createFlatShadedMaterial(sourceMaterial) {
+  if (!sourceMaterial) {
+    return new THREE.MeshLambertMaterial({ color: '#ffffff', flatShading: true });
+  }
+
+  const hasAlphaTexture = Boolean(sourceMaterial.map || sourceMaterial.alphaMap);
+  const isTransparent = sourceMaterial.transparent || sourceMaterial.opacity < 1;
+  const alphaTest = hasAlphaTexture && !isTransparent
+    ? Math.max(sourceMaterial.alphaTest ?? 0, 0.01)
+    : 0;
+
+  return new THREE.MeshLambertMaterial({
+    name: sourceMaterial.name,
+    color: sourceMaterial.color?.clone() ?? new THREE.Color('#ffffff'),
+    map: sourceMaterial.map ?? null,
+    alphaMap: sourceMaterial.alphaMap ?? null,
+    side: sourceMaterial.side,
+    transparent: isTransparent,
+    opacity: sourceMaterial.opacity,
+    alphaTest,
+    depthWrite: !isTransparent,
+    flatShading: true,
   });
 }
 
