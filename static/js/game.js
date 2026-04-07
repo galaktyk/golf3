@@ -51,7 +51,9 @@ let freeCameraMoveBackward = false;
 let freeCameraMoveLeft = false;
 let freeCameraMoveRight = false;
 let freeCameraLookActive = false;
-let ignoreNextFreeCameraMouseMove = false;
+let hasFreeCameraFallbackPointerPosition = false;
+let lastFreeCameraPointerClientX = 0;
+let lastFreeCameraPointerClientY = 0;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -107,8 +109,7 @@ window.addEventListener('keydown', (event) => {
     if (!freeCameraEnabled && document.pointerLockElement === dom.canvas) {
       document.exitPointerLock();
     }
-    freeCameraLookActive = false;
-    ignoreNextFreeCameraMouseMove = false;
+    endFreeCameraLook();
     event.preventDefault();
     hud.setStatus(freeCameraEnabled ? 'Free camera enabled.' : 'Follow camera enabled.');
     return;
@@ -212,16 +213,19 @@ window.addEventListener('blur', () => {
   freeCameraMoveBackward = false;
   freeCameraMoveLeft = false;
   freeCameraMoveRight = false;
-  freeCameraLookActive = false;
-  ignoreNextFreeCameraMouseMove = false;
+  endFreeCameraLook();
   if (document.pointerLockElement === dom.canvas) {
     document.exitPointerLock();
   }
 });
 
 document.addEventListener('pointerlockchange', () => {
-  freeCameraLookActive = document.pointerLockElement === dom.canvas;
-  ignoreNextFreeCameraMouseMove = freeCameraLookActive;
+  if (document.pointerLockElement === dom.canvas) {
+    beginFreeCameraLook();
+    return;
+  }
+
+  endFreeCameraLook();
 });
 
 dom.canvas.addEventListener('contextmenu', (event) => {
@@ -237,11 +241,10 @@ dom.canvas.addEventListener('mousedown', (event) => {
     return;
   }
 
-  ignoreNextFreeCameraMouseMove = true;
   if (dom.canvas.requestPointerLock) {
     dom.canvas.requestPointerLock();
   } else {
-    freeCameraLookActive = true;
+    beginFreeCameraLook(event.clientX, event.clientY);
   }
   event.preventDefault();
 });
@@ -256,8 +259,7 @@ window.addEventListener('mouseup', (event) => {
     return;
   }
 
-  freeCameraLookActive = false;
-  ignoreNextFreeCameraMouseMove = false;
+  endFreeCameraLook();
 });
 
 window.addEventListener('mousemove', (event) => {
@@ -265,15 +267,41 @@ window.addEventListener('mousemove', (event) => {
     return;
   }
 
-  if (ignoreNextFreeCameraMouseMove) {
-    ignoreNextFreeCameraMouseMove = false;
+  if (document.pointerLockElement === dom.canvas) {
+    viewerScene.rotateFreeCamera(event.movementX, event.movementY);
     return;
   }
 
-  viewerScene.rotateFreeCamera(event.movementX, event.movementY);
+  if (!hasFreeCameraFallbackPointerPosition) {
+    hasFreeCameraFallbackPointerPosition = true;
+    lastFreeCameraPointerClientX = event.clientX;
+    lastFreeCameraPointerClientY = event.clientY;
+    return;
+  }
+
+  viewerScene.rotateFreeCamera(
+    event.clientX - lastFreeCameraPointerClientX,
+    event.clientY - lastFreeCameraPointerClientY,
+  );
+  lastFreeCameraPointerClientX = event.clientX;
+  lastFreeCameraPointerClientY = event.clientY;
 });
 
 animate();
+
+function beginFreeCameraLook(pointerClientX = null, pointerClientY = null) {
+  freeCameraLookActive = true;
+  hasFreeCameraFallbackPointerPosition = Number.isFinite(pointerClientX) && Number.isFinite(pointerClientY);
+  if (hasFreeCameraFallbackPointerPosition) {
+    lastFreeCameraPointerClientX = pointerClientX;
+    lastFreeCameraPointerClientY = pointerClientY;
+  }
+}
+
+function endFreeCameraLook() {
+  freeCameraLookActive = false;
+  hasFreeCameraFallbackPointerPosition = false;
+}
 
 function animate() {
   requestAnimationFrame(animate);

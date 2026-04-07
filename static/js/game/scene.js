@@ -70,6 +70,7 @@ export function createViewerScene(canvas) {
   const freeCameraForward = new THREE.Vector3();
   const freeCameraRight = new THREE.Vector3();
   const freeCameraTranslation = new THREE.Vector3();
+  const freeCameraEuler = new THREE.Euler(0, 0, 0, 'YXZ');
   const cameraOrientationForward = new THREE.Vector3();
   const characterOrientationForward = new THREE.Vector3();
   const characterOrientationRight = new THREE.Vector3();
@@ -123,10 +124,9 @@ export function createViewerScene(canvas) {
   };
 
   const syncFreeCameraAnglesFromCamera = () => {
-    camera.getWorldDirection(freeCameraForward);
-    freeCameraForward.normalize();
-    freeCameraPitch = Math.asin(THREE.MathUtils.clamp(freeCameraForward.y, -1, 1));
-    freeCameraYaw = Math.atan2(freeCameraForward.x, -freeCameraForward.z);
+    freeCameraEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+    freeCameraPitch = freeCameraEuler.x;
+    freeCameraYaw = freeCameraEuler.y;
   };
 
   const applyFreeCameraRotation = () => {
