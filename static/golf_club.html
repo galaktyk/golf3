@@ -8,18 +8,23 @@
 </head>
 <body class="controller-body">
   <main class="controller-shell">
-    <section class="panel hero-panel">
-      <p class="eyebrow">Golf Club Orientation</p>
-      <h1>Phone Controller</h1>
-      <p class="body-copy">Grant motion access, then stream your phone orientation to the viewer. Use neutral calibration before swinging.</p>
-    </section>
     <section class="panel controls-panel">
-      <button id="permission-button" class="action-button primary">Enable Motion</button>
-      <button id="connect-button" class="action-button secondary">Connect</button>
-      <button id="calibrate-button" class="action-button secondary" disabled>Set Neutral</button>
+      <div class="control-row control-row-top">
+        <button id="connect-button" class="action-button primary">Connect</button>
+        <button id="calibrate-button" class="action-button secondary" disabled>Set Forward</button>
+      </div>
+      <div class="control-row control-row-triple">
+        <button id="club-prev-button" class="action-button secondary" disabled>&lt;</button>
+        <span class="control-label">Club</span>
+        <button id="club-next-button" class="action-button secondary" disabled>&gt;</button>
+      </div>
+      <div class="control-row control-row-triple">
+        <button id="rotate-left-button" class="action-button secondary hold-button" disabled>&lt;</button>
+        <span class="control-label">Aim</span>
+        <button id="rotate-right-button" class="action-button secondary hold-button" disabled>&gt;</button>
+      </div>
     </section>
     <section class="panel status-panel">
-      <p class="eyebrow">Status</p>
       <p id="controller-status">Idle</p>
       <p id="controller-debug" class="debug-copy">No orientation yet.</p>
     </section>

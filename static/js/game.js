@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { decodeQuaternionPacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, decodeControlMessage, decodeQuaternionPacket } from '/static/js/protocol.js';
 import {
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
@@ -77,6 +77,7 @@ initializeLaunchDebugUi();
 initializeClubDebugUi();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
+const controlSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws/control?role=viewer`);
 socket.binaryType = 'arraybuffer';
 
 socket.addEventListener('open', () => {
@@ -109,6 +110,24 @@ socket.addEventListener('close', () => {
 
 socket.addEventListener('error', () => {
   hud.updateSocketState('Error');
+});
+
+controlSocket.addEventListener('message', (event) => {
+  if (typeof event.data !== 'string') {
+    return;
+  }
+
+  const controlMessage = decodeControlMessage(JSON.parse(event.data));
+  if (!controlMessage) {
+    return;
+  }
+
+  applyRemoteControl(controlMessage.action, controlMessage.active);
+});
+
+controlSocket.addEventListener('close', () => {
+  rotateCharacterLeft = false;
+  rotateCharacterRight = false;
 });
 
 window.addEventListener('resize', () => {
@@ -380,6 +399,35 @@ function updateCharacterRotationInput(deltaSeconds) {
     rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
   );
 
+}
+
+function applyRemoteControl(action, active) {
+  switch (action) {
+    case CONTROL_ACTIONS.clubPrevious:
+      if (active) {
+        cycleActiveClub(-1);
+      }
+      break;
+    case CONTROL_ACTIONS.clubNext:
+      if (active) {
+        cycleActiveClub(1);
+      }
+      break;
+    case CONTROL_ACTIONS.rotateLeft:
+      rotateCharacterLeft = active;
+      if (active) {
+        rotateCharacterRight = false;
+      }
+      break;
+    case CONTROL_ACTIONS.rotateRight:
+      rotateCharacterRight = active;
+      if (active) {
+        rotateCharacterLeft = false;
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 function updateCharacterDebugTelemetry(telemetry) {

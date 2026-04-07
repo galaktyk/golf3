@@ -1,5 +1,12 @@
 const INT16_MAX = 32767;
 
+export const CONTROL_ACTIONS = Object.freeze({
+  clubPrevious: 'club.previous',
+  clubNext: 'club.next',
+  rotateLeft: 'character.rotateLeft',
+  rotateRight: 'character.rotateRight',
+});
+
 export function encodeQuaternionToPacket(quaternion) {
   const normalized = quaternion.clone().normalize();
   const buffer = new ArrayBuffer(8);
@@ -24,6 +31,26 @@ export function decodeQuaternionPacket(buffer, targetQuaternion) {
   );
 
   return targetQuaternion.normalize();
+}
+
+export function encodeControlMessage(action, active = true) {
+  return JSON.stringify({
+    type: 'control',
+    action,
+    active,
+  });
+}
+
+export function decodeControlMessage(payload) {
+  if (!payload || payload.type !== 'control' || typeof payload.action !== 'string') {
+    return null;
+  }
+
+  return {
+    type: payload.type,
+    action: payload.action,
+    active: payload.active !== false,
+  };
 }
 
 function clampToInt16(value) {

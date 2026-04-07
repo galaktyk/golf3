@@ -69,8 +69,38 @@ class ConnectionHub:
             self.viewers.discard(viewer)
 
 
+class ControlHub:
+    def __init__(self) -> None:
+        self.viewers: set[WebSocket] = set()
+        self.players: set[WebSocket] = set()
+
+    async def register(self, websocket: WebSocket, role: str) -> None:
+        await websocket.accept()
+        if role == "player":
+            self.players.add(websocket)
+            return
+
+        self.viewers.add(websocket)
+
+    async def unregister(self, websocket: WebSocket) -> None:
+        self.players.discard(websocket)
+        self.viewers.discard(websocket)
+
+    async def forward_control(self, payload: str) -> None:
+        stale_viewers: list[WebSocket] = []
+        for viewer in self.viewers:
+            try:
+                await viewer.send_text(payload)
+            except Exception:
+                stale_viewers.append(viewer)
+
+        for viewer in stale_viewers:
+            self.viewers.discard(viewer)
+
+
 app = FastAPI(title="Golf Club Orientation Visualizer")
 hub = ConnectionHub()
+control_hub = ControlHub()
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
@@ -112,3 +142,25 @@ async def websocket_endpoint(websocket: WebSocket, role: str = "viewer") -> None
         pass
     finally:
         await hub.unregister(websocket)
+
+
+@app.websocket("/ws/control")
+async def control_websocket_endpoint(websocket: WebSocket, role: str = "viewer") -> None:
+    await control_hub.register(websocket, role)
+    try:
+        while True:
+            message = await websocket.receive()
+
+            if message.get("type") == "websocket.disconnect":
+                break
+
+            if role != "player":
+                continue
+
+            payload = message.get("text")
+            if payload:
+                await control_hub.forward_control(payload)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await control_hub.unregister(websocket)

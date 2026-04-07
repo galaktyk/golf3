@@ -1,9 +1,12 @@
 import * as THREE from 'three';
-import { encodeQuaternionToPacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, encodeControlMessage, encodeQuaternionToPacket } from '/static/js/protocol.js';
 
-const permissionButton = document.querySelector('#permission-button');
 const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
+const clubPrevButton = document.querySelector('#club-prev-button');
+const clubNextButton = document.querySelector('#club-next-button');
+const rotateLeftButton = document.querySelector('#rotate-left-button');
+const rotateRightButton = document.querySelector('#rotate-right-button');
 const statusLabel = document.querySelector('#controller-status');
 const debugLabel = document.querySelector('#controller-debug');
 
@@ -19,20 +22,13 @@ const neutralInverse = new THREE.Quaternion();
 
 let motionEnabled = false;
 let hasOrientation = false;
-let socket = null;
+let orientationSocket = null;
+let controlSocket = null;
 
 neutralInverse.identity();
 
-permissionButton.addEventListener('click', async () => {
-  const granted = await enableMotion();
-  if (granted) {
-    statusLabel.textContent = 'Motion access granted.';
-    calibrateButton.disabled = false;
-  }
-});
-
-connectButton.addEventListener('click', () => {
-  connectSocket();
+connectButton.addEventListener('click', async () => {
+  await connectWithMotion();
 });
 
 calibrateButton.addEventListener('click', () => {
@@ -44,6 +40,17 @@ calibrateButton.addEventListener('click', () => {
   neutralInverse.copy(rawQuaternion).invert();
   statusLabel.textContent = 'Neutral orientation captured.';
 });
+
+clubPrevButton.addEventListener('click', () => {
+  sendControlTap(CONTROL_ACTIONS.clubPrevious);
+});
+
+clubNextButton.addEventListener('click', () => {
+  sendControlTap(CONTROL_ACTIONS.clubNext);
+});
+
+bindHoldControl(rotateLeftButton, CONTROL_ACTIONS.rotateLeft);
+bindHoldControl(rotateRightButton, CONTROL_ACTIONS.rotateRight);
 
 if (orientationEventName) {
   window.addEventListener(orientationEventName, (event) => {
@@ -67,12 +74,12 @@ setInterval(() => {
     return;
   }
 
-  if (!socket || socket.readyState !== WebSocket.OPEN || !hasOrientation) {
+  if (!orientationSocket || orientationSocket.readyState !== WebSocket.OPEN || !hasOrientation) {
     return;
   }
 
   calibratedQuaternion.copy(neutralInverse).multiply(rawQuaternion).normalize();
-  socket.send(encodeQuaternionToPacket(calibratedQuaternion));
+  orientationSocket.send(encodeQuaternionToPacket(calibratedQuaternion));
 }, 1000 / 60);
 
 async function enableMotion() {
@@ -96,31 +103,146 @@ async function enableMotion() {
 
   if (!motionEnabled) {
     statusLabel.textContent = 'Motion access was denied.';
+    calibrateButton.disabled = true;
+    return false;
   }
 
+  calibrateButton.disabled = false;
   return motionEnabled;
 }
 
-function connectSocket() {
-  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+async function connectWithMotion() {
+  connectButton.disabled = true;
+
+  try {
+    await enableMotion();
+    connectSockets();
+    updateConnectionStatus();
+  } finally {
+    connectButton.disabled = false;
+  }
+}
+
+function connectSockets() {
+  connectOrientationSocket();
+  connectControlSocket();
+}
+
+function connectOrientationSocket() {
+  if (orientationSocket && (orientationSocket.readyState === WebSocket.OPEN || orientationSocket.readyState === WebSocket.CONNECTING)) {
     return;
   }
 
-  socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=player`);
+  orientationSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=player`);
 
-  socket.addEventListener('open', () => {
-    statusLabel.textContent = motionEnabled
-      ? 'Connected. Streaming live orientation.'
-      : 'Connected. Enable motion to start streaming.';
+  orientationSocket.addEventListener('open', () => {
+    updateConnectionStatus();
   });
 
-  socket.addEventListener('close', () => {
-    statusLabel.textContent = 'Disconnected from server.';
+  orientationSocket.addEventListener('close', () => {
+    updateConnectionStatus();
   });
 
-  socket.addEventListener('error', () => {
+  orientationSocket.addEventListener('error', () => {
     statusLabel.textContent = 'Could not connect to the server.';
   });
+}
+
+function connectControlSocket() {
+  if (controlSocket && (controlSocket.readyState === WebSocket.OPEN || controlSocket.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  controlSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws/control?role=player`);
+
+  controlSocket.addEventListener('open', () => {
+    setControlButtonsEnabled(true);
+    updateConnectionStatus();
+  });
+
+  controlSocket.addEventListener('close', () => {
+    setControlButtonsEnabled(false);
+    updateConnectionStatus();
+  });
+
+  controlSocket.addEventListener('error', () => {
+    setControlButtonsEnabled(false);
+    statusLabel.textContent = 'Could not connect control channel.';
+  });
+}
+
+function bindHoldControl(button, action) {
+  if (!button) {
+    return;
+  }
+
+  const start = (event) => {
+    event.preventDefault();
+    sendControlState(action, true);
+  };
+  const stop = (event) => {
+    if (event) {
+      event.preventDefault();
+    }
+    sendControlState(action, false);
+  };
+
+  button.addEventListener('pointerdown', start);
+  button.addEventListener('pointerup', stop);
+  button.addEventListener('pointercancel', stop);
+  button.addEventListener('pointerleave', stop);
+  button.addEventListener('lostpointercapture', stop);
+}
+
+window.addEventListener('blur', () => {
+  sendControlState(CONTROL_ACTIONS.rotateLeft, false);
+  sendControlState(CONTROL_ACTIONS.rotateRight, false);
+});
+
+function sendControlTap(action) {
+  sendControlState(action, true);
+}
+
+function sendControlState(action, active) {
+  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  controlSocket.send(encodeControlMessage(action, active));
+}
+
+function setControlButtonsEnabled(enabled) {
+  for (const button of [clubPrevButton, clubNextButton, rotateLeftButton, rotateRightButton]) {
+    if (button) {
+      button.disabled = !enabled;
+    }
+  }
+}
+
+function updateConnectionStatus() {
+  const orientationReady = orientationSocket?.readyState === WebSocket.OPEN;
+  const controlReady = controlSocket?.readyState === WebSocket.OPEN;
+
+  if (!orientationReady && !controlReady) {
+    statusLabel.textContent = 'Disconnected from server.';
+    return;
+  }
+
+  if (!orientationReady) {
+    statusLabel.textContent = 'Control connected. Orientation channel disconnected.';
+    return;
+  }
+
+  if (!controlReady) {
+    statusLabel.textContent = motionEnabled
+      ? 'Orientation connected. Control channel disconnected.'
+      : 'Orientation connected. Enable motion to start streaming.';
+    return;
+  }
+
+  statusLabel.textContent = motionEnabled
+    ? 'Connected. Streaming orientation and remote controls.'
+    : 'Connected. Enable motion to start streaming.';
 }
 
 function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
@@ -133,7 +255,7 @@ function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
 
 function formatQuaternion(quaternion) {
   const { x, y, z, w } = quaternion;
-  return `q = (${x.toFixed(3)}, ${y.toFixed(3)}, ${z.toFixed(3)}, ${w.toFixed(3)})`;
+  return `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}, ${w.toFixed(2)}`;
 }
 
 function getWebSocketBaseUrl() {

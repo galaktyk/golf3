@@ -91,15 +91,16 @@ body::before {
 }
 
 .controller-body {
-  display: grid;
-  place-items: center;
-  padding: 24px;
+  display: block;
+  padding: 10px;
 }
 
 .controller-shell {
-  width: min(100%, 560px);
+  width: min(100%, 760px);
+  min-height: calc(100vh - 20px);
   display: grid;
-  gap: 18px;
+  gap: 10px;
+  align-content: start;
 }
 
 .panel {
@@ -165,20 +166,56 @@ p {
 }
 
 .controls-panel {
+  position: sticky;
+  top: 0;
+  left: 0;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  padding: 8px;
+  width: min(100%, 240px);
+}
+
+.control-row {
+  display: grid;
+  gap: 8px;
+}
+
+.control-row-top {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.control-row-triple {
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+}
+
+.control-label {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .action-button {
   appearance: none;
   border: none;
-  border-radius: 18px;
-  padding: 16px 18px;
+  border-radius: 12px;
+  padding: 10px 12px;
   font: inherit;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+  white-space: nowrap;
+  min-height: 40px;
 }
 
 .action-button:hover,
@@ -205,9 +242,20 @@ p {
 }
 
 .debug-copy {
-  margin-top: 12px;
+  margin-top: 8px;
   color: var(--warning);
-  font-size: 0.95rem;
+  font-size: 0.82rem;
+}
+
+.status-panel {
+  margin-top: auto;
+  width: min(100%, 240px);
+  padding: 8px 10px;
+}
+
+#controller-status {
+  color: var(--muted);
+  font-size: 0.74rem;
 }
 
 .debug-grid {
