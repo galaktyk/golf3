@@ -61,9 +61,17 @@ export function resolveClubBallImpact(
     },
     activeClub,
   );
+  const launchPreview = buildLaunchPreview(
+    {
+      ...impactSample,
+      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
+    },
+    activeClub,
+  );
 
   return {
     launchData,
+    launchPreview,
     impactSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
   };
@@ -78,7 +86,7 @@ export function getClubLaunchPreview(characterTelemetry, estimatedClubHeadSpeedM
     return null;
   }
 
-  const launchMetrics = getLaunchMetrics(
+  return buildLaunchPreview(
     {
       quaternion: characterTelemetry.clubHeadQuaternion,
       characterFacingForward: characterTelemetry.characterFacingForward,
@@ -86,11 +94,15 @@ export function getClubLaunchPreview(characterTelemetry, estimatedClubHeadSpeedM
     },
     activeClub,
   );
+}
+
+function buildLaunchPreview(impactSample, activeClub) {
+  const launchMetrics = getLaunchMetrics(impactSample, activeClub);
 
   return {
     ...launchMetrics,
-    clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
-    isReady: estimatedClubHeadSpeedMetersPerSecond > 0.1,
+    clubHeadSpeedMetersPerSecond: impactSample.clubHeadSpeedMetersPerSecond,
+    isReady: impactSample.clubHeadSpeedMetersPerSecond > 0.1,
   };
 }
 

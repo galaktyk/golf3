@@ -19,7 +19,7 @@ import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
-import { getClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
+import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
@@ -479,7 +479,7 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, getIncomingClubHeadSpeedMetersPerSecond(), activeClub));
+  hud.updateLaunchPreview(impact.launchPreview);
   launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   clubBallContactLatched = true;
 }
