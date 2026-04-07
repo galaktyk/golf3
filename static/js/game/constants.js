@@ -5,7 +5,10 @@ import * as THREE from 'three';
 export const CHARACTER_BALL_X_OFFSET = -0.87;
 export const CHARACTER_BALL_Z_OFFSET = 0.05;
 
-export const MAP_TEE_ORIGIN = new THREE.Vector3(-0.1228, -0.9267, -0.8853);
+
+
+
+export const MAP_TEE_ORIGIN = new THREE.Vector3(-0.134, -1.32, -7.978);
 export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
 export const BALL_RADIUS = 0.02135;
 export const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
@@ -73,7 +76,12 @@ export const FREE_CAMERA_PITCH_LIMIT_DEGREES = 85;
 export const MAX_RENDER_PIXEL_RATIO = 0.65;
 export const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
 export const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
-export const BLUE_LAGOON_HOLE_POSITION = new THREE.Vector3(53.744, -1.63239, -262.657);
+
+
+
+
+
+export const BLUE_LAGOON_HOLE_POSITION = new THREE.Vector3(42.96, -3.102, -394.2);
 export const HOLE_MARKER_BEAM_HEIGHT = 1000;
 export const HOLE_MARKER_BEAM_CORE_RADIUS = 0.076;
 export const HOLE_MARKER_BEAM_GLOW_RADIUS = 0.22;
