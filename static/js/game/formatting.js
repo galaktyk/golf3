@@ -18,7 +18,7 @@ export function formatDistanceYards(distanceMeters) {
     return '-';
   }
 
-  return `${Math.max(Math.round(metersToYards(distanceMeters)), 0)} y`;
+  return `${Math.max(metersToYards(distanceMeters), 0).toFixed(1)} y`;
 }
 
 export function formatHeightDeltaMeters(deltaMeters) {
