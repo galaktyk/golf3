@@ -64,6 +64,8 @@ export function createViewerScene(canvas) {
   const freeCameraForward = new THREE.Vector3();
   const freeCameraRight = new THREE.Vector3();
   const freeCameraTranslation = new THREE.Vector3();
+  const cameraOrientationForward = new THREE.Vector3();
+  const characterOrientationForward = new THREE.Vector3();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
@@ -150,6 +152,32 @@ export function createViewerScene(canvas) {
     return target.normalize();
   };
 
+  const getOrientationDebugSnapshot = () => {
+    camera.getWorldDirection(cameraOrientationForward);
+    cameraOrientationForward.normalize();
+    getCharacterForward(characterOrientationForward);
+
+    return {
+      camera: {
+        yawDegrees: Number(THREE.MathUtils.radToDeg(Math.atan2(cameraOrientationForward.x, -cameraOrientationForward.z)).toFixed(2)),
+        pitchDegrees: Number(THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(cameraOrientationForward.y, -1, 1))).toFixed(2)),
+        direction: {
+          x: Number(cameraOrientationForward.x.toFixed(4)),
+          y: Number(cameraOrientationForward.y.toFixed(4)),
+          z: Number(cameraOrientationForward.z.toFixed(4)),
+        },
+      },
+      character: {
+        yawDegrees: Number(THREE.MathUtils.radToDeg(Math.atan2(characterOrientationForward.x, -characterOrientationForward.z)).toFixed(2)),
+        forward: {
+          x: Number(characterOrientationForward.x.toFixed(4)),
+          y: Number(characterOrientationForward.y.toFixed(4)),
+          z: Number(characterOrientationForward.z.toFixed(4)),
+        },
+      },
+    };
+  };
+
   setCharacterAddressPosition(BALL_START_POSITION);
 
   controls.addEventListener('change', () => {
@@ -226,6 +254,10 @@ export function createViewerScene(canvas) {
 
     getCharacterForward(target) {
       return getCharacterForward(target);
+    },
+
+    getOrientationDebugSnapshot() {
+      return getOrientationDebugSnapshot();
     },
 
     isFreeCameraEnabled() {
@@ -352,9 +384,9 @@ export function createViewerScene(canvas) {
 
 
     setInitialCameraPose() {
-      const clubPosition = clubRoot.position.clone();
       const forward = WORLD_FORWARD.clone().normalize();
-      const startPosition = clubPosition.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
+      const startPosition = BALL_START_POSITION.clone().addScaledVector(forward, -CAMERA_START_DISTANCE);
+      startPosition.y = clubRoot.position.y;
       const lookFocusPoint = BALL_START_POSITION.clone().addScaledVector(forward, CAMERA_LOOK_AHEAD_DISTANCE);
 
       camera.position.copy(startPosition);
