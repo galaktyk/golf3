@@ -6,13 +6,16 @@ import {
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
   CHARACTER_ROTATION_SPEED_DEGREES,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
+  CLUB_HEAD_TO_BALL_SPEED_FACTOR,
   FPS_LABEL_UPDATE_INTERVAL_MS,
+  SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { createViewerHud } from '/static/js/game/hud.js';
 import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
+import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
 
@@ -24,6 +27,7 @@ const hud = createViewerHud(dom);
 const character = loadCharacter(viewerScene, (message) => hud.setStatus(message));
 const ballPhysics = createBallPhysics(viewerScene);
 const ballTrail = createBallTrail(BALL_RADIUS);
+const shotImpactAudio = createShotImpactAudio();
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -238,11 +242,11 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  launchBall(impact.launchData, impact.referenceForward);
+  launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   clubBallContactLatched = true;
 }
 
-function launchBall(launchData, referenceForward) {
+function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = null) {
   currentLaunchData = {
     ballSpeed: launchData.ballSpeed,
     verticalLaunchAngle: launchData.verticalLaunchAngle,
@@ -250,9 +254,27 @@ function launchBall(launchData, referenceForward) {
     spinSpeed: launchData.spinSpeed,
     spinAxis: launchData.spinAxis,
   };
+  if (Math.abs(launchData.horizontalLaunchAngle) <= SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES) {
+    shotImpactAudio.playPangya();
+  }
+  shotImpactAudio.playForImpactSpeed(
+    getLaunchImpactSpeedMetersPerSecond(launchData, impactSpeedMetersPerSecond),
+  );
   playerState = 'waiting';
   ballTrail.reset();
   ballPhysics.launch(launchData, referenceForward);
+}
+
+function getLaunchImpactSpeedMetersPerSecond(launchData, impactSpeedMetersPerSecond) {
+  if (Number.isFinite(impactSpeedMetersPerSecond) && impactSpeedMetersPerSecond > 0) {
+    return impactSpeedMetersPerSecond;
+  }
+
+  if (!Number.isFinite(launchData?.ballSpeed) || launchData.ballSpeed <= 0) {
+    return 0;
+  }
+
+  return launchData.ballSpeed / CLUB_HEAD_TO_BALL_SPEED_FACTOR;
 }
 
 function releaseClubBallContactLatch(clubHeadPosition) {

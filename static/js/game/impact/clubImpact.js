@@ -55,6 +55,7 @@ export function resolveClubBallImpact(characterTelemetry, ballPosition) {
 
   return {
     launchData,
+    impactSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
   };
 }
