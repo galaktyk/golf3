@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ACTIVE_COURSE } from '/static/js/game/courseData.js';
 
 
 // Character position related to ball
@@ -8,7 +9,8 @@ export const CHARACTER_BALL_Z_OFFSET = 0.05;
 
 
 
-export const MAP_TEE_ORIGIN = new THREE.Vector3(-0.134, -1.32, -7.978);
+export const MAP_MODEL_PATH = ACTIVE_COURSE.modelPath;
+export const MAP_TEE_ORIGIN = ACTIVE_COURSE.tee.clone();
 export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
 export const BALL_RADIUS = 0.02135;
 export const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
@@ -70,7 +72,7 @@ export const CAMERA_START_DISTANCE = 6;
 export const CAMERA_LOOK_AHEAD_DISTANCE = 0;
 export const CAMERA_TILT_OFFSET_DEGREES = 12;
 export const CAMERA_FOLLOW_STIFFNESS = 8;
-export const FREE_CAMERA_MOVE_SPEED = 14;
+export const FREE_CAMERA_MOVE_SPEED = 24;
 export const FREE_CAMERA_LOOK_SENSITIVITY = 0.0025;
 export const FREE_CAMERA_PITCH_LIMIT_DEGREES = 85;
 export const MAX_RENDER_PIXEL_RATIO = 0.65;
@@ -81,9 +83,9 @@ export const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
 
 
 
-export const BLUE_LAGOON_HOLE_POSITION = new THREE.Vector3(42.96, -3.102, -394.2);
+export const COURSE_HOLE_POSITION = ACTIVE_COURSE.hole.clone();
 export const HOLE_MARKER_BEAM_HEIGHT = 1000;
-export const HOLE_MARKER_BEAM_CORE_RADIUS = 0.076;
+export const HOLE_MARKER_BEAM_CORE_RADIUS = 0.138;
 export const HOLE_MARKER_BEAM_GLOW_RADIUS = 0.22;
 export const HOLE_MARKER_BEAM_CORE_COLOR = '#74fbff';
 export const HOLE_MARKER_BEAM_GLOW_COLOR = '#00eaff';

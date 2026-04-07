@@ -3,12 +3,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildCourseCollision } from '/static/js/game/collision.js';
 import {
   BALL_RADIUS,
-  BLUE_LAGOON_HOLE_POSITION,
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_HISTORY_DURATION_SECONDS,
   CLUB_HEAD_HISTORY_MAX_SAMPLES,
   CLUB_HEAD_COLLIDER_TIP_BACKOFF,
   CLUB_HEAD_COLLIDER_SIDE_OFFSET,
+  COURSE_HOLE_POSITION,
   HOLE_MARKER_BEAM_CORE_COLOR,
   HOLE_MARKER_BEAM_CORE_RADIUS,
   HOLE_MARKER_BEAM_GLOW_COLOR,
@@ -18,6 +18,7 @@ import {
   HOLE_MARKER_LABEL_CANVAS_WIDTH,
   HOLE_MARKER_LABEL_FONT_FAMILY,
   HOLE_MARKER_LABEL_HEIGHT,
+  MAP_MODEL_PATH,
   MOVE_MODE_LABEL_BOTTOM_OFFSET_RATIO,
   MOVE_MODE_LABEL_CANVAS_HEIGHT,
   MOVE_MODE_LABEL_CANVAS_WIDTH,
@@ -46,7 +47,7 @@ export function loadViewerModels(viewerScene, onStatus) {
   viewerScene.setHoleMarker(holeMarker);
 
   loader.load(
-    '/assets/models/maps/blue_lagoon_1.glb',
+    MAP_MODEL_PATH,
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
       viewerScene.mapRoot.add(gltf.scene);
@@ -466,7 +467,7 @@ function createHoleMarker() {
   let lastMoveModeHoleLabel = '';
 
   beamRoot.name = 'hole-marker-beam';
-  beamRoot.position.copy(BLUE_LAGOON_HOLE_POSITION);
+  beamRoot.position.copy(COURSE_HOLE_POSITION);
   beamRoot.userData.excludeCourseCollision = true;
   beamGlow.position.y = HOLE_MARKER_BEAM_HEIGHT * 0.5;
   beamCore.position.y = HOLE_MARKER_BEAM_HEIGHT * 0.5;
@@ -560,7 +561,7 @@ function createHoleMarker() {
 
   return {
     beamRoot,
-    holePosition: BLUE_LAGOON_HOLE_POSITION.clone(),
+    holePosition: COURSE_HOLE_POSITION.clone(),
     labelSprite,
     moveModeLabelSprite,
 
