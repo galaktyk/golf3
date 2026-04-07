@@ -5,6 +5,9 @@ import {
   BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
   BALL_RADIUS,
   CLUB_HEAD_COLLIDER_RADIUS,
+  CLUB_HEAD_CONTACT_MAX_VERTICAL_OFFSET,
+  CLUB_HEAD_CONTACT_MIN_FORWARD_ALIGNMENT,
+  CLUB_HEAD_HORIZONTAL_LAUNCH_LIMIT_DEGREES,
   CLUB_HEAD_IMPACT_MIN_SPEED,
   CLUB_HEAD_LAUNCH_DIRECTION_LOCAL,
   CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
@@ -17,6 +20,7 @@ const SEGMENT_TO_BALL = new THREE.Vector3();
 const SEGMENT_START_TO_BALL = new THREE.Vector3();
 const FORWARD_ALIGNMENT_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_FACING_FORWARD = new THREE.Vector3();
+const HORIZONTAL_CONTACT_DIRECTION = new THREE.Vector3();
 const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_LAUNCH_DIRECTION = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
@@ -43,6 +47,10 @@ export function resolveClubBallImpact(
 
   const impactSample = findImpactSample(history, ballPosition, CLUB_HEAD_COLLIDER_RADIUS + BALL_RADIUS);
   if (!impactSample) {
+    return null;
+  }
+
+  if (!isAllowedImpactGeometry(impactSample, ballPosition)) {
     return null;
   }
 
@@ -122,11 +130,11 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
   const segmentLengthSquared = SEGMENT_SWEEP.lengthSq();
   const c = SEGMENT_TO_BALL.lengthSq() - (sphereRadius * sphereRadius);
   if (segmentLengthSquared <= 1e-10) {
-    return c <= 0 ? 0 : null;
+    return null;
   }
 
   if (c <= 0) {
-    return 0;
+    return null;
   }
 
   const b = SEGMENT_TO_BALL.dot(SEGMENT_SWEEP);
@@ -261,9 +269,13 @@ function getHorizontalLaunchAngleDegrees(impactSample) {
     HORIZONTAL_LAUNCH_DIRECTION.normalize();
   }
 
-  return getSignedHorizontalAngleDegrees(
-    HORIZONTAL_FACING_FORWARD,
-    HORIZONTAL_LAUNCH_DIRECTION,
+  return THREE.MathUtils.clamp(
+    getSignedHorizontalAngleDegrees(
+      HORIZONTAL_FACING_FORWARD,
+      HORIZONTAL_LAUNCH_DIRECTION,
+    ),
+    -CLUB_HEAD_HORIZONTAL_LAUNCH_LIMIT_DEGREES,
+    CLUB_HEAD_HORIZONTAL_LAUNCH_LIMIT_DEGREES,
   );
 }
 
@@ -292,4 +304,28 @@ function getLaunchDirection(impactSample) {
   }
 
   return true;
+}
+
+function isAllowedImpactGeometry(impactSample, ballPosition) {
+  FORWARD_ALIGNMENT_DIRECTION.copy(impactSample.characterFacingForward);
+  FORWARD_ALIGNMENT_DIRECTION.y = 0;
+  if (FORWARD_ALIGNMENT_DIRECTION.lengthSq() <= 1e-8) {
+    FORWARD_ALIGNMENT_DIRECTION.set(0, 0, -1);
+  } else {
+    FORWARD_ALIGNMENT_DIRECTION.normalize();
+  }
+
+  HORIZONTAL_CONTACT_DIRECTION.subVectors(ballPosition, impactSample.position);
+  const verticalOffsetMeters = Math.abs(HORIZONTAL_CONTACT_DIRECTION.y);
+  if (verticalOffsetMeters > CLUB_HEAD_CONTACT_MAX_VERTICAL_OFFSET) {
+    return false;
+  }
+
+  HORIZONTAL_CONTACT_DIRECTION.y = 0;
+  if (HORIZONTAL_CONTACT_DIRECTION.lengthSq() <= 1e-8) {
+    return false;
+  }
+
+  HORIZONTAL_CONTACT_DIRECTION.normalize();
+  return HORIZONTAL_CONTACT_DIRECTION.dot(FORWARD_ALIGNMENT_DIRECTION) >= CLUB_HEAD_CONTACT_MIN_FORWARD_ALIGNMENT;
 }
