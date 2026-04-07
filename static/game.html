@@ -84,6 +84,43 @@
       </div>
     </div>
   </div>
+  <div id="viewer-club-panel" class="hud hud-bottom-left">
+    <div class="panel panel-debug panel-club-debug">
+      <div class="panel-heading">
+        <p class="eyebrow">Club Debug</p>
+        <p id="viewer-club-set-line" class="panel-status-text">Air Lance Set</p>
+      </div>
+      <div class="club-selector-row" aria-label="Club selector">
+        <button id="viewer-club-prev-button" class="action-button secondary club-selector-button" type="button" aria-label="Previous club">&lt;</button>
+        <p id="viewer-club-id" class="club-selector-value">1W</p>
+        <button id="viewer-club-next-button" class="action-button secondary club-selector-button" type="button" aria-label="Next club">&gt;</button>
+      </div>
+      <div class="debug-grid">
+        <span class="debug-label">Loft</span>
+        <span id="viewer-club-loft" class="debug-value">10.5°</span>
+      </div>
+    </div>
+  </div>
+  <div id="viewer-launch-preview-panel" class="hud hud-bottom-right">
+    <div class="panel panel-debug panel-launch-preview">
+      <div class="panel-heading">
+        <p class="eyebrow">Launch Preview</p>
+        <p id="viewer-launch-preview-message" class="panel-status-text">Updates when a shot launches.</p>
+      </div>
+      <div class="debug-grid">
+        <span class="debug-label">Club Speed</span>
+        <span id="viewer-preview-club-speed" class="debug-value">-</span>
+        <span class="debug-label">Ball Speed</span>
+        <span id="viewer-preview-ball-speed" class="debug-value">-</span>
+        <span class="debug-label">Face Pitch</span>
+        <span id="viewer-preview-face-pitch" class="debug-value">-</span>
+        <span class="debug-label">Dynamic Loft</span>
+        <span id="viewer-preview-dynamic-loft" class="debug-value">-</span>
+        <span class="debug-label">Launch</span>
+        <span id="viewer-preview-launch-angle" class="debug-value">-</span>
+      </div>
+    </div>
+  </div>
   <canvas id="scene"></canvas>
   <script type="importmap">
     {

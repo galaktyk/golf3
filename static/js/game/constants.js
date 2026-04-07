@@ -12,7 +12,7 @@ export const CHARACTER_BALL_Z_OFFSET = 0.05;
 export const MAP_MODEL_PATH = ACTIVE_COURSE.modelPath;
 export const MAP_TEE_ORIGIN = ACTIVE_COURSE.tee.clone();
 export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
-export const BALL_RADIUS = 0.02135;
+export const BALL_RADIUS = 0.03135;
 export const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
 export const BALL_FIXED_STEP_SECONDS = 1 / 60;
 export const BALL_MAX_FIXED_STEPS_PER_FRAME = 8;
@@ -36,7 +36,7 @@ export const BALL_GROUNDED_NORMAL_MIN_Y = 0.6;
 
 // In metric units, for debugging purposes only
 export const BALL_DEFAULT_LAUNCH_DATA = {
-  ballSpeed: 40.2, // m/s 
+  ballSpeed: 50.2, // m/s 
   verticalLaunchAngle: 15.4,
   horizontalLaunchAngle: 0,
   spinSpeed: 3021, // RPM, not being use right now

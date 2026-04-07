@@ -1,4 +1,9 @@
-import { formatQuaternion, formatVector3 } from '/static/js/game/formatting.js';
+import {
+  formatDegrees,
+  formatMetersPerSecond,
+  formatQuaternion,
+  formatVector3,
+} from '/static/js/game/formatting.js';
 
 function formatGroundTransitionDebug(transitionDebug) {
   if (!transitionDebug?.captureAttempted) {
@@ -51,6 +56,8 @@ export function createViewerHud(dom) {
       this.updateBallState('ready', null, 0);
       this.updateGroundTransitionDebug(null);
       this.updateShotStates('control', 'ready', null);
+      this.updateClubDebug(null, null);
+      this.updateLaunchPreview(null);
       this.updateLaunchPanelVisible(false);
     },
 
@@ -113,6 +120,53 @@ export function createViewerHud(dom) {
       dom.ballLandingDebugLabel.textContent = formatGroundTransitionDebug(transitionDebug);
       dom.ballLandingComponentsLabel.textContent = formatGroundTransitionComponents(transitionDebug);
       dom.ballLandingNormalsLabel.textContent = formatGroundTransitionNormals(transitionDebug);
+    },
+
+    updateClubDebug(clubSet, club) {
+      if (!dom.clubSetLineLabel || !dom.clubIdLabel || !dom.clubLoftLabel) {
+        return;
+      }
+
+      if (!clubSet || !club) {
+        dom.clubSetLineLabel.textContent = '-';
+        dom.clubIdLabel.textContent = '-';
+        dom.clubLoftLabel.textContent = '-';
+        return;
+      }
+
+      dom.clubSetLineLabel.textContent = clubSet.name;
+      dom.clubIdLabel.textContent = club.id;
+      dom.clubLoftLabel.textContent = formatDegrees(club.loftDegrees);
+    },
+
+    updateLaunchPreview(preview) {
+      if (
+        !dom.launchPreviewMessage
+        || !dom.previewClubSpeedLabel
+        || !dom.previewBallSpeedLabel
+        || !dom.previewFacePitchLabel
+        || !dom.previewDynamicLoftLabel
+        || !dom.previewLaunchAngleLabel
+      ) {
+        return;
+      }
+
+      if (!preview) {
+        dom.launchPreviewMessage.textContent = 'Updates when a shot launches.';
+        dom.previewClubSpeedLabel.textContent = '-';
+        dom.previewBallSpeedLabel.textContent = '-';
+        dom.previewFacePitchLabel.textContent = '-';
+        dom.previewDynamicLoftLabel.textContent = '-';
+        dom.previewLaunchAngleLabel.textContent = '-';
+        return;
+      }
+
+      dom.launchPreviewMessage.textContent = 'Captured at launch from the impact calculation.';
+      dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
+      dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
+      dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
+      dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
+      dom.previewLaunchAngleLabel.textContent = formatDegrees(preview.verticalLaunchAngle);
     },
 
     updateLaunchPanelVisible(visible) {

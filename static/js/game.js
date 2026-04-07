@@ -13,12 +13,13 @@ import {
   HOLE_MARKER_LABEL_TOP_OFFSET_RATIO,
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
+import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
-import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
+import { getClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
@@ -52,6 +53,7 @@ let packetsSinceLastSample = 0;
 let framesSinceLastSample = 0;
 let playerState = 'control';
 let clubBallContactLatched = false;
+let activeClub = ACTIVE_CLUB;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 let freeCameraMoveForward = false;
@@ -70,7 +72,9 @@ const holeWorldPosition = new THREE.Vector3();
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
+hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
 initializeLaunchDebugUi();
+initializeClubDebugUi();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
@@ -406,11 +410,12 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  const impact = resolveClubBallImpact(characterTelemetry, ballTelemetry.position);
+  const impact = resolveClubBallImpact(characterTelemetry, ballTelemetry.position, activeClub);
   if (!impact) {
     return;
   }
 
+  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, activeClub));
   launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   clubBallContactLatched = true;
 }
@@ -479,6 +484,28 @@ function initializeLaunchDebugUi() {
     launchDebugBallFromInput();
   });
   updateLaunchDebugUiState();
+}
+
+function initializeClubDebugUi() {
+  if (!dom.clubPrevButton || !dom.clubNextButton) {
+    return;
+  }
+
+  dom.clubPrevButton.addEventListener('click', () => {
+    cycleActiveClub(-1);
+  });
+  dom.clubNextButton.addEventListener('click', () => {
+    cycleActiveClub(1);
+  });
+}
+
+function cycleActiveClub(direction) {
+  const clubIndex = ACTIVE_CLUB_SET.clubs.findIndex((club) => club.id === activeClub.id);
+  const nextClubIndex = clubIndex >= 0
+    ? (clubIndex + direction + ACTIVE_CLUB_SET.clubs.length) % ACTIVE_CLUB_SET.clubs.length
+    : 0;
+  activeClub = ACTIVE_CLUB_SET.clubs[nextClubIndex];
+  hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
 }
 
 function launchDebugBallFromInput() {

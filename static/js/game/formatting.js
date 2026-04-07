@@ -30,3 +30,19 @@ export function formatHeightDeltaMeters(deltaMeters) {
   const sign = normalizedDelta > 0 ? '+' : '';
   return `${sign}${normalizedDelta.toFixed(1)} M`;
 }
+
+export function formatDegrees(value) {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  return `${value.toFixed(1).replace(/\.0$/, '')}°`;
+}
+
+export function formatMetersPerSecond(value) {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  return `${value.toFixed(2)} m/s`;
+}

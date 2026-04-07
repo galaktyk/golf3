@@ -78,6 +78,18 @@ body::before {
   right: 10px;
 }
 
+.hud-bottom-left {
+  top: auto;
+  bottom: 10px;
+}
+
+.hud-bottom-right {
+  top: auto;
+  left: auto;
+  right: 10px;
+  bottom: 10px;
+}
+
 .controller-body {
   display: grid;
   place-items: center;
@@ -274,6 +286,39 @@ p {
   font-size: 0.74rem;
 }
 
+.panel-club-debug {
+  width: min(240px, calc(100vw - 20px));
+}
+
+.panel-launch-preview {
+  width: min(260px, calc(100vw - 20px));
+}
+
+.club-selector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.club-selector-button {
+  border-radius: 10px;
+  min-width: 42px;
+  padding: 10px 0;
+  font-size: 0.74rem;
+}
+
+.club-selector-value {
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 @media (max-width: 720px) {
   .launch-debug-field-grid {
     grid-template-columns: 1fr;
@@ -282,13 +327,25 @@ p {
   .hud {
     top: 8px;
     left: 8px;
-    width: calc(100vw - 16px);
+    width: min(320px, calc(100vw - 16px));
   }
 
   .hud-right {
-    top: auto;
-    right: auto;
+    left: auto;
+    right: 8px;
+    top: 8px;
+  }
+
+  .hud-bottom-left {
+    left: 8px;
     bottom: 8px;
+    width: min(240px, calc((100vw - 24px) / 2));
+  }
+
+  .hud-bottom-right {
+    right: 8px;
+    bottom: 8px;
+    width: min(260px, calc((100vw - 24px) / 2));
   }
 
   .panel {

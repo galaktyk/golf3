@@ -25,7 +25,7 @@ const CLUB_HEAD_SIDE_AXIS = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-export function resolveClubBallImpact(characterTelemetry, ballPosition) {
+export function resolveClubBallImpact(characterTelemetry, ballPosition, activeClub = null) {
   const history = characterTelemetry.clubHeadSampleHistory;
   if (!history || history.length === 0) {
     return null;
@@ -51,12 +51,34 @@ export function resolveClubBallImpact(characterTelemetry, ballPosition) {
     ...impactSample,
     velocity: impactVelocity,
     speedMetersPerSecond: impactSpeedMetersPerSecond,
-  });
+  }, activeClub);
 
   return {
     launchData,
     impactSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
+  };
+}
+
+export function getClubLaunchPreview(characterTelemetry, activeClub = null) {
+  if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadVelocity) {
+    return null;
+  }
+
+  const launchMetrics = getLaunchMetrics(
+    {
+      quaternion: characterTelemetry.clubHeadQuaternion,
+      velocity: characterTelemetry.clubHeadVelocity,
+      characterFacingForward: characterTelemetry.characterFacingForward,
+      speedMetersPerSecond: characterTelemetry.clubHeadSpeedMetersPerSecond,
+    },
+    activeClub,
+  );
+
+  return {
+    ...launchMetrics,
+    clubHeadSpeedMetersPerSecond: characterTelemetry.clubHeadSpeedMetersPerSecond,
+    isReady: characterTelemetry.clubHeadSpeedMetersPerSecond > 0.1,
   };
 }
 
@@ -121,7 +143,7 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
   return contactAlpha;
 }
 
-function buildImpactLaunchData(impactSample) {
+function buildImpactLaunchData(impactSample, activeClub) {
   HORIZONTAL_ARRIVAL_DIRECTION.copy(impactSample.velocity);
   HORIZONTAL_ARRIVAL_DIRECTION.y = 0;
   if (HORIZONTAL_ARRIVAL_DIRECTION.lengthSq() <= 1e-8) {
@@ -138,9 +160,11 @@ function buildImpactLaunchData(impactSample) {
     HORIZONTAL_FACING_FORWARD.normalize();
   }
 
+  const launchMetrics = getLaunchMetrics(impactSample, activeClub);
+
   return {
-    ballSpeed: impactSample.speedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
-    verticalLaunchAngle: getVerticalLaunchAngleDegrees(impactSample),
+    ballSpeed: launchMetrics.ballSpeed,
+    verticalLaunchAngle: launchMetrics.verticalLaunchAngle,
     horizontalLaunchAngle: getSignedHorizontalAngleDegrees(
       HORIZONTAL_FACING_FORWARD,
       HORIZONTAL_ARRIVAL_DIRECTION,
@@ -157,15 +181,70 @@ function getSignedHorizontalAngleDegrees(fromDirection, toDirection) {
   return THREE.MathUtils.radToDeg(radians);
 }
 
-function getVerticalLaunchAngleDegrees(impactSample) {
+function getLaunchMetrics(impactSample, activeClub) {
+  const baseLoftDegrees = Number.isFinite(activeClub?.loftDegrees)
+    ? activeClub.loftDegrees
+    : BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  const launchFactor = Number.isFinite(activeClub?.launchFactor)
+    ? activeClub.launchFactor
+    : 1;
+  const measuredFacePitchDegrees = getMeasuredFacePitchDegrees(impactSample);
+  const dynamicLoftDegrees = getDynamicLoftDegrees(
+    measuredFacePitchDegrees,
+    baseLoftDegrees,
+    activeClub,
+  );
+
+  return {
+    ballSpeed: impactSample.speedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
+    baseLoftDegrees,
+    measuredFacePitchDegrees,
+    dynamicLoftDegrees,
+    verticalLaunchAngle: THREE.MathUtils.clamp(
+      dynamicLoftDegrees * launchFactor,
+      CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
+      CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
+    ),
+  };
+}
+
+function getDynamicLoftDegrees(measuredFacePitchDegrees, baseLoftDegrees, activeClub) {
+  if (!Number.isFinite(measuredFacePitchDegrees)) {
+    return THREE.MathUtils.clamp(
+      baseLoftDegrees,
+      CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
+      CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
+    );
+  }
+
+  const orientationLoftInfluence = Number.isFinite(activeClub?.orientationLoftInfluence)
+    ? activeClub.orientationLoftInfluence
+    : 0.3;
+  const maxDynamicLoftDeltaDegrees = Number.isFinite(activeClub?.maxDynamicLoftDeltaDegrees)
+    ? activeClub.maxDynamicLoftDeltaDegrees
+    : 8;
+  const orientationDeltaDegrees = THREE.MathUtils.clamp(
+    (measuredFacePitchDegrees - baseLoftDegrees) * orientationLoftInfluence,
+    -maxDynamicLoftDeltaDegrees,
+    maxDynamicLoftDeltaDegrees,
+  );
+
+  return THREE.MathUtils.clamp(
+    baseLoftDegrees + orientationDeltaDegrees,
+    CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
+    CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
+  );
+}
+
+function getMeasuredFacePitchDegrees(impactSample) {
   if (!impactSample.quaternion) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+    return null;
   }
 
   CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
     .applyQuaternion(impactSample.quaternion);
   if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+    return null;
   }
 
   CLUB_HEAD_LAUNCH_DIRECTION.normalize();
@@ -175,7 +254,7 @@ function getVerticalLaunchAngleDegrees(impactSample) {
 
   CLUB_HEAD_SIDE_AXIS.crossVectors(HORIZONTAL_ARRIVAL_DIRECTION, WORLD_UP);
   if (CLUB_HEAD_SIDE_AXIS.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+    return null;
   }
 
   CLUB_HEAD_SIDE_AXIS.normalize();
@@ -185,7 +264,7 @@ function getVerticalLaunchAngleDegrees(impactSample) {
     -CLUB_HEAD_PITCH_DIRECTION.dot(CLUB_HEAD_SIDE_AXIS),
   );
   if (CLUB_HEAD_PITCH_DIRECTION.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+    return null;
   }
 
   CLUB_HEAD_PITCH_DIRECTION.normalize();
@@ -197,9 +276,5 @@ function getVerticalLaunchAngleDegrees(impactSample) {
     CLUB_HEAD_PITCH_DIRECTION.y,
     Math.max(CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION), 1e-6),
   );
-  return THREE.MathUtils.clamp(
-    THREE.MathUtils.radToDeg(radians),
-    CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
-    CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
-  );
+  return THREE.MathUtils.radToDeg(radians);
 }
