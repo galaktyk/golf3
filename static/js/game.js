@@ -46,6 +46,11 @@ let currentLaunchData = null;
 let clubBallContactLatched = false;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
+let freeCameraMoveForward = false;
+let freeCameraMoveBackward = false;
+let freeCameraMoveLeft = false;
+let freeCameraMoveRight = false;
+let freeCameraLookActive = false;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -96,6 +101,43 @@ window.addEventListener('resize', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyF' && !event.repeat) {
+    const freeCameraEnabled = viewerScene.setFreeCameraEnabled(!viewerScene.isFreeCameraEnabled());
+    if (!freeCameraEnabled && document.pointerLockElement === dom.canvas) {
+      document.exitPointerLock();
+    }
+    freeCameraLookActive = false;
+    event.preventDefault();
+    hud.setStatus(freeCameraEnabled ? 'Free camera enabled.' : 'Follow camera enabled.');
+    return;
+  }
+
+  if (viewerScene.isFreeCameraEnabled()) {
+    if (event.code === 'KeyW') {
+      freeCameraMoveForward = true;
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code === 'KeyS') {
+      freeCameraMoveBackward = true;
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code === 'KeyA') {
+      freeCameraMoveLeft = true;
+      event.preventDefault();
+      return;
+    }
+
+    if (event.code === 'KeyD') {
+      freeCameraMoveRight = true;
+      event.preventDefault();
+      return;
+    }
+  }
+
   if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
     if (event.code === 'ArrowLeft') {
       rotateCharacterLeft = true;
@@ -129,6 +171,26 @@ window.addEventListener('keydown', (event) => {
 });
 
 window.addEventListener('keyup', (event) => {
+  if (event.code === 'KeyW') {
+    freeCameraMoveForward = false;
+    return;
+  }
+
+  if (event.code === 'KeyS') {
+    freeCameraMoveBackward = false;
+    return;
+  }
+
+  if (event.code === 'KeyA') {
+    freeCameraMoveLeft = false;
+    return;
+  }
+
+  if (event.code === 'KeyD') {
+    freeCameraMoveRight = false;
+    return;
+  }
+
   if (event.code === 'ArrowLeft') {
     rotateCharacterLeft = false;
     event.preventDefault();
@@ -144,6 +206,60 @@ window.addEventListener('keyup', (event) => {
 window.addEventListener('blur', () => {
   rotateCharacterLeft = false;
   rotateCharacterRight = false;
+  freeCameraMoveForward = false;
+  freeCameraMoveBackward = false;
+  freeCameraMoveLeft = false;
+  freeCameraMoveRight = false;
+  freeCameraLookActive = false;
+  if (document.pointerLockElement === dom.canvas) {
+    document.exitPointerLock();
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  freeCameraLookActive = document.pointerLockElement === dom.canvas;
+});
+
+dom.canvas.addEventListener('contextmenu', (event) => {
+  if (!viewerScene.isFreeCameraEnabled()) {
+    return;
+  }
+
+  event.preventDefault();
+});
+
+dom.canvas.addEventListener('mousedown', (event) => {
+  if (!viewerScene.isFreeCameraEnabled() || event.button !== 2) {
+    return;
+  }
+
+  if (dom.canvas.requestPointerLock) {
+    dom.canvas.requestPointerLock();
+  } else {
+    freeCameraLookActive = true;
+  }
+  event.preventDefault();
+});
+
+window.addEventListener('mouseup', (event) => {
+  if (event.button !== 2) {
+    return;
+  }
+
+  if (document.pointerLockElement === dom.canvas) {
+    document.exitPointerLock();
+    return;
+  }
+
+  freeCameraLookActive = false;
+});
+
+window.addEventListener('mousemove', (event) => {
+  if (!viewerScene.isFreeCameraEnabled() || !freeCameraLookActive) {
+    return;
+  }
+
+  viewerScene.rotateFreeCamera(event.movementX, event.movementY);
 });
 
 animate();
@@ -163,6 +279,9 @@ function animate() {
 
   if (playerState === 'waiting' && ballPhysics.consumeShotSettled()) {
     viewerScene.positionCharacterForBall(ballTelemetry.position);
+    if (!viewerScene.isFreeCameraEnabled()) {
+      faceCameraTowardHole(ballTelemetry.position);
+    }
     ballPhysics.prepareForNextShot();
     playerState = 'control';
     currentLaunchData = null;
@@ -173,13 +292,17 @@ function animate() {
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
   viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
   ballTrail.update(ballPhysics.getPosition(), trailTelemetry, deltaSeconds);
+  viewerScene.updateFreeCamera(deltaSeconds, {
+    forward: Number(freeCameraMoveForward) - Number(freeCameraMoveBackward),
+    right: Number(freeCameraMoveRight) - Number(freeCameraMoveLeft),
+  });
   viewerScene.updateBallFollowCamera(deltaSeconds);
   updateCharacterDebugTelemetry(characterTelemetry);
   updateBallDebugTelemetry(ballTelemetry);
   updateLaunchDebugTelemetry(ballTelemetry);
   updateFpsIfNeeded();
   updatePacketRateIfNeeded();
-  viewerScene.controls.update();
+  viewerScene.updateControls();
   viewerScene.applyCameraTilt();
   updateHoleMarker();
   updateCameraPositionLabelIfNeeded();
@@ -192,6 +315,10 @@ function getWebSocketBaseUrl() {
 }
 
 function updateCharacterRotationInput(deltaSeconds) {
+  if (viewerScene.isFreeCameraEnabled()) {
+    return;
+  }
+
   if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
     return;
   }
@@ -299,9 +426,23 @@ function resetShotFlow() {
   ballPhysics.reset();
   ballTrail.reset();
   viewerScene.positionCharacterForBall(ballPhysics.getPosition());
+  if (!viewerScene.isFreeCameraEnabled()) {
+    faceCameraTowardHole(ballPhysics.getPosition());
+  }
   playerState = 'control';
   currentLaunchData = null;
   clubBallContactLatched = true;
+}
+
+function faceCameraTowardHole(ballPosition) {
+  const holeMarker = viewerScene.getHoleMarker();
+  if (!holeMarker) {
+    return;
+  }
+
+  holeMarker.beamRoot.updateWorldMatrix(true, false);
+  holeMarker.beamRoot.getWorldPosition(holeWorldPosition);
+  viewerScene.faceViewToward(ballPosition, holeWorldPosition);
 }
 
 function updatePacketRateIfNeeded() {

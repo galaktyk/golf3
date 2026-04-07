@@ -116,6 +116,7 @@ export function loadViewerModels(viewerScene, onStatus) {
 export function loadCharacter(viewerScene, onStatus) {
   const loader = new GLTFLoader();
   const swingMatcher = createSwingMatcher({ onStatus });
+  const characterAxesHelper = new THREE.AxesHelper(0.75);
   const characterWorldQuaternion = new THREE.Quaternion();
   const inverseCharacterWorldQuaternion = new THREE.Quaternion();
   const clubSocketPosition = new THREE.Vector3();
@@ -130,6 +131,7 @@ export function loadCharacter(viewerScene, onStatus) {
   const animatedBoneWorldPosition = new THREE.Vector3();
   const skinnedMeshBoneWorldPosition = new THREE.Vector3();
   const socketAxesHelper = new THREE.AxesHelper(0.9);
+  characterAxesHelper.visible = DEBUG_SHOW_AXES;
   socketAxesHelper.visible = DEBUG_SHOW_AXES;
   let characterMixer = null;
   let characterAction = null;
@@ -168,12 +170,12 @@ export function loadCharacter(viewerScene, onStatus) {
   };
 
   const initializeCharacterControllerIfReady = () => {
-    if (!characterAnimationClip || !characterSocketBone || characterMixer) {
+    if (!characterAnimationClip || !characterSceneRoot || !characterSocketBone || characterMixer) {
       return;
     }
 
-    characterMixer = new THREE.AnimationMixer(viewerScene.characterRoot);
-    characterAction = characterMixer.clipAction(characterAnimationClip);
+    characterMixer = new THREE.AnimationMixer(characterSceneRoot);
+    characterAction = characterMixer.clipAction(characterAnimationClip, characterSceneRoot);
     characterAction.clampWhenFinished = false;
     characterAction.setLoop(THREE.LoopRepeat, Infinity);
     characterAction.enabled = true;
@@ -187,7 +189,7 @@ export function loadCharacter(viewerScene, onStatus) {
       trackNames: characterAnimationClip.tracks.map((track) => track.name),
       sampleSocketQuaternionAtTime(sampleTime, targetQuaternion) {
         setCharacterAnimationTime(sampleTime);
-        viewerScene.characterRoot.getWorldQuaternion(characterWorldQuaternion);
+        viewerScene.characterVisualRoot.getWorldQuaternion(characterWorldQuaternion);
         inverseCharacterWorldQuaternion.copy(characterWorldQuaternion).invert();
         characterSocketBone.getWorldQuaternion(targetQuaternion);
         targetQuaternion.premultiply(inverseCharacterWorldQuaternion).normalize();
@@ -260,7 +262,8 @@ export function loadCharacter(viewerScene, onStatus) {
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
       characterSceneRoot = gltf.scene;
-      viewerScene.characterRoot.add(gltf.scene);
+      viewerScene.characterVisualRoot.add(gltf.scene);
+      viewerScene.characterRoot.add(characterAxesHelper);
       characterSkinnedMeshes = [];
       gltf.scene.traverse((node) => {
         if (node.isSkinnedMesh) {
@@ -307,7 +310,7 @@ export function loadCharacter(viewerScene, onStatus) {
       clubHeadSampleTimeSeconds += Math.max(deltaSeconds, 0);
 
       if (clubQuaternion) {
-        viewerScene.characterRoot.getWorldQuaternion(characterWorldQuaternion);
+        viewerScene.characterVisualRoot.getWorldQuaternion(characterWorldQuaternion);
         worldClubQuaternion.copy(characterWorldQuaternion).multiply(clubQuaternion).normalize();
       }
 

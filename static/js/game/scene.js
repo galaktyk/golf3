@@ -7,6 +7,10 @@ import {
   CAMERA_START_DISTANCE,
   CAMERA_TILT_OFFSET_DEGREES,
   CHARACTER_SETUP_OFFSET,
+  CHARACTER_VISUAL_YAW_OFFSET_DEGREES,
+  FREE_CAMERA_LOOK_SENSITIVITY,
+  FREE_CAMERA_MOVE_SPEED,
+  FREE_CAMERA_PITCH_LIMIT_DEGREES,
   WORLD_FORWARD,
   MAP_TEE_ORIGIN,
   MAX_RENDER_PIXEL_RATIO,
@@ -14,6 +18,7 @@ import {
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const CAMERA_TILT_OFFSET_RADIANS = THREE.MathUtils.degToRad(CAMERA_TILT_OFFSET_DEGREES);
+const FREE_CAMERA_PITCH_LIMIT_RADIANS = THREE.MathUtils.degToRad(FREE_CAMERA_PITCH_LIMIT_DEGREES);
 
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
@@ -50,21 +55,33 @@ export function createViewerScene(canvas) {
   const ballRoot = new THREE.Group();
   const clubRoot = new THREE.Group();
   const characterRoot = new THREE.Group();
+  const characterVisualRoot = new THREE.Group();
   const overlayRoot = new THREE.Group();
   const rotatedCharacterSetupOffset = new THREE.Vector3();
   const characterForward = new THREE.Vector3();
+  const desiredFacingDirection = new THREE.Vector3();
+  const currentFacingDirection = new THREE.Vector3();
+  const freeCameraForward = new THREE.Vector3();
+  const freeCameraRight = new THREE.Vector3();
+  const freeCameraTranslation = new THREE.Vector3();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
   scene.add(clubRoot);
   scene.add(characterRoot);
+  characterRoot.add(characterVisualRoot);
   camera.add(overlayRoot);
+
+  characterVisualRoot.rotation.y = THREE.MathUtils.degToRad(CHARACTER_VISUAL_YAW_OFFSET_DEGREES);
 
   let mapBounds = null;
   let courseCollision = null;
   let clubHeadCollider = null;
   let holeMarker = null;
   let ballCameraFollowEnabled = true;
+  let freeCameraEnabled = false;
+  let freeCameraYaw = 0;
+  let freeCameraPitch = 0;
   const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
   const desiredCameraTarget = new THREE.Vector3();
@@ -91,6 +108,30 @@ export function createViewerScene(canvas) {
     cameraTiltDirection.applyAxisAngle(cameraTiltAxis, CAMERA_TILT_OFFSET_RADIANS);
     target.copy(cameraPosition).addScaledVector(cameraTiltDirection, focusDistance);
     return target;
+  };
+
+  const syncFreeCameraAnglesFromCamera = () => {
+    camera.getWorldDirection(freeCameraForward);
+    freeCameraForward.normalize();
+    freeCameraPitch = Math.asin(THREE.MathUtils.clamp(freeCameraForward.y, -1, 1));
+    freeCameraYaw = Math.atan2(freeCameraForward.x, -freeCameraForward.z);
+  };
+
+  const applyFreeCameraRotation = () => {
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = freeCameraYaw;
+    camera.rotation.x = freeCameraPitch;
+    camera.rotation.z = 0;
+    camera.updateMatrixWorld(true);
+  };
+
+  const restoreBallCameraFollowPose = () => {
+    const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
+    controls.target.copy(followTarget);
+    camera.position.copy(followTarget).add(ballCameraOffset);
+    controls.update();
+    applyTiltedCameraTarget(camera.position, controls.target, tiltedCameraTarget);
+    camera.lookAt(tiltedCameraTarget);
   };
 
   const setCharacterAddressPosition = (ballPosition) => {
@@ -131,6 +172,7 @@ export function createViewerScene(canvas) {
     ballRoot,
     clubRoot,
     characterRoot,
+    characterVisualRoot,
     overlayRoot,
 
     get mapBounds() {
@@ -166,18 +208,91 @@ export function createViewerScene(canvas) {
     },
 
     applyCameraTilt() {
+      if (freeCameraEnabled) {
+        return;
+      }
+
       applyTiltedCameraTarget(camera.position, controls.target, tiltedCameraTarget);
       camera.lookAt(tiltedCameraTarget);
+    },
+
+    updateControls() {
+      if (freeCameraEnabled) {
+        return;
+      }
+
+      controls.update();
     },
 
     getCharacterForward(target) {
       return getCharacterForward(target);
     },
 
+    isFreeCameraEnabled() {
+      return freeCameraEnabled;
+    },
+
+    setFreeCameraEnabled(enabled) {
+      if (freeCameraEnabled === enabled) {
+        return freeCameraEnabled;
+      }
+
+      freeCameraEnabled = enabled;
+      controls.enabled = !enabled;
+      if (enabled) {
+        syncFreeCameraAnglesFromCamera();
+        ballCameraFollowEnabled = false;
+      } else {
+        this.setBallCameraFollowEnabled(true);
+      }
+
+      return freeCameraEnabled;
+    },
+
+    rotateFreeCamera(deltaX, deltaY) {
+      if (!freeCameraEnabled) {
+        return;
+      }
+
+      freeCameraYaw -= deltaX * FREE_CAMERA_LOOK_SENSITIVITY;
+      freeCameraPitch = THREE.MathUtils.clamp(
+        freeCameraPitch - deltaY * FREE_CAMERA_LOOK_SENSITIVITY,
+        -FREE_CAMERA_PITCH_LIMIT_RADIANS,
+        FREE_CAMERA_PITCH_LIMIT_RADIANS,
+      );
+      applyFreeCameraRotation();
+    },
+
+    updateFreeCamera(deltaSeconds, movementInput) {
+      if (!freeCameraEnabled) {
+        return;
+      }
+
+      camera.getWorldDirection(freeCameraForward);
+      freeCameraForward.normalize();
+      freeCameraRight.crossVectors(freeCameraForward, WORLD_UP);
+      if (freeCameraRight.lengthSq() <= 1e-8) {
+        freeCameraRight.set(1, 0, 0);
+      } else {
+        freeCameraRight.normalize();
+      }
+
+      freeCameraTranslation.set(0, 0, 0);
+      freeCameraTranslation.addScaledVector(freeCameraForward, movementInput.forward);
+      freeCameraTranslation.addScaledVector(freeCameraRight, movementInput.right);
+      if (freeCameraTranslation.lengthSq() <= 1e-8) {
+        return;
+      }
+
+      freeCameraTranslation.normalize().multiplyScalar(FREE_CAMERA_MOVE_SPEED * deltaSeconds);
+      camera.position.add(freeCameraTranslation);
+      camera.updateMatrixWorld(true);
+    },
+
     setBallCameraFollowEnabled(enabled) {
       ballCameraFollowEnabled = enabled;
       if (enabled) {
-        this.resetBallCameraFollow();
+        restoreBallCameraFollowPose();
       }
     },
 
@@ -188,12 +303,39 @@ export function createViewerScene(canvas) {
     positionBallAtStart() {
       ballRoot.position.copy(BALL_START_POSITION);
       if (ballCameraFollowEnabled) {
-        this.resetBallCameraFollow();
+        restoreBallCameraFollowPose();
       }
     },
 
     positionCharacterForBall(ballPosition) {
       setCharacterAddressPosition(ballPosition);
+    },
+
+    faceViewToward(ballPosition, targetPosition) {
+      desiredFacingDirection.subVectors(targetPosition, ballPosition);
+      desiredFacingDirection.y = 0;
+      if (desiredFacingDirection.lengthSq() <= 1e-8) {
+        return;
+      }
+
+      desiredFacingDirection.normalize();
+      currentFacingDirection.subVectors(ballPosition, camera.position);
+      currentFacingDirection.y = 0;
+      if (currentFacingDirection.lengthSq() <= 1e-8) {
+        getCharacterForward(currentFacingDirection);
+      } else {
+        currentFacingDirection.normalize();
+      }
+
+      const rotationDelta = Math.atan2(
+        (currentFacingDirection.z * desiredFacingDirection.x) - (currentFacingDirection.x * desiredFacingDirection.z),
+        THREE.MathUtils.clamp(currentFacingDirection.dot(desiredFacingDirection), -1, 1),
+      );
+      if (Math.abs(rotationDelta) <= 1e-5) {
+        return;
+      }
+
+      this.rotateCharacterAroundBall(ballPosition, rotationDelta);
     },
 
     rotateCharacterAroundBall(ballPosition, angleRadians) {
@@ -224,21 +366,18 @@ export function createViewerScene(canvas) {
       controls.maxDistance = mapBounds && !mapBounds.isEmpty()
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
         : 500;
-      this.resetBallCameraFollow();
+      ballCameraOffset.copy(camera.position).sub(lookFocusPoint);
       controls.update();
       this.applyCameraTilt();
       camera.updateProjectionMatrix();
     },
 
     resetBallCameraFollow() {
-      const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
-      controls.target.copy(followTarget);
-      ballCameraOffset.copy(camera.position).sub(followTarget);
-      this.applyCameraTilt();
+      restoreBallCameraFollowPose();
     },
 
     updateBallFollowCamera(deltaSeconds) {
-      if (!ballCameraFollowEnabled) {
+      if (!ballCameraFollowEnabled || freeCameraEnabled) {
         return;
       }
 
@@ -262,6 +401,9 @@ export function createViewerScene(canvas) {
     resize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
+      if (freeCameraEnabled) {
+        applyFreeCameraRotation();
+      }
       updateRendererSize(renderer);
     },
   };
