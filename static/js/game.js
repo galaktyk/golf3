@@ -51,6 +51,7 @@ let freeCameraMoveBackward = false;
 let freeCameraMoveLeft = false;
 let freeCameraMoveRight = false;
 let freeCameraLookActive = false;
+let ignoreNextFreeCameraMouseMove = false;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -107,6 +108,7 @@ window.addEventListener('keydown', (event) => {
       document.exitPointerLock();
     }
     freeCameraLookActive = false;
+    ignoreNextFreeCameraMouseMove = false;
     event.preventDefault();
     hud.setStatus(freeCameraEnabled ? 'Free camera enabled.' : 'Follow camera enabled.');
     return;
@@ -211,6 +213,7 @@ window.addEventListener('blur', () => {
   freeCameraMoveLeft = false;
   freeCameraMoveRight = false;
   freeCameraLookActive = false;
+  ignoreNextFreeCameraMouseMove = false;
   if (document.pointerLockElement === dom.canvas) {
     document.exitPointerLock();
   }
@@ -218,6 +221,7 @@ window.addEventListener('blur', () => {
 
 document.addEventListener('pointerlockchange', () => {
   freeCameraLookActive = document.pointerLockElement === dom.canvas;
+  ignoreNextFreeCameraMouseMove = freeCameraLookActive;
 });
 
 dom.canvas.addEventListener('contextmenu', (event) => {
@@ -233,6 +237,7 @@ dom.canvas.addEventListener('mousedown', (event) => {
     return;
   }
 
+  ignoreNextFreeCameraMouseMove = true;
   if (dom.canvas.requestPointerLock) {
     dom.canvas.requestPointerLock();
   } else {
@@ -252,10 +257,16 @@ window.addEventListener('mouseup', (event) => {
   }
 
   freeCameraLookActive = false;
+  ignoreNextFreeCameraMouseMove = false;
 });
 
 window.addEventListener('mousemove', (event) => {
   if (!viewerScene.isFreeCameraEnabled() || !freeCameraLookActive) {
+    return;
+  }
+
+  if (ignoreNextFreeCameraMouseMove) {
+    ignoreNextFreeCameraMouseMove = false;
     return;
   }
 
