@@ -5,8 +5,9 @@ const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
 const clubPrevButton = document.querySelector('#club-prev-button');
 const clubNextButton = document.querySelector('#club-next-button');
-const rotateLeftButton = document.querySelector('#rotate-left-button');
-const rotateRightButton = document.querySelector('#rotate-right-button');
+const joystickZone = document.querySelector('#aim-joystick');
+const joystickVisual = joystickZone?.querySelector('.aim-joystick-visual');
+const joystickKnob = joystickZone?.querySelector('.aim-joystick-knob');
 const statusLabel = document.querySelector('#controller-status');
 const debugLabel = document.querySelector('#controller-debug');
 
@@ -19,6 +20,16 @@ const orientationEventName = getOrientationEventName();
 const rawQuaternion = new THREE.Quaternion();
 const calibratedQuaternion = new THREE.Quaternion();
 const neutralInverse = new THREE.Quaternion();
+
+const joystickState = {
+  pointerId: null,
+  originX: 0,
+  originY: 0,
+  direction: null,
+};
+
+const JOYSTICK_RADIUS = 56;
+const JOYSTICK_DEADZONE = 18;
 
 let motionEnabled = false;
 let hasOrientation = false;
@@ -33,12 +44,12 @@ connectButton.addEventListener('click', async () => {
 
 calibrateButton.addEventListener('click', () => {
   if (!hasOrientation) {
-    statusLabel.textContent = 'Move the phone first so a pose can be captured.';
+    statusLabel.textContent = 'Move phone';
     return;
   }
 
   neutralInverse.copy(rawQuaternion).invert();
-  statusLabel.textContent = 'Neutral orientation captured.';
+  statusLabel.textContent = 'Forward set';
 });
 
 clubPrevButton.addEventListener('click', () => {
@@ -49,8 +60,8 @@ clubNextButton.addEventListener('click', () => {
   sendControlTap(CONTROL_ACTIONS.clubNext);
 });
 
-bindHoldControl(rotateLeftButton, CONTROL_ACTIONS.rotateLeft);
-bindHoldControl(rotateRightButton, CONTROL_ACTIONS.rotateRight);
+bindAimJoystick();
+setControlButtonsEnabled(false);
 
 if (orientationEventName) {
   window.addEventListener(orientationEventName, (event) => {
@@ -65,7 +76,7 @@ if (orientationEventName) {
 
     rawQuaternion.copy(deviceOrientationToQuaternion(alpha, beta, gamma, orient));
     hasOrientation = true;
-    debugLabel.textContent = formatQuaternion(rawQuaternion);
+    debugLabel.textContent = `ori ${formatQuaternion(rawQuaternion)}`;
   });
 }
 
@@ -97,12 +108,13 @@ async function enableMotion() {
     }
   } catch (error) {
     motionEnabled = false;
-    statusLabel.textContent = `Motion permission failed: ${error.message}`;
+    statusLabel.textContent = 'Motion error';
+    debugLabel.textContent = error.message;
     return false;
   }
 
   if (!motionEnabled) {
-    statusLabel.textContent = 'Motion access was denied.';
+    statusLabel.textContent = 'Motion denied';
     calibrateButton.disabled = true;
     return false;
   }
@@ -144,7 +156,7 @@ function connectOrientationSocket() {
   });
 
   orientationSocket.addEventListener('error', () => {
-    statusLabel.textContent = 'Could not connect to the server.';
+    statusLabel.textContent = 'Server error';
   });
 }
 
@@ -162,41 +174,80 @@ function connectControlSocket() {
 
   controlSocket.addEventListener('close', () => {
     setControlButtonsEnabled(false);
+    releaseAimJoystick();
     updateConnectionStatus();
   });
 
   controlSocket.addEventListener('error', () => {
     setControlButtonsEnabled(false);
-    statusLabel.textContent = 'Could not connect control channel.';
+    releaseAimJoystick();
+    statusLabel.textContent = 'Control error';
   });
 }
 
-function bindHoldControl(button, action) {
-  if (!button) {
+function bindAimJoystick() {
+  if (!joystickZone || !joystickVisual || !joystickKnob) {
     return;
   }
 
-  const start = (event) => {
-    event.preventDefault();
-    sendControlState(action, true);
-  };
-  const stop = (event) => {
-    if (event) {
-      event.preventDefault();
+  joystickZone.addEventListener('pointerdown', (event) => {
+    if (joystickState.pointerId !== null) {
+      return;
     }
-    sendControlState(action, false);
+
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    if (!isAimEnabled()) {
+      return;
+    }
+
+    event.preventDefault();
+    const rect = joystickZone.getBoundingClientRect();
+    joystickState.pointerId = event.pointerId;
+    joystickState.originX = event.clientX - rect.left;
+    joystickState.originY = event.clientY - rect.top;
+    joystickZone.classList.add('is-active');
+    joystickZone.setPointerCapture(event.pointerId);
+    joystickVisual.style.setProperty('--joystick-x', `${joystickState.originX}px`);
+    joystickVisual.style.setProperty('--joystick-y', `${joystickState.originY}px`);
+    joystickKnob.style.transform = 'translate(-50%, -50%)';
+    applyAimFromDelta(0);
+  });
+
+  joystickZone.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== joystickState.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    const rect = joystickZone.getBoundingClientRect();
+    const currentX = event.clientX - rect.left;
+    const deltaX = currentX - joystickState.originX;
+    const limitedX = clamp(deltaX, -JOYSTICK_RADIUS, JOYSTICK_RADIUS);
+
+    joystickKnob.style.transform = `translate(calc(-50% + ${limitedX}px), -50%)`;
+    applyAimFromDelta(limitedX);
+  });
+
+  const endInteraction = (event) => {
+    if (event.pointerId !== joystickState.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    releaseAimJoystick();
   };
 
-  button.addEventListener('pointerdown', start);
-  button.addEventListener('pointerup', stop);
-  button.addEventListener('pointercancel', stop);
-  button.addEventListener('pointerleave', stop);
-  button.addEventListener('lostpointercapture', stop);
+  joystickZone.addEventListener('pointerup', endInteraction);
+  joystickZone.addEventListener('pointercancel', endInteraction);
+  joystickZone.addEventListener('lostpointercapture', endInteraction);
 }
 
 window.addEventListener('blur', () => {
-  sendControlState(CONTROL_ACTIONS.rotateLeft, false);
-  sendControlState(CONTROL_ACTIONS.rotateRight, false);
+  stopAimControls();
+  releaseAimJoystick();
 });
 
 function sendControlTap(action) {
@@ -212,10 +263,14 @@ function sendControlState(action, active) {
 }
 
 function setControlButtonsEnabled(enabled) {
-  for (const button of [clubPrevButton, clubNextButton, rotateLeftButton, rotateRightButton]) {
+  for (const button of [clubPrevButton, clubNextButton]) {
     if (button) {
       button.disabled = !enabled;
     }
+  }
+
+  if (joystickZone) {
+    joystickZone.classList.toggle('is-disabled', !enabled);
   }
 }
 
@@ -224,25 +279,21 @@ function updateConnectionStatus() {
   const controlReady = controlSocket?.readyState === WebSocket.OPEN;
 
   if (!orientationReady && !controlReady) {
-    statusLabel.textContent = 'Disconnected from server.';
+    statusLabel.textContent = 'Offline';
     return;
   }
 
   if (!orientationReady) {
-    statusLabel.textContent = 'Control connected. Orientation channel disconnected.';
+    statusLabel.textContent = 'Controls only';
     return;
   }
 
   if (!controlReady) {
-    statusLabel.textContent = motionEnabled
-      ? 'Orientation connected. Control channel disconnected.'
-      : 'Orientation connected. Enable motion to start streaming.';
+    statusLabel.textContent = motionEnabled ? 'Motion only' : 'Enable motion';
     return;
   }
 
-  statusLabel.textContent = motionEnabled
-    ? 'Connected. Streaming orientation and remote controls.'
-    : 'Connected. Enable motion to start streaming.';
+  statusLabel.textContent = motionEnabled ? 'Live' : 'Enable motion';
 }
 
 function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
@@ -277,8 +328,58 @@ function getOrientationEventName() {
 
 function getUnsupportedMessage() {
   if (!window.isSecureContext) {
-    return 'Motion sensors are unavailable here. This phone browser likely requires HTTPS or localhost for device orientation.';
+    return 'Use HTTPS';
   }
 
-  return 'Device orientation is not available in this phone browser.';
+  return 'No motion';
+}
+
+function isAimEnabled() {
+  return controlSocket?.readyState === WebSocket.OPEN;
+}
+
+function applyAimFromDelta(deltaX) {
+  let direction = null;
+
+  if (deltaX <= -JOYSTICK_DEADZONE) {
+    direction = CONTROL_ACTIONS.rotateLeft;
+  } else if (deltaX >= JOYSTICK_DEADZONE) {
+    direction = CONTROL_ACTIONS.rotateRight;
+  }
+
+  if (direction === joystickState.direction) {
+    return;
+  }
+
+  if (joystickState.direction) {
+    sendControlState(joystickState.direction, false);
+  }
+
+  joystickState.direction = direction;
+
+  if (direction) {
+    sendControlState(direction, true);
+  }
+}
+
+function stopAimControls() {
+  if (joystickState.direction) {
+    sendControlState(joystickState.direction, false);
+    joystickState.direction = null;
+  }
+}
+
+function releaseAimJoystick() {
+  if (!joystickZone || !joystickKnob) {
+    return;
+  }
+
+  stopAimControls();
+  joystickState.pointerId = null;
+  joystickZone.classList.remove('is-active');
+  joystickKnob.style.transform = 'translate(-50%, -50%)';
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }

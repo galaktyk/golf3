@@ -405,12 +405,12 @@ function applyRemoteControl(action, active) {
   switch (action) {
     case CONTROL_ACTIONS.clubPrevious:
       if (active) {
-        cycleActiveClub(-1);
+        selectPreviousClub();
       }
       break;
     case CONTROL_ACTIONS.clubNext:
       if (active) {
-        cycleActiveClub(1);
+        selectNextClub();
       }
       break;
     case CONTROL_ACTIONS.rotateLeft:
@@ -540,17 +540,25 @@ function initializeClubDebugUi() {
   }
 
   dom.clubPrevButton.addEventListener('click', () => {
-    cycleActiveClub(-1);
+    selectPreviousClub();
   });
   dom.clubNextButton.addEventListener('click', () => {
-    cycleActiveClub(1);
+    selectNextClub();
   });
 }
 
-function cycleActiveClub(direction) {
+function selectPreviousClub() {
+  moveActiveClub(1);
+}
+
+function selectNextClub() {
+  moveActiveClub(-1);
+}
+
+function moveActiveClub(delta) {
   const clubIndex = ACTIVE_CLUB_SET.clubs.findIndex((club) => club.id === activeClub.id);
   const nextClubIndex = clubIndex >= 0
-    ? (clubIndex + direction + ACTIVE_CLUB_SET.clubs.length) % ACTIVE_CLUB_SET.clubs.length
+    ? Math.min(Math.max(clubIndex + delta, 0), ACTIVE_CLUB_SET.clubs.length - 1)
     : 0;
   activeClub = ACTIVE_CLUB_SET.clubs[nextClubIndex];
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);

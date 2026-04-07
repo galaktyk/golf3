@@ -8,25 +8,28 @@
 </head>
 <body class="controller-body">
   <main class="controller-shell">
-    <section class="panel controls-panel">
-      <div class="control-row control-row-top">
-        <button id="connect-button" class="action-button primary">Connect</button>
-        <button id="calibrate-button" class="action-button secondary" disabled>Set Forward</button>
-      </div>
-      <div class="control-row control-row-triple">
-        <button id="club-prev-button" class="action-button secondary" disabled>&lt;</button>
-        <span class="control-label">Club</span>
-        <button id="club-next-button" class="action-button secondary" disabled>&gt;</button>
-      </div>
-      <div class="control-row control-row-triple">
-        <button id="rotate-left-button" class="action-button secondary hold-button" disabled>&lt;</button>
-        <span class="control-label">Aim</span>
-        <button id="rotate-right-button" class="action-button secondary hold-button" disabled>&gt;</button>
-      </div>
-    </section>
-    <section class="panel status-panel">
-      <p id="controller-status">Idle</p>
-      <p id="controller-debug" class="debug-copy">No orientation yet.</p>
+    <section class="controller-safe-zone" aria-hidden="true"></section>
+    <section class="controller-playfield">
+      <section id="aim-joystick" class="aim-joystick" aria-label="Aim joystick">
+        <div class="aim-joystick-visual" aria-hidden="true">
+          <div class="aim-joystick-base"></div>
+          <div class="aim-joystick-knob"></div>
+        </div>
+      </section>
+      <section class="controller-dock">
+        <section class="panel controls-panel">
+          <p id="controller-status" class="status-pill">Offline</p>
+          <div class="control-row club-row">
+            <button id="club-prev-button" class="action-button secondary club-button" disabled aria-label="Previous club">&lt;</button>
+            <button id="club-next-button" class="action-button secondary club-button" disabled aria-label="Next club">&gt;</button>
+          </div>
+          <div class="control-row control-row-top dock-actions-row">
+            <button id="connect-button" class="action-button primary">Connect</button>
+            <button id="calibrate-button" class="action-button secondary" disabled>Forward</button>
+          </div>
+        </section>
+        <p id="controller-debug" class="orientation-copy">Orientation waiting</p>
+      </section>
     </section>
   </main>
   <script type="importmap">

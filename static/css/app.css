@@ -30,7 +30,8 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
   font-family: "B GenJyuu Gothic X", "Segoe UI Variable", "Aptos", sans-serif;
   color: var(--text);
   background:
@@ -91,16 +92,30 @@ body::before {
 }
 
 .controller-body {
-  display: block;
-  padding: 10px;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .controller-shell {
-  width: min(100%, 760px);
-  min-height: calc(100vh - 20px);
+  width: 100%;
+  height: 100dvh;
   display: grid;
-  gap: 10px;
-  align-content: start;
+  grid-template-rows: 35dvh minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.controller-safe-zone {
+  pointer-events: none;
+}
+
+.controller-playfield {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .panel {
@@ -166,13 +181,92 @@ p {
 }
 
 .controls-panel {
-  position: sticky;
-  top: 0;
-  left: 0;
   display: grid;
+  gap: 12px;
+  padding: 12px;
+  width: min(100%, 360px);
+}
+
+.controller-dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  padding: 8px;
-  width: min(100%, 240px);
+  padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
+}
+
+.aim-joystick {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.aim-joystick::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: min(52vw, 260px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 72%, transparent 72%);
+  pointer-events: none;
+}
+
+.aim-joystick.is-disabled {
+  opacity: 0.42;
+}
+
+.aim-joystick-visual {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  transform: translate(var(--joystick-x, 0px), var(--joystick-y, 0px));
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.aim-joystick.is-active .aim-joystick-visual {
+  opacity: 1;
+}
+
+.aim-joystick-base,
+.aim-joystick-knob {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.aim-joystick-base {
+  width: 132px;
+  height: 132px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(4, 11, 20, 0.28);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.26);
+}
+
+.aim-joystick-knob {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, rgba(154, 211, 255, 0.92), rgba(98, 179, 235, 0.92));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.status-pill {
+  justify-self: start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .control-row {
@@ -184,22 +278,30 @@ p {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.club-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .control-row-triple {
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  grid-template-columns: 52px minmax(0, 1fr) 52px;
   align-items: center;
+}
+
+.compact-row {
+  min-height: 52px;
 }
 
 .control-label {
   display: grid;
   place-items: center;
-  min-height: 38px;
+  min-height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -207,15 +309,26 @@ p {
   appearance: none;
   border: none;
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 12px;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
   white-space: nowrap;
-  min-height: 40px;
+  min-height: 48px;
+}
+
+.club-button {
+  aspect-ratio: 1;
+  min-height: 112px;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.dock-actions-row .action-button {
+  min-height: 56px;
 }
 
 .action-button:hover,
@@ -241,21 +354,33 @@ p {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.debug-copy {
-  margin-top: 8px;
+.orientation-copy {
+  margin: 0;
+  padding: 0 2px;
   color: var(--warning);
-  font-size: 0.82rem;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  text-align: center;
+  letter-spacing: 0.03em;
 }
 
-.status-panel {
-  margin-top: auto;
-  width: min(100%, 240px);
-  padding: 8px 10px;
-}
+@media (max-width: 420px) {
+  .controller-shell {
+    grid-template-rows: 35dvh minmax(0, 1fr);
+  }
 
-#controller-status {
-  color: var(--muted);
-  font-size: 0.74rem;
+  .controller-dock {
+    padding-inline: 10px;
+  }
+
+  .controls-panel {
+    width: 100%;
+  }
+
+  .club-button {
+    min-height: 96px;
+    font-size: 1.7rem;
+  }
 }
 
 .debug-grid {
