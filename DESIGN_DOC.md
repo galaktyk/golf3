@@ -32,11 +32,11 @@ on the server pc, will open a webpage with threejs scene to visualize the golf c
 
 ## Player part
 
-1.  the golf club (phone for now) will open player page which use DeviceOrientationEvent  api to get the orientation of the phone and send it to the server via websocket 
+1.  the golf club (phone for now) will open player page which use DeviceOrientationEvent and DeviceMotionEvent api to get the phone pose and gyroscope motion and send it to the server via websocket 
 
 -  neutral calibration  button to set the current phone pose as the neutral orientation, so that the player can swing the phone in a more natural way without worrying about the initial orientation.
 
 
-- Orientation data will be sent at 60 Hz.
+- Swing-state data will be sent at 60 Hz.
 - The player page has a button to set the current phone pose as the neutral orientation.
-- WebSocket payload format: binary packet containing 4 little-endian signed int16 quaternion components (x, y, z, w), normalized from [-32767, 32767] to [-1, 1] on decode. The viewer renormalizes the quaternion before applying it.
+- WebSocket payload format: a 16-byte binary packet containing protocol version, packet kind, a sequence number, 4 little-endian signed int16 quaternion components (x, y, z, w), a phone-derived swing speed value, and a motion age field so the viewer can reject stale speed samples. The viewer renormalizes the quaternion before applying it.

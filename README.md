@@ -3,7 +3,7 @@
 This prototype hosts two browser pages from a FastAPI server on the local network:
 
 - `/game` renders a Three.js scene with the golf club model.
-- `/golf_club` runs on a phone, reads `DeviceOrientationEvent`, applies neutral calibration, and streams binary quaternion packets over WebSocket.
+- `/golf_club` runs on a phone, reads `DeviceOrientationEvent` and `DeviceMotionEvent`, applies neutral calibration, derives swing speed from gyroscope motion, and streams binary swing-state packets over WebSocket.
 
 ## Run
 
@@ -14,7 +14,7 @@ This prototype hosts two browser pages from a FastAPI server on the local networ
 5. Open `http://PC_IP:8000/game` on the server PC.
 6. Open `http://PC_IP:8000/golf_club` on the phone.
 
-Phone note: some mobile browsers, especially on iPhone, require `https://` or `localhost` before `DeviceOrientationEvent` is exposed. If the player page says motion sensors are unavailable, try Safari/Chrome on a supported device or serve the player page over HTTPS.
+Phone note: some mobile browsers, especially on iPhone, require `https://` or `localhost` before `DeviceOrientationEvent` and `DeviceMotionEvent` are exposed. If the player page says motion sensors are unavailable, try Safari/Chrome on a supported device or serve the player page over HTTPS.
 
 ## Local HTTPS
 
@@ -39,6 +39,9 @@ Important note for phones:
 
 ## Protocol
 
-- Orientation packets are binary and 8 bytes long.
-- Each packet contains little-endian signed `int16` values for quaternion `(x, y, z, w)`.
-- Each component is decoded from `[-32767, 32767]` into `[-1, 1]` and renormalized before use.
+- Swing-state packets are binary and 16 bytes long.
+- Byte `0` is packet version `1`; byte `1` is packet kind `1`; bytes `2-3` carry a little-endian sequence number.
+- Bytes `4-11` store quaternion `(x, y, z, w)` as little-endian signed `int16` values.
+- Bytes `12-13` store phone-reported swing speed in hundredths of meters per second.
+- Bytes `14-15` store motion sample age in milliseconds so the viewer can reject stale speed data.
+- Quaternion components are decoded from `[-32767, 32767]` into `[-1, 1]` and renormalized before use.

@@ -25,9 +25,18 @@ const CLUB_HEAD_SIDE_AXIS = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-export function resolveClubBallImpact(characterTelemetry, ballPosition, activeClub = null) {
+export function resolveClubBallImpact(
+  characterTelemetry,
+  ballPosition,
+  sensorSwingSpeedMetersPerSecond,
+  activeClub = null,
+) {
   const history = characterTelemetry.clubHeadSampleHistory;
   if (!history || history.length === 0) {
+    return null;
+  }
+
+  if (!Number.isFinite(sensorSwingSpeedMetersPerSecond) || sensorSwingSpeedMetersPerSecond <= 0) {
     return null;
   }
 
@@ -47,21 +56,29 @@ export function resolveClubBallImpact(characterTelemetry, ballPosition, activeCl
     return null;
   }
 
-  const launchData = buildImpactLaunchData({
-    ...impactSample,
-    velocity: impactVelocity,
-    speedMetersPerSecond: impactSpeedMetersPerSecond,
-  }, activeClub);
+  const launchData = buildImpactLaunchData(
+    {
+      ...impactSample,
+      velocity: impactVelocity,
+      speedMetersPerSecond: impactSpeedMetersPerSecond,
+      sensorSwingSpeedMetersPerSecond,
+    },
+    activeClub,
+  );
 
   return {
     launchData,
-    impactSpeedMetersPerSecond,
+    impactSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
   };
 }
 
-export function getClubLaunchPreview(characterTelemetry, activeClub = null) {
+export function getClubLaunchPreview(characterTelemetry, sensorSwingSpeedMetersPerSecond, activeClub = null) {
   if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadVelocity) {
+    return null;
+  }
+
+  if (!Number.isFinite(sensorSwingSpeedMetersPerSecond) || sensorSwingSpeedMetersPerSecond <= 0) {
     return null;
   }
 
@@ -71,14 +88,16 @@ export function getClubLaunchPreview(characterTelemetry, activeClub = null) {
       velocity: characterTelemetry.clubHeadVelocity,
       characterFacingForward: characterTelemetry.characterFacingForward,
       speedMetersPerSecond: characterTelemetry.clubHeadSpeedMetersPerSecond,
+      sensorSwingSpeedMetersPerSecond,
     },
     activeClub,
   );
 
   return {
     ...launchMetrics,
-    clubHeadSpeedMetersPerSecond: characterTelemetry.clubHeadSpeedMetersPerSecond,
-    isReady: characterTelemetry.clubHeadSpeedMetersPerSecond > 0.1,
+    swingSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
+    clubHeadSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
+    isReady: sensorSwingSpeedMetersPerSecond > 0.1,
   };
 }
 
@@ -196,7 +215,7 @@ function getLaunchMetrics(impactSample, activeClub) {
   );
 
   return {
-    ballSpeed: impactSample.speedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
+    ballSpeed: impactSample.sensorSwingSpeedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
     baseLoftDegrees,
     measuredFacePitchDegrees,
     dynamicLoftDegrees,

@@ -161,8 +161,10 @@ export function createViewerHud(dom) {
         return;
       }
 
-      dom.launchPreviewMessage.textContent = 'Captured at launch from the impact calculation.';
-      dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
+      dom.launchPreviewMessage.textContent = 'Captured at launch from phone motion and club face impact.';
+      dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(
+        preview.swingSpeedMetersPerSecond ?? preview.clubHeadSpeedMetersPerSecond,
+      );
       dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);

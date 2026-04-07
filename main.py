@@ -12,6 +12,9 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 ASSETS_DIR = BASE_DIR / "assets"
 VENDOR_DIR = BASE_DIR / "node_modules"
+SWING_PACKET_SIZE_BYTES = 16
+SWING_PACKET_VERSION = 1
+SWING_PACKET_KIND = 1
 
 
 class ConnectionHub:
@@ -136,7 +139,12 @@ async def websocket_endpoint(websocket: WebSocket, role: str = "viewer") -> None
                 continue
 
             payload = message.get("bytes")
-            if payload and len(payload) == 8:
+            if (
+                payload
+                and len(payload) == SWING_PACKET_SIZE_BYTES
+                and payload[0] == SWING_PACKET_VERSION
+                and payload[1] == SWING_PACKET_KIND
+            ):
                 await hub.forward_orientation(payload)
     except WebSocketDisconnect:
         pass

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CONTROL_ACTIONS, decodeControlMessage, decodeQuaternionPacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
@@ -26,6 +26,12 @@ import { createViewerScene } from '/static/js/game/scene.js';
 
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
+const incomingSwingState = {
+  swingSpeedMetersPerSecond: 0,
+  motionAgeMilliseconds: 65535,
+  sequence: 0,
+  receivedAtTimeMs: 0,
+};
 const DEBUG_PARAMS = new URLSearchParams(window.location.search);
 const LAUNCH_DEBUG_ENABLED = DEBUG_PARAMS.has('launchDebug');
 const LAUNCH_DEBUG_INPUT_FIELDS = [
@@ -96,7 +102,12 @@ socket.addEventListener('message', (event) => {
     return;
   }
 
-  decodeQuaternionPacket(event.data, incomingQuaternion);
+  const decodedSwingState = decodeSwingStatePacket(event.data, incomingQuaternion, incomingSwingState);
+  if (!decodedSwingState) {
+    return;
+  }
+
+  incomingSwingState.receivedAtTimeMs = performance.now();
   hasIncomingOrientation = true;
   packetsSinceLastSample += 1;
   hud.updateQuaternion(incomingQuaternion);
@@ -458,14 +469,35 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  const impact = resolveClubBallImpact(characterTelemetry, ballTelemetry.position, activeClub);
+  const impact = resolveClubBallImpact(
+    characterTelemetry,
+    ballTelemetry.position,
+    getIncomingSwingSpeedMetersPerSecond(),
+    activeClub,
+  );
   if (!impact) {
     return;
   }
 
-  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, activeClub));
+  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, getIncomingSwingSpeedMetersPerSecond(), activeClub));
   launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   clubBallContactLatched = true;
+}
+
+function getIncomingSwingSpeedMetersPerSecond() {
+  if (!Number.isFinite(incomingSwingState.swingSpeedMetersPerSecond) || incomingSwingState.swingSpeedMetersPerSecond <= 0) {
+    return 0;
+  }
+
+  const receiveAgeMilliseconds = incomingSwingState.receivedAtTimeMs > 0
+    ? Math.max(performance.now() - incomingSwingState.receivedAtTimeMs, 0)
+    : 65535;
+  const totalAgeMilliseconds = incomingSwingState.motionAgeMilliseconds + receiveAgeMilliseconds;
+  if (totalAgeMilliseconds > 250) {
+    return 0;
+  }
+
+  return incomingSwingState.swingSpeedMetersPerSecond;
 }
 
 function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = null) {

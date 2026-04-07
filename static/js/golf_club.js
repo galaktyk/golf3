@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CONTROL_ACTIONS, encodeControlMessage, encodeQuaternionToPacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, encodeControlMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
 
 const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
@@ -16,6 +16,12 @@ const euler = new THREE.Euler();
 const q0 = new THREE.Quaternion();
 const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 const orientationEventName = getOrientationEventName();
+const motionEventName = getMotionEventName();
+
+const SWING_RADIUS_METERS = 1.05;
+const SWING_SPEED_FOLLOW_RATE = 18;
+const SWING_SPEED_DECAY_RATE = 6;
+const MOTION_FRESHNESS_LIMIT_MS = 250;
 
 const rawQuaternion = new THREE.Quaternion();
 const calibratedQuaternion = new THREE.Quaternion();
@@ -33,8 +39,14 @@ const JOYSTICK_DEADZONE = 18;
 
 let motionEnabled = false;
 let hasOrientation = false;
+let hasMotion = false;
 let orientationSocket = null;
 let controlSocket = null;
+let filteredSwingSpeedMetersPerSecond = 0;
+let decayingSwingSpeedMetersPerSecond = 0;
+let lastMotionSampleTimeMs = 0;
+let lastMotionDebugUpdateTimeMs = 0;
+let packetSequence = 0;
 
 neutralInverse.identity();
 
@@ -76,7 +88,44 @@ if (orientationEventName) {
 
     rawQuaternion.copy(deviceOrientationToQuaternion(alpha, beta, gamma, orient));
     hasOrientation = true;
-    debugLabel.textContent = `ori ${formatQuaternion(rawQuaternion)}`;
+    updateDebugLabel();
+  });
+}
+
+if (motionEventName) {
+  window.addEventListener(motionEventName, (event) => {
+    if (!motionEnabled) {
+      return;
+    }
+
+    const sampleTimeMs = Number.isFinite(event.timeStamp) ? event.timeStamp : performance.now();
+    const deltaSeconds = lastMotionSampleTimeMs > 0
+      ? Math.min(Math.max((sampleTimeMs - lastMotionSampleTimeMs) / 1000, 1 / 240), 0.25)
+      : (1 / 60);
+    lastMotionSampleTimeMs = sampleTimeMs;
+
+    const instantaneousSwingSpeedMetersPerSecond = getInstantaneousSwingSpeedMetersPerSecond(event.rotationRate);
+    if (hasFiniteRotationRate(event.rotationRate)) {
+      hasMotion = true;
+    }
+
+    const followAlpha = 1 - Math.exp(-SWING_SPEED_FOLLOW_RATE * deltaSeconds);
+    filteredSwingSpeedMetersPerSecond = THREE.MathUtils.lerp(
+      filteredSwingSpeedMetersPerSecond,
+      instantaneousSwingSpeedMetersPerSecond,
+      followAlpha,
+    );
+
+    const decayMultiplier = Math.exp(-SWING_SPEED_DECAY_RATE * deltaSeconds);
+    decayingSwingSpeedMetersPerSecond = Math.max(
+      filteredSwingSpeedMetersPerSecond,
+      decayingSwingSpeedMetersPerSecond * decayMultiplier,
+    );
+
+    if (sampleTimeMs - lastMotionDebugUpdateTimeMs >= 32) {
+      lastMotionDebugUpdateTimeMs = sampleTimeMs;
+      updateDebugLabel();
+    }
   });
 }
 
@@ -90,11 +139,17 @@ setInterval(() => {
   }
 
   calibratedQuaternion.copy(neutralInverse).multiply(rawQuaternion).normalize();
-  orientationSocket.send(encodeQuaternionToPacket(calibratedQuaternion));
+  orientationSocket.send(encodeSwingStatePacket({
+    quaternion: calibratedQuaternion,
+    swingSpeedMetersPerSecond: getOutboundSwingSpeedMetersPerSecond(),
+    motionAgeMilliseconds: getMotionAgeMilliseconds(),
+    sequence: packetSequence,
+  }));
+  packetSequence = (packetSequence + 1) & 0xffff;
 }, 1000 / 60);
 
 async function enableMotion() {
-  if (!orientationEventName) {
+  if (!orientationEventName || !motionEventName) {
     statusLabel.textContent = getUnsupportedMessage();
     return false;
   }
@@ -105,6 +160,11 @@ async function enableMotion() {
       motionEnabled = permission === 'granted';
     } else {
       motionEnabled = true;
+    }
+
+    if (motionEnabled && typeof window.DeviceMotionEvent?.requestPermission === 'function') {
+      const motionPermission = await window.DeviceMotionEvent.requestPermission();
+      motionEnabled = motionPermission === 'granted';
     }
   } catch (error) {
     motionEnabled = false;
@@ -293,7 +353,54 @@ function updateConnectionStatus() {
     return;
   }
 
+  if (!hasMotion && motionEventName) {
+    statusLabel.textContent = 'Gyro wait';
+    return;
+  }
+
   statusLabel.textContent = motionEnabled ? 'Live' : 'Enable motion';
+}
+
+function getInstantaneousSwingSpeedMetersPerSecond(rotationRate) {
+  const alpha = Number(rotationRate?.alpha ?? 0);
+  const beta = Number(rotationRate?.beta ?? 0);
+  const gamma = Number(rotationRate?.gamma ?? 0);
+
+  if (!Number.isFinite(alpha) || !Number.isFinite(beta) || !Number.isFinite(gamma)) {
+    return 0;
+  }
+
+  const angularSpeedRadiansPerSecond = THREE.MathUtils.degToRad(
+    Math.hypot(alpha, beta, gamma),
+  );
+  return angularSpeedRadiansPerSecond * SWING_RADIUS_METERS;
+}
+
+function hasFiniteRotationRate(rotationRate) {
+  return ['alpha', 'beta', 'gamma'].some((axis) => Number.isFinite(Number(rotationRate?.[axis])));
+}
+
+function getOutboundSwingSpeedMetersPerSecond() {
+  if (!hasMotion || getMotionAgeMilliseconds() > MOTION_FRESHNESS_LIMIT_MS) {
+    return 0;
+  }
+
+  return decayingSwingSpeedMetersPerSecond;
+}
+
+function getMotionAgeMilliseconds() {
+  if (!lastMotionSampleTimeMs) {
+    return 65535;
+  }
+
+  return Math.min(Math.max(performance.now() - lastMotionSampleTimeMs, 0), 65535);
+}
+
+function updateDebugLabel() {
+  const swingSpeed = getOutboundSwingSpeedMetersPerSecond();
+  const motionState = hasMotion ? `${swingSpeed.toFixed(2)} m/s` : 'gyro waiting';
+  const ageMs = getMotionAgeMilliseconds();
+  debugLabel.textContent = `ori ${formatQuaternion(rawQuaternion)} | swing ${motionState} | age ${ageMs} ms`;
 }
 
 function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
@@ -326,9 +433,25 @@ function getOrientationEventName() {
   return null;
 }
 
+function getMotionEventName() {
+  if ('ondevicemotion' in window || typeof window.DeviceMotionEvent !== 'undefined') {
+    return 'devicemotion';
+  }
+
+  return null;
+}
+
 function getUnsupportedMessage() {
   if (!window.isSecureContext) {
     return 'Use HTTPS';
+  }
+
+  if (!orientationEventName) {
+    return 'No orientation';
+  }
+
+  if (!motionEventName) {
+    return 'No gyro';
   }
 
   return 'No motion';
