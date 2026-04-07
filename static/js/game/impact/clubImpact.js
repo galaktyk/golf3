@@ -11,17 +11,15 @@ import {
   CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
   CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
 } from '/static/js/game/constants.js';
-import { estimateVelocityAtSample, interpolateClubHeadSample } from '/static/js/game/impact/contactHistory.js';
+import { interpolateClubHeadSample } from '/static/js/game/impact/contactHistory.js';
 
 const SEGMENT_SWEEP = new THREE.Vector3();
 const SEGMENT_TO_BALL = new THREE.Vector3();
 const SEGMENT_START_TO_BALL = new THREE.Vector3();
-const CONTACT_TO_BALL = new THREE.Vector3();
-const HORIZONTAL_ARRIVAL_DIRECTION = new THREE.Vector3();
+const FORWARD_ALIGNMENT_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_FACING_FORWARD = new THREE.Vector3();
 const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
-const CLUB_HEAD_PITCH_DIRECTION = new THREE.Vector3();
-const CLUB_HEAD_SIDE_AXIS = new THREE.Vector3();
+const HORIZONTAL_LAUNCH_DIRECTION = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -40,27 +38,18 @@ export function resolveClubBallImpact(
     return null;
   }
 
+  if (sensorSwingSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
+    return null;
+  }
+
   const impactSample = findImpactSample(history, ballPosition, CLUB_HEAD_COLLIDER_RADIUS + BALL_RADIUS);
   if (!impactSample) {
-    return null;
-  }
-
-  const impactVelocity = estimateVelocityAtSample(history, impactSample);
-  const impactSpeedMetersPerSecond = impactVelocity.length();
-  if (impactSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
-    return null;
-  }
-
-  CONTACT_TO_BALL.subVectors(ballPosition, impactSample.position);
-  if (impactVelocity.dot(CONTACT_TO_BALL) <= 0) {
     return null;
   }
 
   const launchData = buildImpactLaunchData(
     {
       ...impactSample,
-      velocity: impactVelocity,
-      speedMetersPerSecond: impactSpeedMetersPerSecond,
       sensorSwingSpeedMetersPerSecond,
     },
     activeClub,
@@ -74,7 +63,7 @@ export function resolveClubBallImpact(
 }
 
 export function getClubLaunchPreview(characterTelemetry, sensorSwingSpeedMetersPerSecond, activeClub = null) {
-  if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadVelocity) {
+  if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadQuaternion) {
     return null;
   }
 
@@ -85,9 +74,7 @@ export function getClubLaunchPreview(characterTelemetry, sensorSwingSpeedMetersP
   const launchMetrics = getLaunchMetrics(
     {
       quaternion: characterTelemetry.clubHeadQuaternion,
-      velocity: characterTelemetry.clubHeadVelocity,
       characterFacingForward: characterTelemetry.characterFacingForward,
-      speedMetersPerSecond: characterTelemetry.clubHeadSpeedMetersPerSecond,
       sensorSwingSpeedMetersPerSecond,
     },
     activeClub,
@@ -163,31 +150,12 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
 }
 
 function buildImpactLaunchData(impactSample, activeClub) {
-  HORIZONTAL_ARRIVAL_DIRECTION.copy(impactSample.velocity);
-  HORIZONTAL_ARRIVAL_DIRECTION.y = 0;
-  if (HORIZONTAL_ARRIVAL_DIRECTION.lengthSq() <= 1e-8) {
-    HORIZONTAL_ARRIVAL_DIRECTION.copy(impactSample.characterFacingForward);
-  } else {
-    HORIZONTAL_ARRIVAL_DIRECTION.normalize();
-  }
-
-  HORIZONTAL_FACING_FORWARD.copy(impactSample.characterFacingForward);
-  HORIZONTAL_FACING_FORWARD.y = 0;
-  if (HORIZONTAL_FACING_FORWARD.lengthSq() <= 1e-8) {
-    HORIZONTAL_FACING_FORWARD.set(0, 0, -1);
-  } else {
-    HORIZONTAL_FACING_FORWARD.normalize();
-  }
-
   const launchMetrics = getLaunchMetrics(impactSample, activeClub);
 
   return {
     ballSpeed: launchMetrics.ballSpeed,
     verticalLaunchAngle: launchMetrics.verticalLaunchAngle,
-    horizontalLaunchAngle: getSignedHorizontalAngleDegrees(
-      HORIZONTAL_FACING_FORWARD,
-      HORIZONTAL_ARRIVAL_DIRECTION,
-    ),
+    horizontalLaunchAngle: getHorizontalLaunchAngleDegrees(impactSample),
     spinSpeed: BALL_IMPACT_DEBUG_SPIN_SPEED,
     spinAxis: BALL_IMPACT_DEBUG_SPIN_AXIS,
   };
@@ -260,40 +228,67 @@ function getMeasuredFacePitchDegrees(impactSample) {
     return null;
   }
 
-  CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
-    .applyQuaternion(impactSample.quaternion);
-  if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
+  if (!getLaunchDirection(impactSample)) {
     return null;
-  }
-
-  CLUB_HEAD_LAUNCH_DIRECTION.normalize();
-  if (CLUB_HEAD_LAUNCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
-    CLUB_HEAD_LAUNCH_DIRECTION.multiplyScalar(-1);
-  }
-
-  CLUB_HEAD_SIDE_AXIS.crossVectors(HORIZONTAL_ARRIVAL_DIRECTION, WORLD_UP);
-  if (CLUB_HEAD_SIDE_AXIS.lengthSq() <= 1e-8) {
-    return null;
-  }
-
-  CLUB_HEAD_SIDE_AXIS.normalize();
-  CLUB_HEAD_PITCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION);
-  CLUB_HEAD_PITCH_DIRECTION.addScaledVector(
-    CLUB_HEAD_SIDE_AXIS,
-    -CLUB_HEAD_PITCH_DIRECTION.dot(CLUB_HEAD_SIDE_AXIS),
-  );
-  if (CLUB_HEAD_PITCH_DIRECTION.lengthSq() <= 1e-8) {
-    return null;
-  }
-
-  CLUB_HEAD_PITCH_DIRECTION.normalize();
-  if (CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
-    CLUB_HEAD_PITCH_DIRECTION.multiplyScalar(-1);
   }
 
   const radians = Math.atan2(
-    CLUB_HEAD_PITCH_DIRECTION.y,
-    Math.max(CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION), 1e-6),
+    CLUB_HEAD_LAUNCH_DIRECTION.y,
+    Math.max(Math.hypot(CLUB_HEAD_LAUNCH_DIRECTION.x, CLUB_HEAD_LAUNCH_DIRECTION.z), 1e-6),
   );
   return THREE.MathUtils.radToDeg(radians);
+}
+
+function getHorizontalLaunchAngleDegrees(impactSample) {
+  if (!getLaunchDirection(impactSample)) {
+    return 0;
+  }
+
+  HORIZONTAL_FACING_FORWARD.copy(impactSample.characterFacingForward);
+  HORIZONTAL_FACING_FORWARD.y = 0;
+  if (HORIZONTAL_FACING_FORWARD.lengthSq() <= 1e-8) {
+    HORIZONTAL_FACING_FORWARD.set(0, 0, -1);
+  } else {
+    HORIZONTAL_FACING_FORWARD.normalize();
+  }
+
+  HORIZONTAL_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION);
+  HORIZONTAL_LAUNCH_DIRECTION.y = 0;
+  if (HORIZONTAL_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
+    HORIZONTAL_LAUNCH_DIRECTION.copy(HORIZONTAL_FACING_FORWARD);
+  } else {
+    HORIZONTAL_LAUNCH_DIRECTION.normalize();
+  }
+
+  return getSignedHorizontalAngleDegrees(
+    HORIZONTAL_FACING_FORWARD,
+    HORIZONTAL_LAUNCH_DIRECTION,
+  );
+}
+
+function getLaunchDirection(impactSample) {
+  if (!impactSample.quaternion) {
+    return false;
+  }
+
+  CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
+    .applyQuaternion(impactSample.quaternion);
+  if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
+    return false;
+  }
+
+  CLUB_HEAD_LAUNCH_DIRECTION.normalize();
+  FORWARD_ALIGNMENT_DIRECTION.copy(impactSample.characterFacingForward);
+  FORWARD_ALIGNMENT_DIRECTION.y = 0;
+  if (FORWARD_ALIGNMENT_DIRECTION.lengthSq() <= 1e-8) {
+    FORWARD_ALIGNMENT_DIRECTION.set(0, 0, -1);
+  } else {
+    FORWARD_ALIGNMENT_DIRECTION.normalize();
+  }
+
+  if (CLUB_HEAD_LAUNCH_DIRECTION.dot(FORWARD_ALIGNMENT_DIRECTION) < 0) {
+    CLUB_HEAD_LAUNCH_DIRECTION.multiplyScalar(-1);
+  }
+
+  return true;
 }
