@@ -130,12 +130,17 @@ export function createBallPhysics(viewerScene) {
       if (shouldEnterGroundMode(velocity, sweep.hitNormal)) {
         supportNormal.copy(sweep.hitNormal);
         projectOntoPlane(velocity, supportNormal);
-        snapToGround(BALL_GROUND_SNAP_DISTANCE);
-        applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
-        return;
+        
+        if (snapToGround(BALL_GROUND_SNAP_DISTANCE)) {
+          applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
+          return;
+        }
       }
 
-      position.addScaledVector(sweep.hitNormal, BALL_COLLISION_SKIN * 2);
+      const separationPush = sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y
+        ? BALL_COLLISION_SKIN * 2
+        : BALL_COLLISION_SKIN * 0.1;
+      position.addScaledVector(sweep.hitNormal, separationPush);
       movementState = 'air';
     }
     applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
@@ -436,7 +441,12 @@ function resolveImpactVelocity(velocity, hitNormal) {
 
   WORKING_NORMAL_COMPONENT.copy(hitNormal).multiplyScalar(normalSpeed);
   velocity.sub(WORKING_NORMAL_COMPONENT);
-  velocity.multiplyScalar(1 - BALL_IMPACT_FRICTION);
+  
+  // Tangential fraction to keep: on floors we use standard impact friction,
+  // but on steep walls (like in the cup) we drastically reduce friction so it doesn't "glue"
+  const friction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.05;
+  velocity.multiplyScalar(1 - friction);
+  
   velocity.addScaledVector(hitNormal, -normalSpeed * BALL_BOUNCE_RESTITUTION);
 }
 
