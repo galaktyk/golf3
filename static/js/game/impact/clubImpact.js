@@ -161,7 +161,7 @@ function buildImpactLaunchData(impactSample, activeClub) {
   return {
     ballSpeed: launchMetrics.ballSpeed,
     verticalLaunchAngle: launchMetrics.verticalLaunchAngle,
-    horizontalLaunchAngle: getHorizontalLaunchAngleDegrees(impactSample),
+    horizontalLaunchAngle: launchMetrics.horizontalLaunchAngle,
     spinSpeed: BALL_IMPACT_DEBUG_SPIN_SPEED,
     spinAxis: BALL_IMPACT_DEBUG_SPIN_AXIS,
   };
@@ -196,6 +196,7 @@ function getLaunchMetrics(impactSample, activeClub) {
     baseLoftDegrees,
     measuredFacePitchDegrees,
     dynamicLoftDegrees,
+    horizontalLaunchAngle: getHorizontalLaunchAngleDegrees(impactSample),
     verticalLaunchAngle: THREE.MathUtils.clamp(
       dynamicLoftDegrees * launchFactor,
       CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,

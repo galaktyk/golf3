@@ -46,3 +46,19 @@ export function formatMetersPerSecond(value) {
 
   return `${value.toFixed(2)} m/s`;
 }
+
+export function formatScalar(value, digits = 2) {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  return value.toFixed(digits).replace(/\.0+$|(\.\d*[1-9])0+$/, '$1');
+}
+
+export function formatMeters(value, digits = 2) {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  return `${value.toFixed(digits)} m`;
+}

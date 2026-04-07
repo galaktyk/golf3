@@ -1,7 +1,9 @@
 import {
   formatDegrees,
+  formatMeters,
   formatMetersPerSecond,
   formatQuaternion,
+  formatScalar,
   formatVector3,
 } from '/static/js/game/formatting.js';
 
@@ -123,7 +125,16 @@ export function createViewerHud(dom) {
     },
 
     updateClubDebug(clubSet, club) {
-      if (!dom.clubSetLineLabel || !dom.clubIdLabel || !dom.clubLoftLabel) {
+      if (
+        !dom.clubSetLineLabel
+        || !dom.clubIdLabel
+        || !dom.clubLoftLabel
+        || !dom.clubLaunchFactorLabel
+        || !dom.clubOrientationLoftInfluenceLabel
+        || !dom.clubMaxDynamicLoftDeltaLabel
+        || !dom.clubEffectiveLengthLabel
+        || !dom.clubSmashFactorLabel
+      ) {
         return;
       }
 
@@ -131,12 +142,22 @@ export function createViewerHud(dom) {
         dom.clubSetLineLabel.textContent = '-';
         dom.clubIdLabel.textContent = '-';
         dom.clubLoftLabel.textContent = '-';
+        dom.clubLaunchFactorLabel.textContent = '-';
+        dom.clubOrientationLoftInfluenceLabel.textContent = '-';
+        dom.clubMaxDynamicLoftDeltaLabel.textContent = '-';
+        dom.clubEffectiveLengthLabel.textContent = '-';
+        dom.clubSmashFactorLabel.textContent = '-';
         return;
       }
 
       dom.clubSetLineLabel.textContent = clubSet.name;
       dom.clubIdLabel.textContent = club.id;
       dom.clubLoftLabel.textContent = formatDegrees(club.loftDegrees);
+      dom.clubLaunchFactorLabel.textContent = formatScalar(club.launchFactor);
+      dom.clubOrientationLoftInfluenceLabel.textContent = formatScalar(club.orientationLoftInfluence);
+      dom.clubMaxDynamicLoftDeltaLabel.textContent = formatDegrees(club.maxDynamicLoftDeltaDegrees);
+      dom.clubEffectiveLengthLabel.textContent = formatMeters(club.effectiveLengthMeters);
+      dom.clubSmashFactorLabel.textContent = formatScalar(club.smashFactor);
     },
 
     updateLaunchPreview(preview) {
@@ -144,6 +165,7 @@ export function createViewerHud(dom) {
         !dom.launchPreviewMessage
         || !dom.previewClubSpeedLabel
         || !dom.previewBallSpeedLabel
+        || !dom.previewHorizontalLaunchAngleLabel
         || !dom.previewFacePitchLabel
         || !dom.previewDynamicLoftLabel
         || !dom.previewLaunchAngleLabel
@@ -155,6 +177,7 @@ export function createViewerHud(dom) {
         dom.launchPreviewMessage.textContent = 'Updates when a shot launches.';
         dom.previewClubSpeedLabel.textContent = '-';
         dom.previewBallSpeedLabel.textContent = '-';
+        dom.previewHorizontalLaunchAngleLabel.textContent = '-';
         dom.previewFacePitchLabel.textContent = '-';
         dom.previewDynamicLoftLabel.textContent = '-';
         dom.previewLaunchAngleLabel.textContent = '-';
@@ -164,6 +187,7 @@ export function createViewerHud(dom) {
       dom.launchPreviewMessage.textContent = 'Captured at launch from phone motion and club face impact.';
       dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
       dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
+      dom.previewHorizontalLaunchAngleLabel.textContent = formatDegrees(preview.horizontalLaunchAngle);
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
       dom.previewLaunchAngleLabel.textContent = formatDegrees(preview.verticalLaunchAngle);
