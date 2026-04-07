@@ -343,7 +343,7 @@ function updateCharacterRotationInput(deltaSeconds) {
     ballPhysics.getPosition(),
     rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
   );
-  console.log('Orientation debug', viewerScene.getOrientationDebugSnapshot());
+
 }
 
 function updateCharacterDebugTelemetry(telemetry) {

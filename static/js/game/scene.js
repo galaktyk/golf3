@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { findGroundSupport } from '/static/js/game/collision.js';
 import {
   BALL_START_POSITION,
   CAMERA_FOLLOW_STIFFNESS,
@@ -19,6 +20,9 @@ import {
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const CAMERA_TILT_OFFSET_RADIANS = THREE.MathUtils.degToRad(CAMERA_TILT_OFFSET_DEGREES);
 const FREE_CAMERA_PITCH_LIMIT_RADIANS = THREE.MathUtils.degToRad(FREE_CAMERA_PITCH_LIMIT_DEGREES);
+const CHARACTER_GROUND_MIN_NORMAL_Y = 0.35;
+const CHARACTER_GROUND_PROBE_DISTANCE = 3;
+const CHARACTER_GROUND_PROBE_RADIUS = 0;
 
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
@@ -58,6 +62,8 @@ export function createViewerScene(canvas) {
   const characterVisualRoot = new THREE.Group();
   const overlayRoot = new THREE.Group();
   const rotatedCharacterSetupOffset = new THREE.Vector3();
+  const characterGroundProbePosition = new THREE.Vector3();
+  const characterGroundNormal = new THREE.Vector3(0, 1, 0);
   const characterForward = new THREE.Vector3();
   const desiredFacingDirection = new THREE.Vector3();
   const currentFacingDirection = new THREE.Vector3();
@@ -66,6 +72,9 @@ export function createViewerScene(canvas) {
   const freeCameraTranslation = new THREE.Vector3();
   const cameraOrientationForward = new THREE.Vector3();
   const characterOrientationForward = new THREE.Vector3();
+  const characterOrientationRight = new THREE.Vector3();
+  const characterOrientationBackward = new THREE.Vector3();
+  const characterOrientationMatrix = new THREE.Matrix4();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
@@ -84,6 +93,7 @@ export function createViewerScene(canvas) {
   let freeCameraEnabled = false;
   let freeCameraYaw = 0;
   let freeCameraPitch = 0;
+  let characterYawRadians = 0;
   const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
   const desiredCameraTarget = new THREE.Vector3();
@@ -136,9 +146,80 @@ export function createViewerScene(canvas) {
     camera.lookAt(tiltedCameraTarget);
   };
 
-  const setCharacterAddressPosition = (ballPosition) => {
+  const updateCharacterOrientation = (groundNormal) => {
+    characterGroundNormal.copy(groundNormal).normalize();
+    characterOrientationForward.copy(WORLD_FORWARD);
+    characterOrientationForward.addScaledVector(
+      characterGroundNormal,
+      -characterOrientationForward.dot(characterGroundNormal),
+    );
+    if (characterOrientationForward.lengthSq() <= 1e-8) {
+      characterOrientationForward.set(1, 0, 0);
+      characterOrientationForward.addScaledVector(
+        characterGroundNormal,
+        -characterOrientationForward.dot(characterGroundNormal),
+      );
+    }
+
+    characterOrientationForward.normalize();
+    characterOrientationForward.applyAxisAngle(characterGroundNormal, characterYawRadians).normalize();
+    characterOrientationBackward.copy(characterOrientationForward).negate();
+    characterOrientationRight.crossVectors(characterGroundNormal, characterOrientationBackward);
+    if (characterOrientationRight.lengthSq() <= 1e-8) {
+      characterOrientationRight.set(1, 0, 0);
+    } else {
+      characterOrientationRight.normalize();
+    }
+
+    characterOrientationBackward.crossVectors(characterOrientationRight, characterGroundNormal).normalize();
+    characterOrientationMatrix.makeBasis(
+      characterOrientationRight,
+      characterGroundNormal,
+      characterOrientationBackward,
+    );
+    characterRoot.quaternion.setFromRotationMatrix(characterOrientationMatrix).normalize();
+  };
+
+  const snapCharacterToGround = (ballPosition) => {
+    if (!courseCollision?.root) {
+      return false;
+    }
+
+    const support = findGroundSupport(
+      courseCollision,
+      characterGroundProbePosition.copy(characterRoot.position),
+      CHARACTER_GROUND_PROBE_RADIUS,
+      CHARACTER_GROUND_PROBE_DISTANCE,
+    );
+    if (!support || support.normal.y < CHARACTER_GROUND_MIN_NORMAL_Y) {
+      return false;
+    }
+
+    updateCharacterOrientation(support.normal);
     rotatedCharacterSetupOffset.copy(CHARACTER_SETUP_OFFSET).applyQuaternion(characterRoot.quaternion);
     characterRoot.position.copy(ballPosition).add(rotatedCharacterSetupOffset);
+
+    const refinedSupport = findGroundSupport(
+      courseCollision,
+      characterGroundProbePosition.copy(characterRoot.position),
+      CHARACTER_GROUND_PROBE_RADIUS,
+      CHARACTER_GROUND_PROBE_DISTANCE,
+    );
+    if (!refinedSupport || refinedSupport.normal.y < CHARACTER_GROUND_MIN_NORMAL_Y) {
+      return false;
+    }
+
+    updateCharacterOrientation(refinedSupport.normal);
+    characterRoot.position.copy(refinedSupport.point);
+    characterRoot.updateMatrixWorld(true);
+    return true;
+  };
+
+  const setCharacterAddressPosition = (ballPosition) => {
+    updateCharacterOrientation(characterGroundNormal);
+    rotatedCharacterSetupOffset.copy(CHARACTER_SETUP_OFFSET).applyQuaternion(characterRoot.quaternion);
+    characterRoot.position.copy(ballPosition).add(rotatedCharacterSetupOffset);
+    snapCharacterToGround(ballPosition);
   };
 
   const getCharacterForward = (target) => {
@@ -152,31 +233,7 @@ export function createViewerScene(canvas) {
     return target.normalize();
   };
 
-  const getOrientationDebugSnapshot = () => {
-    camera.getWorldDirection(cameraOrientationForward);
-    cameraOrientationForward.normalize();
-    getCharacterForward(characterOrientationForward);
 
-    return {
-      camera: {
-        yawDegrees: Number(THREE.MathUtils.radToDeg(Math.atan2(cameraOrientationForward.x, -cameraOrientationForward.z)).toFixed(2)),
-        pitchDegrees: Number(THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(cameraOrientationForward.y, -1, 1))).toFixed(2)),
-        direction: {
-          x: Number(cameraOrientationForward.x.toFixed(4)),
-          y: Number(cameraOrientationForward.y.toFixed(4)),
-          z: Number(cameraOrientationForward.z.toFixed(4)),
-        },
-      },
-      character: {
-        yawDegrees: Number(THREE.MathUtils.radToDeg(Math.atan2(characterOrientationForward.x, -characterOrientationForward.z)).toFixed(2)),
-        forward: {
-          x: Number(characterOrientationForward.x.toFixed(4)),
-          y: Number(characterOrientationForward.y.toFixed(4)),
-          z: Number(characterOrientationForward.z.toFixed(4)),
-        },
-      },
-    };
-  };
 
   setCharacterAddressPosition(BALL_START_POSITION);
 
@@ -217,6 +274,7 @@ export function createViewerScene(canvas) {
 
     setCourseCollision(nextCourseCollision) {
       courseCollision = nextCourseCollision;
+      setCharacterAddressPosition(ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION);
     },
 
     setClubHeadCollider(nextClubHeadCollider) {
@@ -256,9 +314,6 @@ export function createViewerScene(canvas) {
       return getCharacterForward(target);
     },
 
-    getOrientationDebugSnapshot() {
-      return getOrientationDebugSnapshot();
-    },
 
     isFreeCameraEnabled() {
       return freeCameraEnabled;
@@ -371,7 +426,7 @@ export function createViewerScene(canvas) {
     },
 
     rotateCharacterAroundBall(ballPosition, angleRadians) {
-      characterRoot.rotateY(angleRadians);
+      characterYawRadians += angleRadians;
       setCharacterAddressPosition(ballPosition);
       ballCameraOffset.applyAxisAngle(WORLD_UP, angleRadians);
       controls.target.copy(ballPosition);
