@@ -362,6 +362,7 @@ p {
   line-height: 1.2;
   text-align: center;
   letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums lining-nums;
 }
 
 @media (max-width: 420px) {

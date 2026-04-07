@@ -17,11 +17,15 @@ const q0 = new THREE.Quaternion();
 const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
 const orientationEventName = getOrientationEventName();
 const motionEventName = getMotionEventName();
+const CLUB_SHAFT_AXIS_LOCAL = new THREE.Vector3(0, -1, 0);
+const ANGULAR_VELOCITY_LOCAL = new THREE.Vector3();
+const SHAFT_TWIST_COMPONENT = new THREE.Vector3();
 
-const SWING_RADIUS_METERS = 1.05;
 const SWING_SPEED_FOLLOW_RATE = 18;
 const SWING_SPEED_DECAY_RATE = 6;
 const MOTION_FRESHNESS_LIMIT_MS = 250;
+const DEBUG_QUATERNION_DECIMALS = 1;
+const DEBUG_ANGULAR_SPEED_DECIMALS = 1;
 
 const rawQuaternion = new THREE.Quaternion();
 const calibratedQuaternion = new THREE.Quaternion();
@@ -42,8 +46,8 @@ let hasOrientation = false;
 let hasMotion = false;
 let orientationSocket = null;
 let controlSocket = null;
-let filteredSwingSpeedMetersPerSecond = 0;
-let decayingSwingSpeedMetersPerSecond = 0;
+let filteredPerpendicularAngularSpeedRadiansPerSecond = 0;
+let decayingPerpendicularAngularSpeedRadiansPerSecond = 0;
 let lastMotionSampleTimeMs = 0;
 let lastMotionDebugUpdateTimeMs = 0;
 let packetSequence = 0;
@@ -104,22 +108,22 @@ if (motionEventName) {
       : (1 / 60);
     lastMotionSampleTimeMs = sampleTimeMs;
 
-    const instantaneousSwingSpeedMetersPerSecond = getInstantaneousSwingSpeedMetersPerSecond(event.rotationRate);
+    const instantaneousPerpendicularAngularSpeedRadiansPerSecond = getInstantaneousPerpendicularAngularSpeedRadiansPerSecond(event.rotationRate);
     if (hasFiniteRotationRate(event.rotationRate)) {
       hasMotion = true;
     }
 
     const followAlpha = 1 - Math.exp(-SWING_SPEED_FOLLOW_RATE * deltaSeconds);
-    filteredSwingSpeedMetersPerSecond = THREE.MathUtils.lerp(
-      filteredSwingSpeedMetersPerSecond,
-      instantaneousSwingSpeedMetersPerSecond,
+    filteredPerpendicularAngularSpeedRadiansPerSecond = THREE.MathUtils.lerp(
+      filteredPerpendicularAngularSpeedRadiansPerSecond,
+      instantaneousPerpendicularAngularSpeedRadiansPerSecond,
       followAlpha,
     );
 
     const decayMultiplier = Math.exp(-SWING_SPEED_DECAY_RATE * deltaSeconds);
-    decayingSwingSpeedMetersPerSecond = Math.max(
-      filteredSwingSpeedMetersPerSecond,
-      decayingSwingSpeedMetersPerSecond * decayMultiplier,
+    decayingPerpendicularAngularSpeedRadiansPerSecond = Math.max(
+      filteredPerpendicularAngularSpeedRadiansPerSecond,
+      decayingPerpendicularAngularSpeedRadiansPerSecond * decayMultiplier,
     );
 
     if (sampleTimeMs - lastMotionDebugUpdateTimeMs >= 32) {
@@ -141,7 +145,7 @@ setInterval(() => {
   calibratedQuaternion.copy(neutralInverse).multiply(rawQuaternion).normalize();
   orientationSocket.send(encodeSwingStatePacket({
     quaternion: calibratedQuaternion,
-    swingSpeedMetersPerSecond: getOutboundSwingSpeedMetersPerSecond(),
+    perpendicularAngularSpeedRadiansPerSecond: getOutboundPerpendicularAngularSpeedRadiansPerSecond(),
     motionAgeMilliseconds: getMotionAgeMilliseconds(),
     sequence: packetSequence,
   }));
@@ -361,7 +365,7 @@ function updateConnectionStatus() {
   statusLabel.textContent = motionEnabled ? 'Live' : 'Enable motion';
 }
 
-function getInstantaneousSwingSpeedMetersPerSecond(rotationRate) {
+function getInstantaneousPerpendicularAngularSpeedRadiansPerSecond(rotationRate) {
   const alpha = Number(rotationRate?.alpha ?? 0);
   const beta = Number(rotationRate?.beta ?? 0);
   const gamma = Number(rotationRate?.gamma ?? 0);
@@ -370,22 +374,28 @@ function getInstantaneousSwingSpeedMetersPerSecond(rotationRate) {
     return 0;
   }
 
-  const angularSpeedRadiansPerSecond = THREE.MathUtils.degToRad(
-    Math.hypot(alpha, beta, gamma),
+  ANGULAR_VELOCITY_LOCAL.set(
+    THREE.MathUtils.degToRad(beta),
+    THREE.MathUtils.degToRad(alpha),
+    THREE.MathUtils.degToRad(-gamma),
   );
-  return angularSpeedRadiansPerSecond * SWING_RADIUS_METERS;
+
+  SHAFT_TWIST_COMPONENT.copy(CLUB_SHAFT_AXIS_LOCAL)
+    .multiplyScalar(ANGULAR_VELOCITY_LOCAL.dot(CLUB_SHAFT_AXIS_LOCAL));
+  ANGULAR_VELOCITY_LOCAL.sub(SHAFT_TWIST_COMPONENT);
+  return ANGULAR_VELOCITY_LOCAL.length();
 }
 
 function hasFiniteRotationRate(rotationRate) {
   return ['alpha', 'beta', 'gamma'].some((axis) => Number.isFinite(Number(rotationRate?.[axis])));
 }
 
-function getOutboundSwingSpeedMetersPerSecond() {
+function getOutboundPerpendicularAngularSpeedRadiansPerSecond() {
   if (!hasMotion || getMotionAgeMilliseconds() > MOTION_FRESHNESS_LIMIT_MS) {
     return 0;
   }
 
-  return decayingSwingSpeedMetersPerSecond;
+  return decayingPerpendicularAngularSpeedRadiansPerSecond;
 }
 
 function getMotionAgeMilliseconds() {
@@ -397,10 +407,10 @@ function getMotionAgeMilliseconds() {
 }
 
 function updateDebugLabel() {
-  const swingSpeed = getOutboundSwingSpeedMetersPerSecond();
-  const motionState = hasMotion ? `${swingSpeed.toFixed(2)} m/s` : 'gyro waiting';
-  const ageMs = getMotionAgeMilliseconds();
-  debugLabel.textContent = `ori ${formatQuaternion(rawQuaternion)} | swing ${motionState} | age ${ageMs} ms`;
+  const perpendicularAngularSpeedRadiansPerSecond = getOutboundPerpendicularAngularSpeedRadiansPerSecond();
+  const motionState = hasMotion ? `${perpendicularAngularSpeedRadiansPerSecond.toFixed(DEBUG_ANGULAR_SPEED_DECIMALS)} rad/s` : 'gyro waiting';
+  const ageMs = Math.round(getMotionAgeMilliseconds());
+  debugLabel.textContent = `ori ${formatQuaternion(rawQuaternion)} | omega ${motionState} | age ${ageMs} ms`;
 }
 
 function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
@@ -413,7 +423,7 @@ function deviceOrientationToQuaternion(alpha, beta, gamma, orient) {
 
 function formatQuaternion(quaternion) {
   const { x, y, z, w } = quaternion;
-  return `${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}, ${w.toFixed(2)}`;
+  return `${x.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${y.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${z.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${w.toFixed(DEBUG_QUATERNION_DECIMALS)}`;
 }
 
 function getWebSocketBaseUrl() {

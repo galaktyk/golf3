@@ -7,7 +7,6 @@ import {
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_IMPACT_MIN_SPEED,
   CLUB_HEAD_LAUNCH_DIRECTION_LOCAL,
-  CLUB_HEAD_TO_BALL_SPEED_FACTOR,
   CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
   CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
 } from '/static/js/game/constants.js';
@@ -26,7 +25,7 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 export function resolveClubBallImpact(
   characterTelemetry,
   ballPosition,
-  sensorSwingSpeedMetersPerSecond,
+  estimatedClubHeadSpeedMetersPerSecond,
   activeClub = null,
 ) {
   const history = characterTelemetry.clubHeadSampleHistory;
@@ -34,11 +33,11 @@ export function resolveClubBallImpact(
     return null;
   }
 
-  if (!Number.isFinite(sensorSwingSpeedMetersPerSecond) || sensorSwingSpeedMetersPerSecond <= 0) {
+  if (!Number.isFinite(estimatedClubHeadSpeedMetersPerSecond) || estimatedClubHeadSpeedMetersPerSecond <= 0) {
     return null;
   }
 
-  if (sensorSwingSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
+  if (estimatedClubHeadSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
     return null;
   }
 
@@ -50,24 +49,24 @@ export function resolveClubBallImpact(
   const launchData = buildImpactLaunchData(
     {
       ...impactSample,
-      sensorSwingSpeedMetersPerSecond,
+      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     },
     activeClub,
   );
 
   return {
     launchData,
-    impactSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
+    impactSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
   };
 }
 
-export function getClubLaunchPreview(characterTelemetry, sensorSwingSpeedMetersPerSecond, activeClub = null) {
+export function getClubLaunchPreview(characterTelemetry, estimatedClubHeadSpeedMetersPerSecond, activeClub = null) {
   if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadQuaternion) {
     return null;
   }
 
-  if (!Number.isFinite(sensorSwingSpeedMetersPerSecond) || sensorSwingSpeedMetersPerSecond <= 0) {
+  if (!Number.isFinite(estimatedClubHeadSpeedMetersPerSecond) || estimatedClubHeadSpeedMetersPerSecond <= 0) {
     return null;
   }
 
@@ -75,16 +74,15 @@ export function getClubLaunchPreview(characterTelemetry, sensorSwingSpeedMetersP
     {
       quaternion: characterTelemetry.clubHeadQuaternion,
       characterFacingForward: characterTelemetry.characterFacingForward,
-      sensorSwingSpeedMetersPerSecond,
+      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     },
     activeClub,
   );
 
   return {
     ...launchMetrics,
-    swingSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
-    clubHeadSpeedMetersPerSecond: sensorSwingSpeedMetersPerSecond,
-    isReady: sensorSwingSpeedMetersPerSecond > 0.1,
+    clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
+    isReady: estimatedClubHeadSpeedMetersPerSecond > 0.1,
   };
 }
 
@@ -175,6 +173,9 @@ function getLaunchMetrics(impactSample, activeClub) {
   const launchFactor = Number.isFinite(activeClub?.launchFactor)
     ? activeClub.launchFactor
     : 1;
+  const smashFactor = Number.isFinite(activeClub?.smashFactor)
+    ? activeClub.smashFactor
+    : 1.35;
   const measuredFacePitchDegrees = getMeasuredFacePitchDegrees(impactSample);
   const dynamicLoftDegrees = getDynamicLoftDegrees(
     measuredFacePitchDegrees,
@@ -183,7 +184,7 @@ function getLaunchMetrics(impactSample, activeClub) {
   );
 
   return {
-    ballSpeed: impactSample.sensorSwingSpeedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
+    ballSpeed: impactSample.clubHeadSpeedMetersPerSecond * smashFactor,
     baseLoftDegrees,
     measuredFacePitchDegrees,
     dynamicLoftDegrees,

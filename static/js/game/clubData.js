@@ -6,20 +6,20 @@ const AIR_LANCE_SET = {
   name: 'Air Lance Set',
   aliases: ['air_lance', 'air-lance', 'lance'],
   clubs: [
-    createClubDefinition('1W', 10.5, 'wood', 0.9, 0.35, 8),
-    createClubDefinition('2W', 15, 'wood', 0.9, 0.35, 9),
-    createClubDefinition('3W', 18, 'wood', 0.9, 0.35, 10),
-    createClubDefinition('2I', 20, 'iron', 0.8, 0.32, 8),
-    createClubDefinition('3I', 23, 'iron', 0.8, 0.32, 8),
-    createClubDefinition('4I', 26, 'iron', 0.8, 0.3, 8),
-    createClubDefinition('5I', 29, 'iron', 0.8, 0.3, 8),
-    createClubDefinition('6I', 32, 'iron', 0.8, 0.28, 8),
-    createClubDefinition('7I', 36, 'iron', 0.8, 0.28, 9),
-    createClubDefinition('8I', 40, 'iron', 0.8, 0.28, 9),
-    createClubDefinition('9I', 44, 'iron', 0.8, 0.26, 10),
-    createClubDefinition('PW', 48, 'wedge', 0.8, 0.24, 11),
-    createClubDefinition('SW', 56, 'wedge', 0.8, 0.22, 12),
-    createClubDefinition('PT', 3, 'putter', 0.35, 0.15, 3),
+    createClubDefinition('1W', 10.5, 'wood', 0.9, 0.35, 8, 1.03, 1.47),
+    createClubDefinition('2W', 15, 'wood', 0.9, 0.35, 9, 1.01, 1.46),
+    createClubDefinition('3W', 18, 'wood', 0.9, 0.35, 10, 0.99, 1.45),
+    createClubDefinition('2I', 20, 'iron', 0.8, 0.32, 8, 0.96, 1.40),
+    createClubDefinition('3I', 23, 'iron', 0.8, 0.32, 8, 0.94, 1.39),
+    createClubDefinition('4I', 26, 'iron', 0.8, 0.3, 8, 0.92, 1.38),
+    createClubDefinition('5I', 29, 'iron', 0.8, 0.3, 8, 0.90, 1.37),
+    createClubDefinition('6I', 32, 'iron', 0.8, 0.28, 8, 0.88, 1.36),
+    createClubDefinition('7I', 36, 'iron', 0.8, 0.28, 9, 0.86, 1.35),
+    createClubDefinition('8I', 40, 'iron', 0.8, 0.28, 9, 0.84, 1.33),
+    createClubDefinition('9I', 44, 'iron', 0.8, 0.26, 10, 0.82, 1.31),
+    createClubDefinition('PW', 48, 'wedge', 0.8, 0.24, 11, 0.80, 1.26),
+    createClubDefinition('SW', 56, 'wedge', 0.8, 0.22, 12, 0.78, 1.20),
+    createClubDefinition('PT', 3, 'putter', 0.35, 0.15, 3, 0.74, 1.08),
   ],
 };
 
@@ -40,6 +40,8 @@ function createClubDefinition(
   launchFactor,
   orientationLoftInfluence,
   maxDynamicLoftDeltaDegrees,
+  effectiveLengthMeters,
+  smashFactor,
 ) {
   return {
     id,
@@ -49,6 +51,8 @@ function createClubDefinition(
     launchFactor,
     orientationLoftInfluence,
     maxDynamicLoftDeltaDegrees,
+    effectiveLengthMeters,
+    smashFactor,
     aliases: [id.toLowerCase()],
   };
 }

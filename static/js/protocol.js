@@ -14,7 +14,7 @@ export const CONTROL_ACTIONS = Object.freeze({
 
 export function encodeSwingStatePacket({
   quaternion,
-  swingSpeedMetersPerSecond = 0,
+  perpendicularAngularSpeedRadiansPerSecond = 0,
   motionAgeMilliseconds = 0,
   sequence = 0,
 }) {
@@ -29,7 +29,7 @@ export function encodeSwingStatePacket({
   view.setInt16(6, clampToInt16(normalized.y), true);
   view.setInt16(8, clampToInt16(normalized.z), true);
   view.setInt16(10, clampToInt16(normalized.w), true);
-  view.setUint16(12, encodeHundredths(swingSpeedMetersPerSecond), true);
+  view.setUint16(12, encodeHundredths(perpendicularAngularSpeedRadiansPerSecond), true);
   view.setUint16(14, clampToUint16(motionAgeMilliseconds), true);
 
   return buffer;
@@ -59,7 +59,7 @@ export function decodeSwingStatePacket(buffer, targetQuaternion, targetState = {
   targetState.version = version;
   targetState.kind = kind;
   targetState.sequence = view.getUint16(2, true);
-  targetState.swingSpeedMetersPerSecond = decodeHundredths(view.getUint16(12, true));
+  targetState.perpendicularAngularSpeedRadiansPerSecond = decodeHundredths(view.getUint16(12, true));
   targetState.motionAgeMilliseconds = view.getUint16(14, true);
   return targetState;
 }

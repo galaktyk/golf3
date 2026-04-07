@@ -6,11 +6,11 @@ import {
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
   CHARACTER_ROTATION_SPEED_DEGREES,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
-  CLUB_HEAD_TO_BALL_SPEED_FACTOR,
   FPS_LABEL_UPDATE_INTERVAL_MS,
   HOLE_MARKER_LABEL_DEPTH,
   HOLE_MARKER_LABEL_EDGE_PADDING_PX,
   HOLE_MARKER_LABEL_TOP_OFFSET_RATIO,
+  PHONE_ANGULAR_SPEED_TO_CLUB_HEAD_SPEED_GAIN,
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
@@ -27,7 +27,7 @@ import { createViewerScene } from '/static/js/game/scene.js';
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
 const incomingSwingState = {
-  swingSpeedMetersPerSecond: 0,
+  perpendicularAngularSpeedRadiansPerSecond: 0,
   motionAgeMilliseconds: 65535,
   sequence: 0,
   receivedAtTimeMs: 0,
@@ -472,20 +472,23 @@ function detectClubBallImpact(characterTelemetry) {
   const impact = resolveClubBallImpact(
     characterTelemetry,
     ballTelemetry.position,
-    getIncomingSwingSpeedMetersPerSecond(),
+    getIncomingClubHeadSpeedMetersPerSecond(),
     activeClub,
   );
   if (!impact) {
     return;
   }
 
-  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, getIncomingSwingSpeedMetersPerSecond(), activeClub));
+  hud.updateLaunchPreview(getClubLaunchPreview(characterTelemetry, getIncomingClubHeadSpeedMetersPerSecond(), activeClub));
   launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   clubBallContactLatched = true;
 }
 
-function getIncomingSwingSpeedMetersPerSecond() {
-  if (!Number.isFinite(incomingSwingState.swingSpeedMetersPerSecond) || incomingSwingState.swingSpeedMetersPerSecond <= 0) {
+function getIncomingClubHeadSpeedMetersPerSecond() {
+  if (
+    !Number.isFinite(incomingSwingState.perpendicularAngularSpeedRadiansPerSecond)
+    || incomingSwingState.perpendicularAngularSpeedRadiansPerSecond <= 0
+  ) {
     return 0;
   }
 
@@ -497,7 +500,12 @@ function getIncomingSwingSpeedMetersPerSecond() {
     return 0;
   }
 
-  return incomingSwingState.swingSpeedMetersPerSecond;
+  const effectiveLengthMeters = Number.isFinite(activeClub?.effectiveLengthMeters)
+    ? activeClub.effectiveLengthMeters
+    : 0.9;
+  return incomingSwingState.perpendicularAngularSpeedRadiansPerSecond
+    * effectiveLengthMeters
+    * PHONE_ANGULAR_SPEED_TO_CLUB_HEAD_SPEED_GAIN;
 }
 
 function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = null) {
@@ -521,7 +529,10 @@ function getLaunchImpactSpeedMetersPerSecond(launchData, impactSpeedMetersPerSec
     return 0;
   }
 
-  return launchData.ballSpeed / CLUB_HEAD_TO_BALL_SPEED_FACTOR;
+  const smashFactor = Number.isFinite(activeClub?.smashFactor)
+    ? activeClub.smashFactor
+    : 1.35;
+  return launchData.ballSpeed / smashFactor;
 }
 
 function releaseClubBallContactLatch(clubHeadPosition) {
