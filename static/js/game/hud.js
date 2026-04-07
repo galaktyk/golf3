@@ -1,5 +1,43 @@
 import { formatQuaternion, formatVector3 } from '/static/js/game/formatting.js';
 
+function formatGroundTransitionDebug(transitionDebug) {
+  if (!transitionDebug?.captureAttempted) {
+    return '-';
+  }
+
+  const stateLabel = transitionDebug.snappedToGround
+    ? transitionDebug.movementState ?? 'ground'
+    : 'capture-missed';
+
+  return `pre ${transitionDebug.preImpactSpeedMetersPerSecond.toFixed(2)} | `
+    + `post ${transitionDebug.postImpactSpeedMetersPerSecond.toFixed(2)} | `
+    + `snap ${transitionDebug.postSnapSpeedMetersPerSecond.toFixed(2)} | `
+    + `loss ${transitionDebug.snapLossMetersPerSecond.toFixed(2)} | `
+    + stateLabel;
+}
+
+function formatGroundTransitionNormals(transitionDebug) {
+  if (!transitionDebug?.captureAttempted || !transitionDebug.impactNormal) {
+    return '-';
+  }
+
+  const impactLabel = `impact ${formatVector3(transitionDebug.impactNormal)}`;
+  if (!transitionDebug.supportNormal) {
+    return impactLabel;
+  }
+
+  return `${impactLabel} | support ${formatVector3(transitionDebug.supportNormal)}`;
+}
+
+function formatGroundTransitionComponents(transitionDebug) {
+  if (!transitionDebug?.captureAttempted) {
+    return '-';
+  }
+
+  return `n ${transitionDebug.preImpactNormalSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactNormalSpeedMetersPerSecond.toFixed(2)} | `
+    + `t ${transitionDebug.preImpactTangentSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactTangentSpeedMetersPerSecond.toFixed(2)}`;
+}
+
 export function createViewerHud(dom) {
   return {
     initialize(cameraPosition, incomingQuaternion) {
@@ -11,6 +49,7 @@ export function createViewerHud(dom) {
       this.updateMatchFrame(0, 0, 0);
       this.updateCameraPosition(cameraPosition);
       this.updateBallState('ready', null, 0);
+      this.updateGroundTransitionDebug(null);
       this.updateShotStates('control', 'ready', null);
       this.updateLaunchPanelVisible(false);
     },
@@ -64,6 +103,16 @@ export function createViewerHud(dom) {
         ? `moving/${movementState}`
         : phase;
       dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(2)} m/s`;
+    },
+
+    updateGroundTransitionDebug(transitionDebug) {
+      if (!dom.ballLandingDebugLabel || !dom.ballLandingComponentsLabel || !dom.ballLandingNormalsLabel) {
+        return;
+      }
+
+      dom.ballLandingDebugLabel.textContent = formatGroundTransitionDebug(transitionDebug);
+      dom.ballLandingComponentsLabel.textContent = formatGroundTransitionComponents(transitionDebug);
+      dom.ballLandingNormalsLabel.textContent = formatGroundTransitionNormals(transitionDebug);
     },
 
     updateLaunchPanelVisible(visible) {

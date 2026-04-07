@@ -389,6 +389,7 @@ function updateCharacterDebugTelemetry(telemetry) {
 
 function updateBallDebugTelemetry(telemetry) {
   hud.updateBallState(telemetry.phase, telemetry.movementState, telemetry.speedMetersPerSecond);
+  hud.updateGroundTransitionDebug(telemetry.groundTransitionDebug);
   hud.updateShotStates(playerState, telemetry.phase, telemetry.movementState);
   updateLaunchDebugUiState();
 }

@@ -13,9 +13,11 @@ export const BALL_FIXED_STEP_SECONDS = 1 / 60;
 export const BALL_MAX_FIXED_STEPS_PER_FRAME = 8;
 export const BALL_GRAVITY_ACCELERATION = 9.81;
 export const BALL_AIR_DRAG = 0.04;
-export const BALL_BOUNCE_RESTITUTION = 0.3;
+
+// Hop energy
+export const BALL_BOUNCE_RESTITUTION = 0.23;
 export const BALL_IMPACT_FRICTION = 0.08;
-export const BALL_ROLLING_FRICTION = 0.15;
+export const BALL_ROLLING_FRICTION = 1.8;
 export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.45;
 export const BALL_GROUND_CAPTURE_SPEED = 2.4;
 export const BALL_STOP_SPEED = 0.08;

@@ -4,7 +4,6 @@ import {
   BALL_BOUNCE_RESTITUTION,
   BALL_COLLISION_SKIN,
   BALL_FIXED_STEP_SECONDS,
-  BALL_GROUND_CAPTURE_SPEED,
   BALL_GROUND_CAPTURE_NORMAL_SPEED,
   BALL_GROUND_SNAP_DISTANCE,
   BALL_GROUNDED_NORMAL_MIN_Y,
@@ -38,6 +37,24 @@ const ZERO_VECTOR = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const PREV_AIR_POSITION = new THREE.Vector3();
 
+function createGroundTransitionDebug() {
+  return {
+    captureAttempted: false,
+    snappedToGround: false,
+    preImpactSpeedMetersPerSecond: 0,
+    postImpactSpeedMetersPerSecond: 0,
+    postSnapSpeedMetersPerSecond: 0,
+    preImpactNormalSpeedMetersPerSecond: 0,
+    preImpactTangentSpeedMetersPerSecond: 0,
+    postImpactNormalSpeedMetersPerSecond: 0,
+    postImpactTangentSpeedMetersPerSecond: 0,
+    snapLossMetersPerSecond: 0,
+    impactNormal: null,
+    supportNormal: null,
+    movementState: null,
+  };
+}
+
 export function createBallPhysics(viewerScene) {
   const position = BALL_START_POSITION.clone();
   const velocity = new THREE.Vector3();
@@ -53,6 +70,7 @@ export function createBallPhysics(viewerScene) {
   let hasCourseContact = false;
   let debugAutoLaunchConsumed = false;
   let shotSettled = false;
+  let lastGroundTransitionDebug = createGroundTransitionDebug();
 
   const snapToGround = (maxSnapDistance) => {
     const support = findGroundSupport(viewerScene.courseCollision, position, BALL_RADIUS, maxSnapDistance);
@@ -124,14 +142,50 @@ export function createBallPhysics(viewerScene) {
         return;
       }
 
+      const preImpactSpeedMetersPerSecond = velocity.length();
+      const preImpactNormalSpeedMetersPerSecond = Math.max(-velocity.dot(sweep.hitNormal), 0);
+      const preImpactTangentSpeedMetersPerSecond = Math.sqrt(Math.max(
+        preImpactSpeedMetersPerSecond * preImpactSpeedMetersPerSecond
+          - preImpactNormalSpeedMetersPerSecond * preImpactNormalSpeedMetersPerSecond,
+        0,
+      ));
       resolveImpactVelocity(velocity, sweep.hitNormal);
+      const postImpactSpeedMetersPerSecond = velocity.length();
+      const postImpactNormalSpeedMetersPerSecond = Math.max(velocity.dot(sweep.hitNormal), 0);
+      const postImpactTangentSpeedMetersPerSecond = Math.sqrt(Math.max(
+        postImpactSpeedMetersPerSecond * postImpactSpeedMetersPerSecond
+          - postImpactNormalSpeedMetersPerSecond * postImpactNormalSpeedMetersPerSecond,
+        0,
+      ));
       remainingFraction *= Math.max(1 - sweep.travelFraction, 0);
 
       if (shouldEnterGroundMode(velocity, sweep.hitNormal)) {
+        lastGroundTransitionDebug = {
+          captureAttempted: true,
+          snappedToGround: false,
+          preImpactSpeedMetersPerSecond,
+          postImpactSpeedMetersPerSecond,
+          postSnapSpeedMetersPerSecond: 0,
+          preImpactNormalSpeedMetersPerSecond,
+          preImpactTangentSpeedMetersPerSecond,
+          postImpactNormalSpeedMetersPerSecond,
+          postImpactTangentSpeedMetersPerSecond,
+          snapLossMetersPerSecond: 0,
+          impactNormal: sweep.hitNormal.clone(),
+          supportNormal: null,
+          movementState: null,
+        };
         supportNormal.copy(sweep.hitNormal);
-        projectOntoPlane(velocity, supportNormal);
-        
+
         if (snapToGround(BALL_GROUND_SNAP_DISTANCE)) {
+          lastGroundTransitionDebug.snappedToGround = true;
+          lastGroundTransitionDebug.postSnapSpeedMetersPerSecond = velocity.length();
+          lastGroundTransitionDebug.snapLossMetersPerSecond = Math.max(
+            postImpactSpeedMetersPerSecond - lastGroundTransitionDebug.postSnapSpeedMetersPerSecond,
+            0,
+          );
+          lastGroundTransitionDebug.supportNormal = supportNormal.clone();
+          lastGroundTransitionDebug.movementState = movementState;
           applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
           return;
         }
@@ -263,6 +317,7 @@ export function createBallPhysics(viewerScene) {
     phase = 'ready';
     movementState = 'waiting';
     shotSettled = false;
+    lastGroundTransitionDebug = createGroundTransitionDebug();
     ensureCourseContact();
     previousPosition.copy(position);
     previousOrientation.copy(orientation);
@@ -299,6 +354,7 @@ export function createBallPhysics(viewerScene) {
         position,
         speedMetersPerSecond: velocity.length(),
         velocity,
+        groundTransitionDebug: lastGroundTransitionDebug,
       };
     },
 
@@ -396,8 +452,7 @@ function shouldEnterGroundMode(velocity, hitNormal) {
   }
 
   const reboundNormalSpeed = Math.max(velocity.dot(hitNormal), 0);
-  return reboundNormalSpeed <= BALL_GROUND_CAPTURE_NORMAL_SPEED
-    && velocity.lengthSq() <= BALL_GROUND_CAPTURE_SPEED * BALL_GROUND_CAPTURE_SPEED;
+  return reboundNormalSpeed <= BALL_GROUND_CAPTURE_NORMAL_SPEED;
 }
 
 function buildVelocityFromLaunchData(launchData, viewerScene, referenceForward = null) {
@@ -439,12 +494,18 @@ function resolveImpactVelocity(velocity, hitNormal) {
     return;
   }
 
+  const incomingSpeed = velocity.length();
+  const incomingNormalSpeed = Math.max(-normalSpeed, 0);
+
   WORKING_NORMAL_COMPONENT.copy(hitNormal).multiplyScalar(normalSpeed);
   velocity.sub(WORKING_NORMAL_COMPONENT);
   
-  // Tangential fraction to keep: on floors we use standard impact friction,
-  // but on steep walls (like in the cup) we drastically reduce friction so it doesn't "glue"
-  const friction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.05;
+  // Scale tangential loss by impact severity so shallow landings keep their run-out.
+  const impactSeverity = incomingSpeed > 1e-6
+    ? THREE.MathUtils.clamp(incomingNormalSpeed / incomingSpeed, 0, 1)
+    : 0;
+  const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.05;
+  const friction = baseFriction * impactSeverity;
   velocity.multiplyScalar(1 - friction);
   
   velocity.addScaledVector(hitNormal, -normalSpeed * BALL_BOUNCE_RESTITUTION);
