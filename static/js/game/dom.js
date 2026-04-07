@@ -15,10 +15,12 @@ export function getViewerDom() {
     playerStateLabel: document.querySelector('#viewer-player-state'),
     ballPhaseLabel: document.querySelector('#viewer-ball-phase'),
     ballMovementLabel: document.querySelector('#viewer-ball-movement'),
-    launchBallSpeedLabel: document.querySelector('#viewer-launch-ball-speed'),
-    launchVerticalAngleLabel: document.querySelector('#viewer-launch-vertical-angle'),
-    launchHorizontalAngleLabel: document.querySelector('#viewer-launch-horizontal-angle'),
-    launchSpinSpeedLabel: document.querySelector('#viewer-launch-spin-speed'),
-    launchSpinAxisLabel: document.querySelector('#viewer-launch-spin-axis'),
+    launchBallSpeedInput: document.querySelector('#viewer-launch-ball-speed-input'),
+    launchVerticalAngleInput: document.querySelector('#viewer-launch-vertical-angle-input'),
+    launchHorizontalAngleInput: document.querySelector('#viewer-launch-horizontal-angle-input'),
+    launchSpinSpeedInput: document.querySelector('#viewer-launch-spin-speed-input'),
+    launchSpinAxisInput: document.querySelector('#viewer-launch-spin-axis-input'),
+    launchDebugButton: document.querySelector('#viewer-launch-debug-button'),
+    launchDebugMessage: document.querySelector('#viewer-launch-debug-message'),
   };
 }

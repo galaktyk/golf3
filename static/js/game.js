@@ -25,6 +25,15 @@ import { createViewerScene } from '/static/js/game/scene.js';
 
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
+const DEBUG_PARAMS = new URLSearchParams(window.location.search);
+const LAUNCH_DEBUG_ENABLED = DEBUG_PARAMS.has('launchDebug');
+const LAUNCH_DEBUG_INPUT_FIELDS = [
+  { key: 'ballSpeed', inputKey: 'launchBallSpeedInput' },
+  { key: 'verticalLaunchAngle', inputKey: 'launchVerticalAngleInput' },
+  { key: 'horizontalLaunchAngle', inputKey: 'launchHorizontalAngleInput' },
+  { key: 'spinSpeed', inputKey: 'launchSpinSpeedInput' },
+  { key: 'spinAxis', inputKey: 'launchSpinAxisInput' },
+];
 const dom = getViewerDom();
 const viewerScene = createViewerScene(dom.canvas);
 const hud = createViewerHud(dom);
@@ -42,7 +51,6 @@ let lastPacketSampleTime = performance.now();
 let packetsSinceLastSample = 0;
 let framesSinceLastSample = 0;
 let playerState = 'control';
-let currentLaunchData = null;
 let clubBallContactLatched = false;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
@@ -62,6 +70,7 @@ const holeWorldPosition = new THREE.Vector3();
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
+initializeLaunchDebugUi();
 
 const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
 socket.binaryType = 'arraybuffer';
@@ -157,14 +166,11 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.code === 'KeyL') {
-    if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+    if (!LAUNCH_DEBUG_ENABLED || isTextEntryTarget(event.target)) {
       return;
     }
 
-    launchBall({
-      ...BALL_DEFAULT_LAUNCH_DATA,
-      horizontalLaunchAngle: 0,
-    });
+    launchDebugBallFromInput();
     return;
   }
 
@@ -323,7 +329,6 @@ function animate() {
     }
     ballPhysics.prepareForNextShot();
     playerState = 'control';
-    currentLaunchData = null;
     clubBallContactLatched = true;
     ballTelemetry = ballPhysics.getDebugTelemetry();
   }
@@ -338,7 +343,6 @@ function animate() {
   viewerScene.updateBallFollowCamera(deltaSeconds);
   updateCharacterDebugTelemetry(characterTelemetry);
   updateBallDebugTelemetry(ballTelemetry);
-  updateLaunchDebugTelemetry(ballTelemetry);
   updateFpsIfNeeded();
   updatePacketRateIfNeeded();
   viewerScene.updateControls();
@@ -386,18 +390,7 @@ function updateCharacterDebugTelemetry(telemetry) {
 function updateBallDebugTelemetry(telemetry) {
   hud.updateBallState(telemetry.phase, telemetry.movementState, telemetry.speedMetersPerSecond);
   hud.updateShotStates(playerState, telemetry.phase, telemetry.movementState);
-}
-
-function updateLaunchDebugTelemetry(telemetry) {
-  const isBallMoving = telemetry.phase === 'moving';
-  hud.updateLaunchPanelVisible(isBallMoving);
-
-  if (!isBallMoving || !currentLaunchData) {
-    hud.clearLaunchData();
-    return;
-  }
-
-  hud.updateLaunchData(currentLaunchData);
+  updateLaunchDebugUiState();
 }
 
 function detectClubBallImpact(characterTelemetry) {
@@ -422,13 +415,6 @@ function detectClubBallImpact(characterTelemetry) {
 }
 
 function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = null) {
-  currentLaunchData = {
-    ballSpeed: launchData.ballSpeed,
-    verticalLaunchAngle: launchData.verticalLaunchAngle,
-    horizontalLaunchAngle: launchData.horizontalLaunchAngle,
-    spinSpeed: launchData.spinSpeed,
-    spinAxis: launchData.spinAxis,
-  };
   if (Math.abs(launchData.horizontalLaunchAngle) <= SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES) {
     shotImpactAudio.playPangya();
   }
@@ -470,8 +456,121 @@ function resetShotFlow() {
     faceCameraTowardHole(ballPhysics.getPosition());
   }
   playerState = 'control';
-  currentLaunchData = null;
   clubBallContactLatched = true;
+  updateLaunchDebugUiState();
+}
+
+function initializeLaunchDebugUi() {
+  hud.updateLaunchPanelVisible(LAUNCH_DEBUG_ENABLED);
+
+  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+    return;
+  }
+
+  for (const { key, inputKey } of LAUNCH_DEBUG_INPUT_FIELDS) {
+    dom[inputKey].value = String(BALL_DEFAULT_LAUNCH_DATA[key]);
+    dom[inputKey].addEventListener('input', () => {
+      updateLaunchDebugUiState();
+    });
+  }
+
+  dom.launchDebugButton.addEventListener('click', () => {
+    launchDebugBallFromInput();
+  });
+  updateLaunchDebugUiState();
+}
+
+function launchDebugBallFromInput() {
+  if (!LAUNCH_DEBUG_ENABLED || !canLaunchDebugShot()) {
+    updateLaunchDebugUiState();
+    return;
+  }
+
+  const launchDebugInputState = getLaunchDebugInputState();
+  if (!launchDebugInputState.launchData) {
+    updateLaunchDebugUiState(launchDebugInputState.errorMessage);
+    return;
+  }
+
+  launchBall(launchDebugInputState.launchData);
+  updateLaunchDebugUiState('Debug shot launched. Wait for the ball to settle before launching again.');
+}
+
+function updateLaunchDebugUiState(statusMessage = null) {
+  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+    return;
+  }
+
+  const launchDebugInputState = getLaunchDebugInputState();
+  const canLaunch = canLaunchDebugShot() && Boolean(launchDebugInputState.launchData);
+
+  for (const { inputKey } of LAUNCH_DEBUG_INPUT_FIELDS) {
+    dom[inputKey].setAttribute('aria-invalid', String(Boolean(launchDebugInputState.errorMessage)));
+  }
+  dom.launchDebugButton.disabled = !canLaunch;
+
+  if (statusMessage) {
+    dom.launchDebugMessage.textContent = statusMessage;
+    return;
+  }
+
+  if (launchDebugInputState.errorMessage) {
+    dom.launchDebugMessage.textContent = launchDebugInputState.errorMessage;
+    return;
+  }
+
+  if (!canLaunchDebugShot()) {
+    dom.launchDebugMessage.textContent = 'Launch is available only while player control is active and the ball is ready.';
+    return;
+  }
+
+  dom.launchDebugMessage.textContent = 'Edit the launch values, then click Launch or press L.';
+}
+
+function canLaunchDebugShot() {
+  return playerState === 'control' && ballPhysics.getStateSnapshot().phase === 'ready';
+}
+
+function getLaunchDebugInputState() {
+  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs()) {
+    return { launchData: null, errorMessage: '' };
+  }
+
+  const launchData = { ...BALL_DEFAULT_LAUNCH_DATA };
+  for (const { key, inputKey } of LAUNCH_DEBUG_INPUT_FIELDS) {
+    const rawValue = dom[inputKey].value.trim();
+    if (!rawValue) {
+      return { launchData: null, errorMessage: `Launch field "${key}" is required.` };
+    }
+
+    const fieldValue = Number(rawValue);
+    if (!Number.isFinite(fieldValue)) {
+      return { launchData: null, errorMessage: `Launch field "${key}" must be a finite number.` };
+    }
+
+    launchData[key] = fieldValue;
+  }
+
+  if (launchData.ballSpeed <= 0) {
+    return { launchData: null, errorMessage: 'Launch field "ballSpeed" must be greater than 0.' };
+  }
+
+  return { launchData, errorMessage: '' };
+}
+
+function hasLaunchDebugInputs() {
+  return LAUNCH_DEBUG_INPUT_FIELDS.every(({ inputKey }) => Boolean(dom[inputKey]));
+}
+
+function isTextEntryTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return target.isContentEditable
+    || target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT';
 }
 
 function faceCameraTowardHole(ballPosition) {

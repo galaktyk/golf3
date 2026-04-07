@@ -39,7 +39,7 @@
     <div class="panel panel-debug">
       <div class="panel-heading">
         <p class="eyebrow">Launch Debug</p>
-        <p class="panel-status-text">Impact-derived launch payload while the ball is in play.</p>
+        <p id="viewer-launch-debug-message" class="panel-status-text">Edit the launch values, then click Launch or press L.</p>
       </div>
       <div class="debug-grid">
         <span class="debug-label">Player</span>
@@ -48,16 +48,33 @@
         <span id="viewer-ball-phase" class="debug-value">ready</span>
         <span class="debug-label">Ball Move</span>
         <span id="viewer-ball-movement" class="debug-value">-</span>
-        <span class="debug-label">Ball Speed</span>
-        <span id="viewer-launch-ball-speed" class="debug-value">-</span>
-        <span class="debug-label">Vertical LA</span>
-        <span id="viewer-launch-vertical-angle" class="debug-value">-</span>
-        <span class="debug-label">Horizontal LA</span>
-        <span id="viewer-launch-horizontal-angle" class="debug-value">-</span>
-        <span class="debug-label">Spin Speed</span>
-        <span id="viewer-launch-spin-speed" class="debug-value">-</span>
-        <span class="debug-label">Spin Axis</span>
-        <span id="viewer-launch-spin-axis" class="debug-value">-</span>
+      </div>
+      <div class="launch-debug-controls">
+        <div class="launch-debug-field-grid">
+          <label class="launch-debug-field">
+            <span class="debug-label">Ball Speed</span>
+            <input id="viewer-launch-ball-speed-input" class="launch-debug-input" type="number" step="1" inputmode="decimal" autocomplete="off" value="40.2">
+          </label>
+          <label class="launch-debug-field">
+            <span class="debug-label">Vertical LA</span>
+            <input id="viewer-launch-vertical-angle-input" class="launch-debug-input" type="number" step="1" inputmode="decimal" autocomplete="off" value="15.4">
+          </label>
+          <label class="launch-debug-field">
+            <span class="debug-label">Horizontal LA</span>
+            <input id="viewer-launch-horizontal-angle-input" class="launch-debug-input" type="number" step="1" inputmode="decimal" autocomplete="off" value="0">
+          </label>
+          <label class="launch-debug-field">
+            <span class="debug-label">Spin Speed</span>
+            <input id="viewer-launch-spin-speed-input" class="launch-debug-input" type="number" step="1" inputmode="decimal" autocomplete="off" value="3021">
+          </label>
+          <label class="launch-debug-field">
+            <span class="debug-label">Spin Axis</span>
+            <input id="viewer-launch-spin-axis-input" class="launch-debug-input" type="number" step="0.1" inputmode="decimal" autocomplete="off" value="-0.5">
+          </label>
+        </div>
+        <div class="launch-debug-actions">
+          <button id="viewer-launch-debug-button" class="action-button secondary launch-debug-button" type="button">Launch (L)</button>
+        </div>
       </div>
     </div>
   </div>

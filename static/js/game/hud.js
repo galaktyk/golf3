@@ -12,7 +12,6 @@ export function createViewerHud(dom) {
       this.updateCameraPosition(cameraPosition);
       this.updateBallState('ready', null, 0);
       this.updateShotStates('control', 'ready', null);
-      this.clearLaunchData();
       this.updateLaunchPanelVisible(false);
     },
 
@@ -65,30 +64,6 @@ export function createViewerHud(dom) {
         ? `moving/${movementState}`
         : phase;
       dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(2)} m/s`;
-    },
-
-    updateLaunchData(launchData) {
-      if (!dom.launchBallSpeedLabel) {
-        return;
-      }
-
-      dom.launchBallSpeedLabel.textContent = `${launchData.ballSpeed.toFixed(2)} m/s`;
-      dom.launchVerticalAngleLabel.textContent = `${launchData.verticalLaunchAngle.toFixed(1)} deg`;
-      dom.launchHorizontalAngleLabel.textContent = `${launchData.horizontalLaunchAngle.toFixed(1)} deg`;
-      dom.launchSpinSpeedLabel.textContent = `${launchData.spinSpeed.toFixed(0)} rpm`;
-      dom.launchSpinAxisLabel.textContent = `${launchData.spinAxis.toFixed(1)} deg`;
-    },
-
-    clearLaunchData() {
-      if (!dom.launchBallSpeedLabel) {
-        return;
-      }
-
-      dom.launchBallSpeedLabel.textContent = '-';
-      dom.launchVerticalAngleLabel.textContent = '-';
-      dom.launchHorizontalAngleLabel.textContent = '-';
-      dom.launchSpinSpeedLabel.textContent = '-';
-      dom.launchSpinAxisLabel.textContent = '-';
     },
 
     updateLaunchPanelVisible(visible) {
