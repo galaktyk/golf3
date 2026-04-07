@@ -3,11 +3,21 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildCourseCollision } from '/static/js/game/collision.js';
 import {
   BALL_RADIUS,
+  BLUE_LAGOON_HOLE_POSITION,
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_HISTORY_DURATION_SECONDS,
   CLUB_HEAD_HISTORY_MAX_SAMPLES,
   CLUB_HEAD_COLLIDER_TIP_BACKOFF,
   CLUB_HEAD_COLLIDER_SIDE_OFFSET,
+  HOLE_MARKER_BEAM_CORE_COLOR,
+  HOLE_MARKER_BEAM_CORE_RADIUS,
+  HOLE_MARKER_BEAM_GLOW_COLOR,
+  HOLE_MARKER_BEAM_GLOW_RADIUS,
+  HOLE_MARKER_BEAM_HEIGHT,
+  HOLE_MARKER_LABEL_CANVAS_HEIGHT,
+  HOLE_MARKER_LABEL_CANVAS_WIDTH,
+  HOLE_MARKER_LABEL_FONT_FAMILY,
+  HOLE_MARKER_LABEL_HEIGHT,
   WORLD_FORWARD,
 } from '/static/js/game/constants.js';
 import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/js/game/materials.js';
@@ -23,8 +33,11 @@ export function loadViewerModels(viewerScene, onStatus) {
   const ballBounds = new THREE.Box3();
   const ballSize = new THREE.Vector3();
   const ballCenter = new THREE.Vector3();
+  const holeMarker = createHoleMarker();
   clubAxesHelper.visible = DEBUG_SHOW_AXES;
   viewerScene.clubAxesHelper = clubAxesHelper;
+  viewerScene.overlayRoot.add(holeMarker.labelSprite);
+  viewerScene.setHoleMarker(holeMarker);
 
   loader.load(
     '/assets/models/maps/blue_lagoon_1.glb',
@@ -34,6 +47,7 @@ export function loadViewerModels(viewerScene, onStatus) {
       viewerScene.placeMapOriginAtTee();
       viewerScene.setMapBounds(new THREE.Box3().setFromObject(viewerScene.mapRoot));
       viewerScene.setCourseCollision(buildCourseCollision(viewerScene.mapRoot));
+      viewerScene.mapRoot.add(holeMarker.beamRoot);
       viewerScene.positionLightsForMap();
       viewerScene.setInitialCameraPose();
       if (viewerScene.courseCollision?.triangleCount) {
@@ -379,4 +393,125 @@ function createClubHeadColliderMesh(clubBounds) {
   const tipY = clubBounds.isEmpty() ? 0 : clubBounds.max.y;
   collider.position.set(CLUB_HEAD_COLLIDER_SIDE_OFFSET, tipY - CLUB_HEAD_COLLIDER_TIP_BACKOFF, 0);
   return collider;
+}
+
+function createHoleMarker() {
+  const beamRoot = new THREE.Group();
+  const labelCanvas = document.createElement('canvas');
+  const labelContext = labelCanvas.getContext('2d');
+  if (!labelContext) {
+    throw new Error('Failed to create a 2D canvas context for the hole marker label.');
+  }
+  const beamGlow = new THREE.Mesh(
+    new THREE.CylinderGeometry(HOLE_MARKER_BEAM_GLOW_RADIUS, HOLE_MARKER_BEAM_GLOW_RADIUS, HOLE_MARKER_BEAM_HEIGHT, 16, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: HOLE_MARKER_BEAM_GLOW_COLOR,
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  const beamCore = new THREE.Mesh(
+    new THREE.CylinderGeometry(HOLE_MARKER_BEAM_CORE_RADIUS, HOLE_MARKER_BEAM_CORE_RADIUS, HOLE_MARKER_BEAM_HEIGHT, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: HOLE_MARKER_BEAM_CORE_COLOR,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
+  const labelTexture = new THREE.CanvasTexture(labelCanvas);
+  const labelSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: labelTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  const labelAspect = HOLE_MARKER_LABEL_CANVAS_WIDTH / HOLE_MARKER_LABEL_CANVAS_HEIGHT;
+  let lastHeightLabel = '';
+  let lastDistanceLabel = '';
+
+  beamRoot.name = 'hole-marker-beam';
+  beamRoot.position.copy(BLUE_LAGOON_HOLE_POSITION);
+  beamRoot.userData.excludeCourseCollision = true;
+  beamGlow.position.y = HOLE_MARKER_BEAM_HEIGHT * 0.5;
+  beamCore.position.y = HOLE_MARKER_BEAM_HEIGHT * 0.5;
+  beamGlow.userData.excludeCourseCollision = true;
+  beamCore.userData.excludeCourseCollision = true;
+  beamRoot.add(beamGlow);
+  beamRoot.add(beamCore);
+
+  labelCanvas.width = HOLE_MARKER_LABEL_CANVAS_WIDTH;
+  labelCanvas.height = HOLE_MARKER_LABEL_CANVAS_HEIGHT;
+  labelTexture.generateMipmaps = false;
+  labelTexture.minFilter = THREE.LinearFilter;
+  labelTexture.magFilter = THREE.LinearFilter;
+  labelSprite.name = 'hole-marker-label';
+  labelSprite.visible = false;
+  labelSprite.frustumCulled = false;
+  labelSprite.renderOrder = 999;
+  labelSprite.scale.set(HOLE_MARKER_LABEL_HEIGHT * labelAspect, HOLE_MARKER_LABEL_HEIGHT, 1);
+
+  const redrawLabel = () => {
+    labelContext.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+    labelContext.textAlign = 'center';
+    labelContext.textBaseline = 'middle';
+    labelContext.lineJoin = 'round';
+    labelContext.shadowBlur = 22;
+    labelContext.shadowColor = 'rgba(0, 234, 255, 0.35)';
+
+    labelContext.font = `700 62px ${HOLE_MARKER_LABEL_FONT_FAMILY}`;
+    labelContext.lineWidth = 12;
+    labelContext.strokeStyle = 'rgba(1, 14, 20, 0.9)';
+    labelContext.fillStyle = '#7efcff';
+    labelContext.strokeText(lastHeightLabel, labelCanvas.width * 0.5, 86);
+    labelContext.fillText(lastHeightLabel, labelCanvas.width * 0.5, 86);
+
+    labelContext.font = `700 86px ${HOLE_MARKER_LABEL_FONT_FAMILY}`;
+    labelContext.lineWidth = 14;
+    labelContext.fillStyle = '#ffffff';
+    labelContext.strokeText(lastDistanceLabel, labelCanvas.width * 0.5, 170);
+    labelContext.fillText(lastDistanceLabel, labelCanvas.width * 0.5, 170);
+
+    labelTexture.needsUpdate = true;
+  };
+
+  if (document.fonts?.load) {
+    document.fonts.load(`700 62px ${HOLE_MARKER_LABEL_FONT_FAMILY}`).then(() => {
+      if (lastHeightLabel || lastDistanceLabel) {
+        redrawLabel();
+      }
+    }).catch(() => {});
+  }
+
+  return {
+    beamRoot,
+    holePosition: BLUE_LAGOON_HOLE_POSITION.clone(),
+    labelSprite,
+
+    setLabelText(heightLabel, distanceLabel) {
+      if (heightLabel === lastHeightLabel && distanceLabel === lastDistanceLabel) {
+        return;
+      }
+
+      lastHeightLabel = heightLabel;
+      lastDistanceLabel = distanceLabel;
+      redrawLabel();
+    },
+
+    setLabelOverlayPosition(x, y, z) {
+      labelSprite.position.set(x, y, z);
+    },
+
+    setLabelVisible(visible) {
+      labelSprite.visible = visible;
+    },
+  };
 }

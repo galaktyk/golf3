@@ -8,11 +8,15 @@ import {
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
   CLUB_HEAD_TO_BALL_SPEED_FACTOR,
   FPS_LABEL_UPDATE_INTERVAL_MS,
+  HOLE_MARKER_LABEL_DEPTH,
+  HOLE_MARKER_LABEL_EDGE_PADDING_PX,
+  HOLE_MARKER_LABEL_TOP_OFFSET_RATIO,
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
+import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
 import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
@@ -44,6 +48,9 @@ let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
+const holeProjection = new THREE.Vector3();
+const holeCameraSpace = new THREE.Vector3();
+const holeWorldPosition = new THREE.Vector3();
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
@@ -174,6 +181,7 @@ function animate() {
   updatePacketRateIfNeeded();
   viewerScene.controls.update();
   viewerScene.applyCameraTilt();
+  updateHoleMarker();
   updateCameraPositionLabelIfNeeded();
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
@@ -320,6 +328,52 @@ function updateFpsIfNeeded() {
   hud.updateFps(framesPerSecond);
   framesSinceLastSample = 0;
   lastFpsSampleTime = now;
+}
+
+function updateHoleMarker() {
+  const holeMarker = viewerScene.getHoleMarker();
+  if (!holeMarker) {
+    return;
+  }
+
+  holeMarker.beamRoot.updateWorldMatrix(true, false);
+  holeMarker.beamRoot.getWorldPosition(holeWorldPosition);
+
+  const ballPosition = ballPhysics.getPosition();
+  const horizontalDistanceMeters = Math.hypot(
+    holeWorldPosition.x - ballPosition.x,
+    holeWorldPosition.z - ballPosition.z,
+  );
+  const heightDeltaMeters = holeWorldPosition.y - ballPosition.y;
+
+  holeMarker.setLabelText(
+    formatHeightDeltaMeters(heightDeltaMeters),
+    formatDistanceYards(horizontalDistanceMeters),
+  );
+
+  holeCameraSpace.copy(holeWorldPosition).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+  if (holeCameraSpace.z >= 0) {
+    holeMarker.setLabelVisible(false);
+    return;
+  }
+
+  holeProjection.copy(holeWorldPosition).project(viewerScene.camera);
+  const horizontalPaddingNdc = (HOLE_MARKER_LABEL_EDGE_PADDING_PX / window.innerWidth) * 2;
+  const clampedProjectionX = THREE.MathUtils.clamp(
+    holeProjection.x,
+    -1 + horizontalPaddingNdc,
+    1 - horizontalPaddingNdc,
+  );
+  const overlayHeightAtDepth = 2 * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5)) * HOLE_MARKER_LABEL_DEPTH;
+  const overlayWidthAtDepth = overlayHeightAtDepth * viewerScene.camera.aspect;
+  const overlayY = (1 - (HOLE_MARKER_LABEL_TOP_OFFSET_RATIO * 2)) * overlayHeightAtDepth * 0.5;
+
+  holeMarker.setLabelOverlayPosition(
+    clampedProjectionX * overlayWidthAtDepth * 0.5,
+    overlayY,
+    -HOLE_MARKER_LABEL_DEPTH,
+  );
+  holeMarker.setLabelVisible(true);
 }
 
 function updateCameraPositionLabelIfNeeded() {

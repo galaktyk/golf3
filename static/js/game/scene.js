@@ -22,6 +22,7 @@ export function createViewerScene(canvas) {
 
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 2000);
   camera.position.set(2.6, 1.8, 4.4);
+  scene.add(camera);
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -49,6 +50,7 @@ export function createViewerScene(canvas) {
   const ballRoot = new THREE.Group();
   const clubRoot = new THREE.Group();
   const characterRoot = new THREE.Group();
+  const overlayRoot = new THREE.Group();
   const rotatedCharacterSetupOffset = new THREE.Vector3();
   const characterForward = new THREE.Vector3();
 
@@ -56,10 +58,12 @@ export function createViewerScene(canvas) {
   scene.add(ballRoot);
   scene.add(clubRoot);
   scene.add(characterRoot);
+  camera.add(overlayRoot);
 
   let mapBounds = null;
   let courseCollision = null;
   let clubHeadCollider = null;
+  let holeMarker = null;
   let ballCameraFollowEnabled = true;
   const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
@@ -127,6 +131,7 @@ export function createViewerScene(canvas) {
     ballRoot,
     clubRoot,
     characterRoot,
+    overlayRoot,
 
     get mapBounds() {
       return mapBounds;
@@ -150,6 +155,14 @@ export function createViewerScene(canvas) {
 
     getClubHeadCollider() {
       return clubHeadCollider;
+    },
+
+    setHoleMarker(nextHoleMarker) {
+      holeMarker = nextHoleMarker;
+    },
+
+    getHoleMarker() {
+      return holeMarker;
     },
 
     applyCameraTilt() {

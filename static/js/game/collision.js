@@ -18,7 +18,7 @@ export function buildCourseCollision(mapRoot) {
   let meshCount = 0;
 
   mapRoot.traverse((node) => {
-    if (!node.isMesh || !node.geometry || node.isSkinnedMesh) {
+    if (!node.isMesh || !node.geometry || node.isSkinnedMesh || node.userData.excludeCourseCollision) {
       return;
     }
 

@@ -29,7 +29,7 @@ export const BALL_GROUNDED_NORMAL_MIN_Y = 0.6;
 
 // In metric units, for debugging purposes only
 export const BALL_DEFAULT_LAUNCH_DATA = {
-  ballSpeed: 45.2, // m/s (approx 101 mph)
+  ballSpeed: 24.2, // m/s (approx 101 mph)
   verticalLaunchAngle: 15.4,
   horizontalLaunchAngle: 0,
   spinSpeed: 3021, // RPM, not being use right now
@@ -67,3 +67,17 @@ export const CAMERA_FOLLOW_STIFFNESS = 8;
 export const MAX_RENDER_PIXEL_RATIO = 0.65;
 export const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
 export const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
+export const BLUE_LAGOON_HOLE_POSITION = new THREE.Vector3(53.73, -1.73, -262.7);
+export const HOLE_MARKER_BEAM_HEIGHT = 1000;
+export const HOLE_MARKER_BEAM_CORE_RADIUS = 0.12;
+export const HOLE_MARKER_BEAM_GLOW_RADIUS = 0.28;
+export const HOLE_MARKER_BEAM_CORE_COLOR = '#74fbff';
+export const HOLE_MARKER_BEAM_GLOW_COLOR = '#00eaff';
+export const HOLE_MARKER_LABEL_DEPTH = 2.8;
+export const HOLE_MARKER_LABEL_HEIGHT = 0.26;
+export const HOLE_MARKER_LABEL_TOP_OFFSET_RATIO = 0.1;
+export const HOLE_MARKER_LABEL_EDGE_PADDING_PX = 72;
+export const HOLE_MARKER_LABEL_CANVAS_WIDTH = 512;
+export const HOLE_MARKER_LABEL_CANVAS_HEIGHT = 256;
+export const HOLE_MARKER_LABEL_FONT_FAMILY = '"B GenJyuu Gothic X", "Segoe UI Variable", Aptos, sans-serif';
+export const METERS_TO_YARDS = 1.0936132983377078;
