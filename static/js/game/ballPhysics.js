@@ -63,6 +63,7 @@ export function createBallPhysics(viewerScene) {
   const previousOrientation = orientation.clone();
   const renderPosition = position.clone();
   const renderOrientation = orientation.clone();
+  const shotStartPosition = position.clone();
   const supportNormal = new THREE.Vector3(0, 1, 0);
   let accumulatorSeconds = 0;
   let phase = 'ready';
@@ -301,6 +302,7 @@ export function createBallPhysics(viewerScene) {
 
   const launch = (launchData = BALL_DEFAULT_LAUNCH_DATA, referenceForward = null) => {
     ensureCourseContact();
+    shotStartPosition.copy(position);
     velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene, referenceForward));
     phase = 'moving';
     movementState = 'air';
@@ -311,6 +313,7 @@ export function createBallPhysics(viewerScene) {
     position.copy(BALL_START_POSITION);
     velocity.set(0, 0, 0);
     orientation.identity();
+    shotStartPosition.copy(position);
     supportNormal.set(0, 1, 0);
     accumulatorSeconds = 0;
     hasCourseContact = false;
@@ -352,6 +355,10 @@ export function createBallPhysics(viewerScene) {
         movementState: phase === 'moving' ? movementState : null,
         phase,
         position,
+        shotTravelDistanceMeters: Math.hypot(
+          position.x - shotStartPosition.x,
+          position.z - shotStartPosition.z,
+        ),
         speedMetersPerSecond: velocity.length(),
         velocity,
         groundTransitionDebug: lastGroundTransitionDebug,

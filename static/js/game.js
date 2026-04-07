@@ -347,7 +347,7 @@ function animate() {
   updatePacketRateIfNeeded();
   viewerScene.updateControls();
   viewerScene.applyCameraTilt();
-  updateHoleMarker();
+  updateHoleMarker(ballTelemetry);
   updateCameraPositionLabelIfNeeded();
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
@@ -611,7 +611,7 @@ function updateFpsIfNeeded() {
   lastFpsSampleTime = now;
 }
 
-function updateHoleMarker() {
+function updateHoleMarker(ballTelemetry) {
   const holeMarker = viewerScene.getHoleMarker();
   if (!holeMarker) {
     return;
@@ -620,12 +620,24 @@ function updateHoleMarker() {
   holeMarker.beamRoot.updateWorldMatrix(true, false);
   holeMarker.beamRoot.getWorldPosition(holeWorldPosition);
 
-  const ballPosition = ballPhysics.getPosition();
+  const ballPosition = ballTelemetry.position;
   const horizontalDistanceMeters = Math.hypot(
     holeWorldPosition.x - ballPosition.x,
     holeWorldPosition.z - ballPosition.z,
   );
   const heightDeltaMeters = holeWorldPosition.y - ballPosition.y;
+
+  if (ballTelemetry.phase === 'moving') {
+    holeMarker.setMoveModeLabelText(
+      formatDistanceYards(ballTelemetry.shotTravelDistanceMeters),
+      formatDistanceYards(horizontalDistanceMeters),
+    );
+    holeMarker.setMoveModeLabelVisible(true);
+    holeMarker.setLabelVisible(false);
+    return;
+  }
+
+  holeMarker.setMoveModeLabelVisible(false);
 
   holeMarker.setLabelText(
     formatHeightDeltaMeters(heightDeltaMeters),

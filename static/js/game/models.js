@@ -18,6 +18,11 @@ import {
   HOLE_MARKER_LABEL_CANVAS_WIDTH,
   HOLE_MARKER_LABEL_FONT_FAMILY,
   HOLE_MARKER_LABEL_HEIGHT,
+  MOVE_MODE_LABEL_BOTTOM_OFFSET_RATIO,
+  MOVE_MODE_LABEL_CANVAS_HEIGHT,
+  MOVE_MODE_LABEL_CANVAS_WIDTH,
+  MOVE_MODE_LABEL_DEPTH,
+  MOVE_MODE_LABEL_HEIGHT,
   WORLD_FORWARD,
 } from '/static/js/game/constants.js';
 import { configureFlatShadedMaterials, configureUnlitMaterials } from '/static/js/game/materials.js';
@@ -37,6 +42,7 @@ export function loadViewerModels(viewerScene, onStatus) {
   clubAxesHelper.visible = DEBUG_SHOW_AXES;
   viewerScene.clubAxesHelper = clubAxesHelper;
   viewerScene.overlayRoot.add(holeMarker.labelSprite);
+  viewerScene.overlayRoot.add(holeMarker.moveModeLabelSprite);
   viewerScene.setHoleMarker(holeMarker);
 
   loader.load(
@@ -437,9 +443,27 @@ function createHoleMarker() {
       toneMapped: false,
     }),
   );
+  const moveModeLabelCanvas = document.createElement('canvas');
+  const moveModeLabelContext = moveModeLabelCanvas.getContext('2d');
+  if (!moveModeLabelContext) {
+    throw new Error('Failed to create a 2D canvas context for the move mode distance label.');
+  }
+  const moveModeLabelTexture = new THREE.CanvasTexture(moveModeLabelCanvas);
+  const moveModeLabelSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: moveModeLabelTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
   const labelAspect = HOLE_MARKER_LABEL_CANVAS_WIDTH / HOLE_MARKER_LABEL_CANVAS_HEIGHT;
+  const moveModeLabelAspect = MOVE_MODE_LABEL_CANVAS_WIDTH / MOVE_MODE_LABEL_CANVAS_HEIGHT;
   let lastHeightLabel = '';
   let lastDistanceLabel = '';
+  let lastMoveModeTravelLabel = '';
+  let lastMoveModeHoleLabel = '';
 
   beamRoot.name = 'hole-marker-beam';
   beamRoot.position.copy(BLUE_LAGOON_HOLE_POSITION);
@@ -462,18 +486,29 @@ function createHoleMarker() {
   labelSprite.renderOrder = 999;
   labelSprite.scale.set(HOLE_MARKER_LABEL_HEIGHT * labelAspect, HOLE_MARKER_LABEL_HEIGHT, 1);
 
+  moveModeLabelCanvas.width = MOVE_MODE_LABEL_CANVAS_WIDTH;
+  moveModeLabelCanvas.height = MOVE_MODE_LABEL_CANVAS_HEIGHT;
+  moveModeLabelTexture.generateMipmaps = false;
+  moveModeLabelTexture.minFilter = THREE.LinearFilter;
+  moveModeLabelTexture.magFilter = THREE.LinearFilter;
+  moveModeLabelSprite.name = 'move-mode-distance-label';
+  moveModeLabelSprite.visible = false;
+  moveModeLabelSprite.frustumCulled = false;
+  moveModeLabelSprite.renderOrder = 999;
+  moveModeLabelSprite.scale.set(MOVE_MODE_LABEL_HEIGHT * moveModeLabelAspect, MOVE_MODE_LABEL_HEIGHT, 1);
+
   const redrawLabel = () => {
     labelContext.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
     labelContext.textAlign = 'center';
     labelContext.textBaseline = 'middle';
     labelContext.lineJoin = 'round';
-    labelContext.shadowBlur = 22;
-    labelContext.shadowColor = 'rgba(0, 234, 255, 0.35)';
+    labelContext.shadowBlur = 12;
+    labelContext.shadowColor = 'rgba(0, 0, 0, 0.45)';
 
     labelContext.font = `700 62px ${HOLE_MARKER_LABEL_FONT_FAMILY}`;
     labelContext.lineWidth = 12;
-    labelContext.strokeStyle = 'rgba(1, 14, 20, 0.9)';
-    labelContext.fillStyle = '#7efcff';
+    labelContext.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+    labelContext.fillStyle = '#ffffff';
     labelContext.strokeText(lastHeightLabel, labelCanvas.width * 0.5, 86);
     labelContext.fillText(lastHeightLabel, labelCanvas.width * 0.5, 86);
 
@@ -486,18 +521,48 @@ function createHoleMarker() {
     labelTexture.needsUpdate = true;
   };
 
+  const redrawMoveModeLabel = () => {
+    moveModeLabelContext.clearRect(0, 0, moveModeLabelCanvas.width, moveModeLabelCanvas.height);
+    moveModeLabelContext.textAlign = 'center';
+    moveModeLabelContext.textBaseline = 'middle';
+    moveModeLabelContext.lineJoin = 'round';
+    moveModeLabelContext.shadowBlur = 12;
+    moveModeLabelContext.shadowColor = 'rgba(0, 0, 0, 0.4)';
+
+    moveModeLabelContext.font = `700 90px ${HOLE_MARKER_LABEL_FONT_FAMILY}`;
+    moveModeLabelContext.lineWidth = 16;
+    moveModeLabelContext.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+    moveModeLabelContext.fillStyle = '#ffffff';
+    moveModeLabelContext.strokeText(lastMoveModeTravelLabel, moveModeLabelCanvas.width * 0.5, 72);
+    moveModeLabelContext.fillText(lastMoveModeTravelLabel, moveModeLabelCanvas.width * 0.5, 72);
+
+    moveModeLabelContext.fillStyle = '#ff0000';
+    moveModeLabelContext.strokeText(lastMoveModeHoleLabel, moveModeLabelCanvas.width * 0.5, 158);
+    moveModeLabelContext.fillText(lastMoveModeHoleLabel, moveModeLabelCanvas.width * 0.5, 158);
+
+    moveModeLabelTexture.needsUpdate = true;
+  };
+
   if (document.fonts?.load) {
     document.fonts.load(`700 62px ${HOLE_MARKER_LABEL_FONT_FAMILY}`).then(() => {
       if (lastHeightLabel || lastDistanceLabel) {
         redrawLabel();
       }
+      if (lastMoveModeTravelLabel || lastMoveModeHoleLabel) {
+        redrawMoveModeLabel();
+      }
     }).catch(() => {});
   }
+
+  const moveModeOverlayHeightAtDepth = 2 * Math.tan(THREE.MathUtils.degToRad(50 * 0.5)) * MOVE_MODE_LABEL_DEPTH;
+  const moveModeOverlayY = (-0.5 + MOVE_MODE_LABEL_BOTTOM_OFFSET_RATIO) * moveModeOverlayHeightAtDepth;
+  moveModeLabelSprite.position.set(0, moveModeOverlayY, -MOVE_MODE_LABEL_DEPTH);
 
   return {
     beamRoot,
     holePosition: BLUE_LAGOON_HOLE_POSITION.clone(),
     labelSprite,
+    moveModeLabelSprite,
 
     setLabelText(heightLabel, distanceLabel) {
       if (heightLabel === lastHeightLabel && distanceLabel === lastDistanceLabel) {
@@ -515,6 +580,20 @@ function createHoleMarker() {
 
     setLabelVisible(visible) {
       labelSprite.visible = visible;
+    },
+
+    setMoveModeLabelText(travelLabel, holeLabel) {
+      if (travelLabel === lastMoveModeTravelLabel && holeLabel === lastMoveModeHoleLabel) {
+        return;
+      }
+
+      lastMoveModeTravelLabel = travelLabel;
+      lastMoveModeHoleLabel = holeLabel;
+      redrawMoveModeLabel();
+    },
+
+    setMoveModeLabelVisible(visible) {
+      moveModeLabelSprite.visible = visible;
     },
   };
 }
