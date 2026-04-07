@@ -2,25 +2,17 @@ import * as THREE from 'three';
 import { decodeQuaternionPacket } from '/static/js/protocol.js';
 import {
   BALL_DEFAULT_LAUNCH_DATA,
-  BALL_IMPACT_DEBUG_SPIN_AXIS,
-  BALL_IMPACT_DEBUG_SPIN_SPEED,
-  BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
   CHARACTER_ROTATION_SPEED_DEGREES,
-  CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
-  CLUB_HEAD_IMPACT_MIN_SPEED,
-  CLUB_HEAD_LAUNCH_DIRECTION_LOCAL,
-  CLUB_HEAD_TO_BALL_SPEED_FACTOR,
-  CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
-  CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
   FPS_LABEL_UPDATE_INTERVAL_MS,
 } from '/static/js/game/constants.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { createViewerHud } from '/static/js/game/hud.js';
+import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
 
@@ -47,17 +39,6 @@ let clubBallContactLatched = false;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 
-const CLUB_HEAD_SWEEP = new THREE.Vector3();
-const CLUB_HEAD_TO_CLOSEST_POINT = new THREE.Vector3();
-const CLUB_TO_BALL = new THREE.Vector3();
-const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
-const CLUB_HEAD_PITCH_DIRECTION = new THREE.Vector3();
-const CLUB_HEAD_SIDE_AXIS = new THREE.Vector3();
-const HORIZONTAL_ARRIVAL_DIRECTION = new THREE.Vector3();
-const HORIZONTAL_FACING_FORWARD = new THREE.Vector3();
-const SWEEP_CLOSEST_POINT = new THREE.Vector3();
-const SIGNED_ANGLE_CROSS = new THREE.Vector3();
-const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
@@ -248,125 +229,17 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  const ballPosition = ballTelemetry.position;
-  const contactDistance = CLUB_HEAD_COLLIDER_RADIUS + BALL_RADIUS;
-  if (clubBallContactLatched || !didClubHeadSweepHitBall(characterTelemetry, ballPosition, contactDistance)) {
+  if (clubBallContactLatched) {
     return;
   }
 
-  if (characterTelemetry.clubHeadSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
+  const impact = resolveClubBallImpact(characterTelemetry, ballTelemetry.position);
+  if (!impact) {
     return;
   }
 
-  CLUB_TO_BALL.subVectors(ballPosition, characterTelemetry.clubHeadPreviousPosition);
-  if (CLUB_HEAD_SWEEP.dot(CLUB_TO_BALL) <= 0) {
-    return;
-  }
-
-  const launchData = buildImpactLaunchData(characterTelemetry);
-  launchBall(launchData, characterTelemetry.characterFacingForward);
+  launchBall(impact.launchData, impact.referenceForward);
   clubBallContactLatched = true;
-}
-
-function didClubHeadSweepHitBall(characterTelemetry, ballPosition, contactDistance) {
-  CLUB_HEAD_SWEEP.subVectors(characterTelemetry.clubHeadPosition, characterTelemetry.clubHeadPreviousPosition);
-  const sweepLengthSquared = CLUB_HEAD_SWEEP.lengthSq();
-  if (sweepLengthSquared <= 1e-10) {
-    return characterTelemetry.clubHeadPosition.distanceTo(ballPosition) <= contactDistance;
-  }
-
-  const ballProjection = CLUB_HEAD_TO_CLOSEST_POINT
-    .subVectors(ballPosition, characterTelemetry.clubHeadPreviousPosition)
-    .dot(CLUB_HEAD_SWEEP) / sweepLengthSquared;
-  const clampedProjection = THREE.MathUtils.clamp(ballProjection, 0, 1);
-
-  SWEEP_CLOSEST_POINT.copy(characterTelemetry.clubHeadPreviousPosition)
-    .addScaledVector(CLUB_HEAD_SWEEP, clampedProjection);
-
-  return SWEEP_CLOSEST_POINT.distanceToSquared(ballPosition) <= contactDistance * contactDistance;
-}
-
-function buildImpactLaunchData(characterTelemetry) {
-  HORIZONTAL_ARRIVAL_DIRECTION.copy(characterTelemetry.clubHeadVelocity);
-  HORIZONTAL_ARRIVAL_DIRECTION.y = 0;
-  if (HORIZONTAL_ARRIVAL_DIRECTION.lengthSq() <= 1e-8) {
-    HORIZONTAL_ARRIVAL_DIRECTION.copy(characterTelemetry.characterFacingForward);
-  } else {
-    HORIZONTAL_ARRIVAL_DIRECTION.normalize();
-  }
-
-  HORIZONTAL_FACING_FORWARD.copy(characterTelemetry.characterFacingForward);
-  HORIZONTAL_FACING_FORWARD.y = 0;
-  if (HORIZONTAL_FACING_FORWARD.lengthSq() <= 1e-8) {
-    HORIZONTAL_FACING_FORWARD.set(0, 0, -1);
-  } else {
-    HORIZONTAL_FACING_FORWARD.normalize();
-  }
-
-  return {
-    ballSpeed: characterTelemetry.clubHeadSpeedMetersPerSecond * CLUB_HEAD_TO_BALL_SPEED_FACTOR,
-    verticalLaunchAngle: getVerticalLaunchAngleDegrees(characterTelemetry),
-    horizontalLaunchAngle: getSignedHorizontalAngleDegrees(
-      HORIZONTAL_FACING_FORWARD,
-      HORIZONTAL_ARRIVAL_DIRECTION,
-    ),
-    spinSpeed: BALL_IMPACT_DEBUG_SPIN_SPEED,
-    spinAxis: BALL_IMPACT_DEBUG_SPIN_AXIS,
-  };
-}
-
-function getSignedHorizontalAngleDegrees(fromDirection, toDirection) {
-  const dot = THREE.MathUtils.clamp(fromDirection.dot(toDirection), -1, 1);
-  SIGNED_ANGLE_CROSS.crossVectors(fromDirection, toDirection);
-  const radians = Math.atan2(SIGNED_ANGLE_CROSS.y, dot);
-  return THREE.MathUtils.radToDeg(radians);
-}
-
-function getVerticalLaunchAngleDegrees(characterTelemetry) {
-  if (!characterTelemetry.clubHeadQuaternion) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
-  }
-
-  CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
-    .applyQuaternion(characterTelemetry.clubHeadQuaternion);
-  if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
-  }
-
-  CLUB_HEAD_LAUNCH_DIRECTION.normalize();
-  if (CLUB_HEAD_LAUNCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
-    CLUB_HEAD_LAUNCH_DIRECTION.multiplyScalar(-1);
-  }
-
-  CLUB_HEAD_SIDE_AXIS.crossVectors(HORIZONTAL_ARRIVAL_DIRECTION, WORLD_UP);
-  if (CLUB_HEAD_SIDE_AXIS.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
-  }
-
-  CLUB_HEAD_SIDE_AXIS.normalize();
-  CLUB_HEAD_PITCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION);
-  CLUB_HEAD_PITCH_DIRECTION.addScaledVector(
-    CLUB_HEAD_SIDE_AXIS,
-    -CLUB_HEAD_PITCH_DIRECTION.dot(CLUB_HEAD_SIDE_AXIS),
-  );
-  if (CLUB_HEAD_PITCH_DIRECTION.lengthSq() <= 1e-8) {
-    return BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
-  }
-
-  CLUB_HEAD_PITCH_DIRECTION.normalize();
-  if (CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION) < 0) {
-    CLUB_HEAD_PITCH_DIRECTION.multiplyScalar(-1);
-  }
-
-  const radians = Math.atan2(
-    CLUB_HEAD_PITCH_DIRECTION.y,
-    Math.max(CLUB_HEAD_PITCH_DIRECTION.dot(HORIZONTAL_ARRIVAL_DIRECTION), 1e-6),
-  );
-  return THREE.MathUtils.clamp(
-    THREE.MathUtils.radToDeg(radians),
-    CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
-    CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
-  );
 }
 
 function launchBall(launchData, referenceForward) {

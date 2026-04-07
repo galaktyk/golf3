@@ -4,6 +4,8 @@ import { buildCourseCollision } from '/static/js/game/collision.js';
 import {
   BALL_RADIUS,
   CLUB_HEAD_COLLIDER_RADIUS,
+  CLUB_HEAD_HISTORY_DURATION_SECONDS,
+  CLUB_HEAD_HISTORY_MAX_SAMPLES,
   CLUB_HEAD_COLLIDER_TIP_BACKOFF,
   CLUB_HEAD_COLLIDER_SIDE_OFFSET,
   WORLD_FORWARD,
@@ -124,7 +126,32 @@ export function loadCharacter(viewerScene, onStatus) {
   let skeletonHelper = null;
   let swingDurationSeconds = 0;
   let currentAnimationTimeSeconds = 0;
+  let clubHeadSampleTimeSeconds = 0;
   let hasClubHeadSample = false;
+  const clubHeadSampleHistory = [];
+
+  const trimClubHeadSampleHistory = () => {
+    while (clubHeadSampleHistory.length > CLUB_HEAD_HISTORY_MAX_SAMPLES) {
+      clubHeadSampleHistory.shift();
+    }
+
+    while (
+      clubHeadSampleHistory.length > 1
+      && clubHeadSampleTimeSeconds - clubHeadSampleHistory[0].timeSeconds > CLUB_HEAD_HISTORY_DURATION_SECONDS
+    ) {
+      clubHeadSampleHistory.shift();
+    }
+  };
+
+  const pushClubHeadSample = () => {
+    clubHeadSampleHistory.push({
+      timeSeconds: clubHeadSampleTimeSeconds,
+      position: clubHeadWorldPosition.clone(),
+      quaternion: clubHeadWorldQuaternion.clone(),
+      characterFacingForward: characterFacingForward.clone(),
+    });
+    trimClubHeadSampleHistory();
+  };
 
   const initializeCharacterControllerIfReady = () => {
     if (!characterAnimationClip || !characterSocketBone || characterMixer) {
@@ -263,6 +290,8 @@ export function loadCharacter(viewerScene, onStatus) {
 
   return {
     update(deltaSeconds, clubQuaternion) {
+      clubHeadSampleTimeSeconds += Math.max(deltaSeconds, 0);
+
       if (clubQuaternion) {
         viewerScene.characterRoot.getWorldQuaternion(characterWorldQuaternion);
         worldClubQuaternion.copy(characterWorldQuaternion).multiply(clubQuaternion).normalize();
@@ -282,6 +311,8 @@ export function loadCharacter(viewerScene, onStatus) {
       }
 
       if (!characterSocketBone) {
+        hasClubHeadSample = false;
+        clubHeadSampleHistory.length = 0;
         return;
       }
 
@@ -295,6 +326,8 @@ export function loadCharacter(viewerScene, onStatus) {
       const clubHeadCollider = viewerScene.getClubHeadCollider();
       if (!clubHeadCollider) {
         clubHeadWorldVelocity.set(0, 0, 0);
+        hasClubHeadSample = false;
+        clubHeadSampleHistory.length = 0;
         return;
       }
 
@@ -311,6 +344,7 @@ export function loadCharacter(viewerScene, onStatus) {
 
       lastClubHeadWorldPosition.copy(clubHeadWorldPosition);
       hasClubHeadSample = true;
+      pushClubHeadSample();
     },
 
     getDebugTelemetry() {
@@ -319,6 +353,7 @@ export function loadCharacter(viewerScene, onStatus) {
         clubHeadPreviousPosition: clubHeadPreviousWorldPosition,
         clubHeadPosition: clubHeadWorldPosition,
         clubHeadQuaternion: clubHeadWorldQuaternion,
+        clubHeadSampleHistory,
         clubHeadVelocity: clubHeadWorldVelocity,
         clubHeadSpeedMetersPerSecond: clubHeadWorldVelocity.length(),
         characterFacingForward,
