@@ -4,7 +4,11 @@ import os
 from pathlib import Path
 
 import uvicorn
+import mimetypes
 
+# Ensure correct MIME types for JavaScript files on Windows
+mimetypes.add_type("application/javascript", ".js")
+mimetypes.add_type("application/javascript", ".mjs")
 
 BASE_DIR = Path(__file__).resolve().parent
 CERT_DIR = BASE_DIR / ".certs"
