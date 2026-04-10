@@ -655,10 +655,10 @@ function createAimingMarker() {
 
   const redrawMarker = () => {
     const centerX = markerCanvas.width * 0.5;
-    const textY = 76;
-    const triangleTopY = 138;
-    const triangleBottomY = 292;
-    const triangleHalfWidth = 64;
+    const textY = 112;
+    const triangleTopY = 176;
+    const triangleBottomY = 284;
+    const triangleHalfWidth = 50;
 
     markerContext.clearRect(0, 0, markerCanvas.width, markerCanvas.height);
     markerContext.textAlign = 'center';
