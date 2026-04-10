@@ -21,10 +21,10 @@ const PREVIEW_DISPLACEMENT = new THREE.Vector3();
 const PREVIEW_CAMERA_FORWARD = new THREE.Vector3();
 const PREVIEW_FALLBACK_POINT = new THREE.Vector3();
 const PREVIEW_START_POSITION = new THREE.Vector3();
-const PREVIEW_CLEARANCE_HEIGHT_METERS = BALL_RADIUS * 0.12;
-const PREVIEW_MIN_LANDING_TRAVEL_METERS = Math.max(BALL_RADIUS * 2, 0.08);
+const PREVIEW_CLEARANCE_HEIGHT_METERS = BALL_RADIUS * 0.35;
+const PREVIEW_MIN_LANDING_TRAVEL_METERS = Math.max(BALL_RADIUS * 6, 0.24);
 
-export function predictFirstLandingPoint(viewerScene, startPosition, launchData, referenceForward = null) {
+export function predictFirstContactPoint(viewerScene, startPosition, launchData, referenceForward = null) {
   if (!viewerScene?.courseCollision?.root || !startPosition || !launchData) {
     return null;
   }
@@ -49,6 +49,11 @@ export function predictFirstLandingPoint(viewerScene, startPosition, launchData,
     });
     PREVIEW_POSITION.copy(sweep.position);
 
+    const isGroundLikeContact = sweep.collided && sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y;
+    if (sweep.collided && !hasClearedLaunch && isGroundLikeContact) {
+      PREVIEW_POSITION.addScaledVector(PREVIEW_DISPLACEMENT, 1 - sweep.travelFraction);
+    }
+
     const horizontalTravelMeters = Math.hypot(
       PREVIEW_POSITION.x - PREVIEW_START_POSITION.x,
       PREVIEW_POSITION.z - PREVIEW_START_POSITION.z,
@@ -67,7 +72,6 @@ export function predictFirstLandingPoint(viewerScene, startPosition, launchData,
       continue;
     }
 
-    const isGroundLikeContact = sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y;
     if (!hasClearedLaunch && isGroundLikeContact) {
       continue;
     }
@@ -100,6 +104,8 @@ function buildPreviewLaunchVelocity(launchData, viewerScene, referenceForward = 
   } else {
     PREVIEW_HORIZONTAL_FORWARD.normalize();
   }
+
+  console.log('preview with ball speed', launchData.ballSpeed, 'vertical angle', launchData.verticalLaunchAngle);
 
   const verticalAngleRadians = THREE.MathUtils.degToRad(launchData.verticalLaunchAngle);
   const horizontalAngleRadians = THREE.MathUtils.degToRad(launchData.horizontalLaunchAngle);

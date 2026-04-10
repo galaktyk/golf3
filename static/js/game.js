@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
   AIMING_MARKER_PIXEL_HEIGHT,
-  AIMING_PREVIEW_CLUB_HEAD_SPEED_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
@@ -16,7 +16,7 @@ import {
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
-import { predictFirstLandingPoint } from '/static/js/game/aimPreview.js';
+import { predictFirstContactPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
@@ -499,6 +499,9 @@ function detectClubBallImpact(characterTelemetry) {
 }
 
 function getIncomingClubHeadSpeedMetersPerSecond() {
+
+
+
   if (
     !Number.isFinite(incomingSwingState.perpendicularAngularSpeedRadiansPerSecond)
     || incomingSwingState.perpendicularAngularSpeedRadiansPerSecond <= 0
@@ -645,14 +648,14 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
 
   const launchPreview = getClubLaunchPreview(
     characterTelemetry,
-    AIMING_PREVIEW_CLUB_HEAD_SPEED_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
     activeClub,
   );
   if (!launchPreview?.isReady) {
     return;
   }
 
-  const landingPreview = predictFirstLandingPoint(
+  const landingPreview = predictFirstContactPoint(
     viewerScene,
     ballPhysics.getPosition(),
     {

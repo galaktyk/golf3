@@ -12,6 +12,7 @@ import {
   CLUB_HEAD_LAUNCH_DIRECTION_LOCAL,
   CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
   CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
+  DEFAULT_CLUB_MIDDLE_SMASH_FACTOR,
 } from '/static/js/game/constants.js';
 import { interpolateClubHeadSample } from '/static/js/game/impact/contactHistory.js';
 
@@ -195,7 +196,7 @@ function getLaunchMetrics(impactSample, activeClub) {
     : 1;
   const smashFactor = Number.isFinite(activeClub?.smashFactor)
     ? activeClub.smashFactor
-    : 1.35;
+    : DEFAULT_CLUB_MIDDLE_SMASH_FACTOR;
   const measuredFacePitchDegrees = getMeasuredFacePitchDegrees(impactSample);
   const dynamicLoftDegrees = getDynamicLoftDegrees(
     measuredFacePitchDegrees,

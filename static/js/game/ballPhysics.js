@@ -301,6 +301,8 @@ export function createBallPhysics(viewerScene) {
   };
 
   const launch = (launchData = BALL_DEFAULT_LAUNCH_DATA, referenceForward = null) => {
+
+
     ensureCourseContact();
     shotStartPosition.copy(position);
     velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene, referenceForward));
