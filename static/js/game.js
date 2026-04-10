@@ -22,7 +22,7 @@ import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
-import { getClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
+import { getNeutralClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
@@ -646,8 +646,7 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
     return;
   }
 
-  const launchPreview = getClubLaunchPreview(
-    characterTelemetry,
+  const launchPreview = getNeutralClubLaunchPreview(
     AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
     activeClub,
   );
@@ -655,7 +654,7 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
     return;
   }
 
-  const landingPreview = predictFirstContactPoint(
+  const firstContactPreview = predictFirstContactPoint(
     viewerScene,
     ballPhysics.getPosition(),
     {
@@ -665,13 +664,13 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
     },
     null,
   );
-  if (!landingPreview) {
+  if (!firstContactPreview) {
     aimingPreview.dirty = false;
     return;
   }
 
-  aimingPreviewLandingPoint.copy(landingPreview.point);
-  aimingPreview.carryDistanceMeters = landingPreview.carryDistanceMeters;
+  aimingPreviewLandingPoint.copy(firstContactPreview.point);
+  aimingPreview.carryDistanceMeters = firstContactPreview.carryDistanceMeters;
   aimingPreview.isVisible = true;
   aimingPreview.dirty = false;
 }

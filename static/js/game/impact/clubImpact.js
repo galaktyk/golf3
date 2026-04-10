@@ -78,6 +78,10 @@ export function resolveClubBallImpact(
   };
 }
 
+/**
+ *  Provides a launch preview based on the most recent club head sample, which can be used for real-time aiming feedback before impact.
+ * 
+ */
 export function getClubLaunchPreview(characterTelemetry, estimatedClubHeadSpeedMetersPerSecond, activeClub = null) {
   if (!characterTelemetry?.hasClubHeadSample || !characterTelemetry.clubHeadQuaternion) {
     return null;
@@ -91,6 +95,23 @@ export function getClubLaunchPreview(characterTelemetry, estimatedClubHeadSpeedM
     {
       quaternion: characterTelemetry.clubHeadQuaternion,
       characterFacingForward: characterTelemetry.characterFacingForward,
+      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
+    },
+    activeClub,
+  );
+}
+
+
+/** 
+ * Provides a neutral launch preview based solely on the estimated club head speed and the active club's base loft, without considering the actual club head orientation. This can be used as a fallback aiming feedback when no reliable club head samples are available.
+ */
+export function getNeutralClubLaunchPreview(estimatedClubHeadSpeedMetersPerSecond, activeClub = null) {
+  if (!Number.isFinite(estimatedClubHeadSpeedMetersPerSecond) || estimatedClubHeadSpeedMetersPerSecond <= 0) {
+    return null;
+  }
+
+  return buildLaunchPreview(
+    {
       clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     },
     activeClub,
@@ -233,6 +254,8 @@ function getDynamicLoftDegrees(measuredFacePitchDegrees, baseLoftDegrees, active
   const maxDynamicLoftDeltaDegrees = Number.isFinite(activeClub?.maxDynamicLoftDeltaDegrees)
     ? activeClub.maxDynamicLoftDeltaDegrees
     : 8;
+
+  console.log('launch with measured face pitch', measuredFacePitchDegrees, 'base loft', baseLoftDegrees, 'orientation loft influence', orientationLoftInfluence, 'max dynamic loft delta', maxDynamicLoftDeltaDegrees);
   const orientationDeltaDegrees = THREE.MathUtils.clamp(
     (measuredFacePitchDegrees - baseLoftDegrees) * orientationLoftInfluence,
     -maxDynamicLoftDeltaDegrees,
