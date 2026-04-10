@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildCourseCollision } from '/static/js/game/collision.js';
 import {
+  AIMING_MARKER_CANVAS_HEIGHT,
+  AIMING_MARKER_CANVAS_WIDTH,
+  AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_MARKER_WORLD_Y_OFFSET,
   BALL_RADIUS,
   CLUB_HEAD_COLLIDER_RADIUS,
   CLUB_HEAD_HISTORY_DURATION_SECONDS,
@@ -40,11 +44,15 @@ export function loadViewerModels(viewerScene, onStatus) {
   const ballSize = new THREE.Vector3();
   const ballCenter = new THREE.Vector3();
   const holeMarker = createHoleMarker();
+  const aimingMarker = createAimingMarker();
   clubAxesHelper.visible = DEBUG_SHOW_AXES;
   viewerScene.clubAxesHelper = clubAxesHelper;
   viewerScene.overlayRoot.add(holeMarker.labelSprite);
   viewerScene.overlayRoot.add(holeMarker.moveModeLabelSprite);
+  viewerScene.scene.add(aimingMarker.sprite);
+  viewerScene.scene.add(aimingMarker.debugSphere);
   viewerScene.setHoleMarker(holeMarker);
+  viewerScene.setAimingMarker(aimingMarker);
 
   loader.load(
     MAP_MODEL_PATH,
@@ -595,6 +603,125 @@ function createHoleMarker() {
 
     setMoveModeLabelVisible(visible) {
       moveModeLabelSprite.visible = visible;
+    },
+  };
+}
+
+function createAimingMarker() {
+  const markerCanvas = document.createElement('canvas');
+  const markerContext = markerCanvas.getContext('2d');
+  if (!markerContext) {
+    throw new Error('Failed to create a 2D canvas context for the aiming marker label.');
+  }
+
+  const debugSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(Math.max(BALL_RADIUS * 0.95, 0.03), 16, 12),
+    new THREE.MeshBasicMaterial({
+      color: '#ff2d2d',
+      wireframe: true,
+      transparent: true,
+      opacity: 0.92,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  const markerTexture = new THREE.CanvasTexture(markerCanvas);
+  const markerSprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: markerTexture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  const markerAspect = AIMING_MARKER_CANVAS_WIDTH / AIMING_MARKER_CANVAS_HEIGHT;
+  let lastDistanceLabel = '';
+
+  markerCanvas.width = AIMING_MARKER_CANVAS_WIDTH;
+  markerCanvas.height = AIMING_MARKER_CANVAS_HEIGHT;
+  markerTexture.generateMipmaps = false;
+  markerTexture.minFilter = THREE.LinearFilter;
+  markerTexture.magFilter = THREE.LinearFilter;
+  debugSphere.name = 'aiming-marker-debug-sphere';
+  debugSphere.visible = false;
+  debugSphere.renderOrder = 994;
+  markerSprite.name = 'aiming-marker';
+  markerSprite.visible = false;
+  markerSprite.frustumCulled = false;
+  markerSprite.renderOrder = 995;
+  markerSprite.center.set(0.5, 0);
+  markerSprite.scale.set(1 * markerAspect, 1, 1);
+
+  const redrawMarker = () => {
+    const centerX = markerCanvas.width * 0.5;
+    const textY = 76;
+    const triangleTopY = 138;
+    const triangleBottomY = 292;
+    const triangleHalfWidth = 64;
+
+    markerContext.clearRect(0, 0, markerCanvas.width, markerCanvas.height);
+    markerContext.textAlign = 'center';
+    markerContext.textBaseline = 'middle';
+    markerContext.lineJoin = 'round';
+    markerContext.shadowBlur = 12;
+    markerContext.shadowColor = 'rgba(0, 0, 0, 0.4)';
+
+    markerContext.font = `700 58px ${HOLE_MARKER_LABEL_FONT_FAMILY}`;
+    markerContext.lineWidth = 12;
+    markerContext.strokeStyle = 'rgba(0, 0, 0, 0.95)';
+    markerContext.fillStyle = '#ffffff';
+    markerContext.strokeText(lastDistanceLabel, centerX, textY);
+    markerContext.fillText(lastDistanceLabel, centerX, textY);
+
+    markerContext.beginPath();
+    markerContext.moveTo(centerX, triangleBottomY);
+    markerContext.lineTo(centerX - triangleHalfWidth, triangleTopY);
+    markerContext.lineTo(centerX + triangleHalfWidth, triangleTopY);
+    markerContext.closePath();
+    markerContext.lineWidth = 14;
+    markerContext.strokeStyle = 'rgba(0, 0, 0, 0.98)';
+    markerContext.fillStyle = '#ffffff';
+    markerContext.stroke();
+    markerContext.fill();
+
+    markerTexture.needsUpdate = true;
+  };
+
+  if (document.fonts?.load) {
+    document.fonts.load(`700 58px ${HOLE_MARKER_LABEL_FONT_FAMILY}`).then(() => {
+      redrawMarker();
+    }).catch(() => {});
+  }
+
+  redrawMarker();
+
+  return {
+    sprite: markerSprite,
+    debugSphere,
+
+    setDistanceLabel(distanceLabel) {
+      if (distanceLabel === lastDistanceLabel) {
+        return;
+      }
+
+      lastDistanceLabel = distanceLabel;
+      redrawMarker();
+    },
+
+    setWorldPosition(worldPosition) {
+      markerSprite.position.copy(worldPosition);
+      markerSprite.position.y += AIMING_MARKER_WORLD_Y_OFFSET;
+      debugSphere.position.copy(worldPosition);
+    },
+
+    setWorldHeight(worldHeight) {
+      markerSprite.scale.set(worldHeight * markerAspect, worldHeight, 1);
+    },
+
+    setVisible(visible) {
+      markerSprite.visible = visible;
+      debugSphere.visible = visible;
     },
   };
 }

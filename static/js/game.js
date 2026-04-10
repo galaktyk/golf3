@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
+  AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_PREVIEW_CLUB_HEAD_SPEED_METERS_PER_SECOND,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
@@ -14,12 +16,13 @@ import {
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
+import { predictFirstLandingPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
-import { resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
+import { getClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
 import { loadCharacter, loadViewerModels } from '/static/js/game/models.js';
 import { createViewerScene } from '/static/js/game/scene.js';
@@ -75,6 +78,13 @@ const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTA
 const holeProjection = new THREE.Vector3();
 const holeCameraSpace = new THREE.Vector3();
 const holeWorldPosition = new THREE.Vector3();
+const aimingMarkerCameraSpace = new THREE.Vector3();
+const aimingPreviewLandingPoint = new THREE.Vector3();
+const aimingPreview = {
+  dirty: true,
+  isVisible: false,
+  carryDistanceMeters: 0,
+};
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
@@ -351,6 +361,7 @@ function animate() {
   updateCharacterRotationInput(deltaSeconds);
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
+  updateAimingPreviewIfNeeded(characterTelemetry);
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
   let ballTelemetry = ballPhysics.getDebugTelemetry();
@@ -365,6 +376,7 @@ function animate() {
     playerState = 'control';
     clubBallContactLatched = true;
     ballTelemetry = ballPhysics.getDebugTelemetry();
+    invalidateAimingPreview();
   }
 
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
@@ -382,6 +394,7 @@ function animate() {
   viewerScene.updateControls();
   viewerScene.applyCameraTilt();
   updateHoleMarker(ballTelemetry);
+  updateAimingMarker(ballTelemetry);
   updateCameraPositionLabelIfNeeded();
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
@@ -409,6 +422,7 @@ function updateCharacterRotationInput(deltaSeconds) {
     ballPhysics.getPosition(),
     rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
   );
+  invalidateAimingPreview();
 
 }
 
@@ -518,6 +532,7 @@ function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = n
   playerState = 'waiting';
   ballTrail.reset();
   ballPhysics.launch(launchData, referenceForward);
+  invalidateAimingPreview();
 }
 
 function getLaunchImpactSpeedMetersPerSecond(launchData, impactSpeedMetersPerSecond) {
@@ -555,6 +570,7 @@ function resetShotFlow() {
   playerState = 'control';
   clubBallContactLatched = true;
   updateLaunchDebugUiState();
+  invalidateAimingPreview();
 }
 
 function initializeLaunchDebugUi() {
@@ -605,6 +621,85 @@ function moveActiveClub(delta) {
     : 0;
   activeClub = ACTIVE_CLUB_SET.clubs[nextClubIndex];
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+  invalidateAimingPreview();
+}
+
+function invalidateAimingPreview() {
+  aimingPreview.dirty = true;
+}
+
+function updateAimingPreviewIfNeeded(characterTelemetry) {
+  if (!aimingPreview.dirty) {
+    return;
+  }
+  aimingPreview.isVisible = false;
+
+  if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+    aimingPreview.dirty = false;
+    return;
+  }
+
+  if (!viewerScene.courseCollision?.root) {
+    return;
+  }
+
+  const launchPreview = getClubLaunchPreview(
+    characterTelemetry,
+    AIMING_PREVIEW_CLUB_HEAD_SPEED_METERS_PER_SECOND,
+    activeClub,
+  );
+  if (!launchPreview?.isReady) {
+    return;
+  }
+
+  const landingPreview = predictFirstLandingPoint(
+    viewerScene,
+    ballPhysics.getPosition(),
+    {
+      ballSpeed: launchPreview.ballSpeed,
+      verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+      horizontalLaunchAngle: 0,
+    },
+    null,
+  );
+  if (!landingPreview) {
+    aimingPreview.dirty = false;
+    return;
+  }
+
+  aimingPreviewLandingPoint.copy(landingPreview.point);
+  aimingPreview.carryDistanceMeters = landingPreview.carryDistanceMeters;
+  aimingPreview.isVisible = true;
+  aimingPreview.dirty = false;
+}
+
+function updateAimingMarker(ballTelemetry) {
+  const aimingMarker = viewerScene.getAimingMarker();
+  if (!aimingMarker) {
+    return;
+  }
+
+  if (ballTelemetry.phase === 'moving' || !aimingPreview.isVisible) {
+    aimingMarker.setVisible(false);
+    return;
+  }
+
+  aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+  if (aimingMarkerCameraSpace.z >= 0) {
+    aimingMarker.setVisible(false);
+    return;
+  }
+
+  const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+  const worldHeight = 2
+    * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
+    * Math.max(distanceToCamera, 0.01)
+    * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
+
+  aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
+  aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+  aimingMarker.setWorldHeight(worldHeight);
+  aimingMarker.setVisible(true);
 }
 
 function launchDebugBallFromInput() {

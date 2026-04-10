@@ -90,6 +90,7 @@ export function createViewerScene(canvas) {
   let courseCollision = null;
   let clubHeadCollider = null;
   let holeMarker = null;
+  let aimingMarker = null;
   let ballCameraFollowEnabled = true;
   let freeCameraEnabled = false;
   let freeCameraYaw = 0;
@@ -291,6 +292,14 @@ export function createViewerScene(canvas) {
 
     getHoleMarker() {
       return holeMarker;
+    },
+
+    setAimingMarker(nextAimingMarker) {
+      aimingMarker = nextAimingMarker;
+    },
+
+    getAimingMarker() {
+      return aimingMarker;
     },
 
     applyCameraTilt() {
