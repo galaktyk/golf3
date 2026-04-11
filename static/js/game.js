@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
+  AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_DEGREES,
   AIMING_MARKER_PIXEL_HEIGHT,
   AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT,
   AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS,
@@ -119,6 +120,9 @@ let practiceSwingBallVisualDirty = true;
 let practiceSwingBallVisualChildCount = -1;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
+const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS = THREE.MathUtils.degToRad(
+  AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_DEGREES,
+);
 const holeProjection = new THREE.Vector3();
 const holeCameraSpace = new THREE.Vector3();
 const holeWorldPosition = new THREE.Vector3();
@@ -638,6 +642,7 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
   const keyboardHeadSpeedDirection = getKeyboardAimingPreviewHeadSpeedInputDirection();
   const remoteHeadSpeedDirection = getRemoteAimingPreviewHeadSpeedInputDirection();
   const isKeyboardInputActive = keyboardHeadSpeedDirection !== 0;
+  const isRemoteAimEntryActive = !isKeyboardInputActive && isRemoteAimEntryGestureActive();
   const headSpeedDirection = isKeyboardInputActive ? keyboardHeadSpeedDirection : remoteHeadSpeedDirection;
   if (headSpeedDirection === 0) {
     resetAimingPreviewHeadSpeedAcceleration();
@@ -646,12 +651,13 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
   }
 
   if (!viewerScene.isAimingCameraEnabled()) {
-    if (!isKeyboardInputActive) {
+    if (!isKeyboardInputActive && !isRemoteAimEntryActive) {
       resetAimingPreviewHeadSpeedAnalogAcceleration();
       return;
     }
 
     viewerScene.setAimingCameraEnabled(true);
+    hud.setStatus(getGameplayCameraStatusMessage());
   }
 
   let adjustmentRate = AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND;
@@ -898,6 +904,26 @@ function getKeyboardAimingPreviewHeadSpeedInputDirection() {
  */
 function getRemoteAimingPreviewHeadSpeedInputDirection() {
   return remoteAimIncreaseStrength - remoteAimDecreaseStrength;
+}
+
+/**
+ * Treats a near-vertical remote joystick pull as the mobile equivalent of keyboard up/down so it can enter aim mode directly.
+ */
+function isRemoteAimEntryGestureActive() {
+  const verticalDirection = remoteAimIncreaseTargetStrength - remoteAimDecreaseTargetStrength;
+  if (verticalDirection === 0) {
+    return false;
+  }
+
+  const horizontalDirection = remoteRotateLeftTargetStrength - remoteRotateRightTargetStrength;
+  const verticalMagnitude = Math.abs(verticalDirection);
+  const horizontalMagnitude = Math.abs(horizontalDirection);
+  if (horizontalMagnitude <= 1e-6) {
+    return true;
+  }
+
+  const angleFromVerticalRadians = Math.atan2(horizontalMagnitude, verticalMagnitude);
+  return angleFromVerticalRadians <= AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS;
 }
 
 /**
@@ -1276,7 +1302,6 @@ function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
   }
 
   aimingPreviewHeadSpeedMetersPerSecond = nextHeadSpeedMetersPerSecond;
-  console.log('adjusted aiming preview head speed to', aimingPreviewHeadSpeedMetersPerSecond);
   syncSwingPreviewTarget();
   invalidateAimingPreview();
   hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
