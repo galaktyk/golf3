@@ -2,13 +2,21 @@ import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
   AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS,
+  AIMING_ROTATION_DISTANCE_MAX_MULTIPLIER,
+  AIMING_ROTATION_DISTANCE_MIN_MULTIPLIER,
+  AIMING_ROTATION_DISTANCE_REFERENCE_METERS,
   AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
-  AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
+  CHARACTER_ROTATION_ACCELERATION_MAX_MULTIPLIER,
+  CHARACTER_ROTATION_ACCELERATION_MIN_MULTIPLIER,
+  CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS,
   CHARACTER_ROTATION_SPEED_DEGREES,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
   FPS_LABEL_UPDATE_INTERVAL_MS,
@@ -68,6 +76,8 @@ let clubBallContactLatched = true;
 let activeClub = ACTIVE_CLUB;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
+let increaseAimingPreviewHeadSpeed = false;
+let decreaseAimingPreviewHeadSpeed = false;
 let freeCameraMoveForward = false;
 let freeCameraMoveBackward = false;
 let freeCameraMoveLeft = false;
@@ -77,6 +87,10 @@ let hasFreeCameraFallbackPointerPosition = false;
 let lastFreeCameraPointerClientX = 0;
 let lastFreeCameraPointerClientY = 0;
 let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
+let characterRotationHoldSeconds = 0;
+let characterRotationDirection = 0;
+let aimingPreviewHeadSpeedHoldSeconds = 0;
+let aimingPreviewHeadSpeedDirection = 0;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -154,6 +168,7 @@ controlSocket.addEventListener('message', (event) => {
 controlSocket.addEventListener('close', () => {
   rotateCharacterLeft = false;
   rotateCharacterRight = false;
+  resetCharacterRotationAcceleration();
 });
 
 window.addEventListener('resize', () => {
@@ -166,6 +181,10 @@ window.addEventListener('keydown', (event) => {
     const freeCameraEnabled = viewerScene.setFreeCameraEnabled(!viewerScene.isFreeCameraEnabled());
     rotateCharacterLeft = false;
     rotateCharacterRight = false;
+    resetCharacterRotationAcceleration();
+    increaseAimingPreviewHeadSpeed = false;
+    decreaseAimingPreviewHeadSpeed = false;
+    resetAimingPreviewHeadSpeedAcceleration();
     freeCameraMoveForward = false;
     freeCameraMoveBackward = false;
     freeCameraMoveLeft = false;
@@ -190,6 +209,12 @@ window.addEventListener('keydown', (event) => {
     }
 
     viewerScene.setAimingCameraEnabled(!viewerScene.isAimingCameraEnabled());
+    resetCharacterRotationAcceleration();
+    if (!viewerScene.isAimingCameraEnabled()) {
+      increaseAimingPreviewHeadSpeed = false;
+      decreaseAimingPreviewHeadSpeed = false;
+      resetAimingPreviewHeadSpeedAcceleration();
+    }
     event.preventDefault();
     hud.setStatus(getGameplayCameraStatusMessage());
     return;
@@ -254,12 +279,19 @@ window.addEventListener('keydown', (event) => {
 
     const aimingWasEnabled = viewerScene.isAimingCameraEnabled();
     viewerScene.setAimingCameraEnabled(true);
-
-    adjustAimingPreviewHeadSpeed(
-      event.code === 'ArrowUp'
-        ? AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND
-        : -AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND,
-    );
+    let shouldResetHeadSpeedAcceleration = !event.repeat;
+    if (event.code === 'ArrowUp') {
+      shouldResetHeadSpeedAcceleration = shouldResetHeadSpeedAcceleration || decreaseAimingPreviewHeadSpeed;
+      increaseAimingPreviewHeadSpeed = true;
+      decreaseAimingPreviewHeadSpeed = false;
+    } else {
+      shouldResetHeadSpeedAcceleration = shouldResetHeadSpeedAcceleration || increaseAimingPreviewHeadSpeed;
+      decreaseAimingPreviewHeadSpeed = true;
+      increaseAimingPreviewHeadSpeed = false;
+    }
+    if (shouldResetHeadSpeedAcceleration) {
+      resetAimingPreviewHeadSpeedAcceleration();
+    }
     if (!aimingWasEnabled) {
       hud.setStatus(getGameplayCameraStatusMessage());
     }
@@ -308,17 +340,25 @@ window.addEventListener('keyup', (event) => {
 
   if (event.code === 'ArrowLeft') {
     rotateCharacterLeft = false;
+    resetCharacterRotationAcceleration();
     event.preventDefault();
     return;
   }
 
   if (event.code === 'ArrowRight') {
     rotateCharacterRight = false;
+    resetCharacterRotationAcceleration();
     event.preventDefault();
     return;
   }
 
   if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+    if (event.code === 'ArrowUp') {
+      increaseAimingPreviewHeadSpeed = false;
+    } else {
+      decreaseAimingPreviewHeadSpeed = false;
+    }
+    resetAimingPreviewHeadSpeedAcceleration();
     event.preventDefault();
   }
 });
@@ -326,6 +366,10 @@ window.addEventListener('keyup', (event) => {
 window.addEventListener('blur', () => {
   rotateCharacterLeft = false;
   rotateCharacterRight = false;
+  resetCharacterRotationAcceleration();
+  increaseAimingPreviewHeadSpeed = false;
+  decreaseAimingPreviewHeadSpeed = false;
+  resetAimingPreviewHeadSpeedAcceleration();
   freeCameraMoveForward = false;
   freeCameraMoveBackward = false;
   freeCameraMoveLeft = false;
@@ -426,6 +470,7 @@ function animate() {
   const deltaSeconds = animationClock.getDelta();
   framesSinceLastSample += 1;
   updateCharacterRotationInput(deltaSeconds);
+  updateAimingPreviewHeadSpeedInput(deltaSeconds);
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
   updateAimingPreviewIfNeeded();
@@ -476,28 +521,141 @@ function getWebSocketBaseUrl() {
 
 function updateCharacterRotationInput(deltaSeconds) {
   if (viewerScene.isFreeCameraEnabled()) {
+    resetCharacterRotationAcceleration();
     return;
   }
 
   if (!canUseAimingControls()) {
+    resetCharacterRotationAcceleration();
     return;
   }
 
   const rotationDirection = Number(rotateCharacterLeft) - Number(rotateCharacterRight);
   if (rotationDirection === 0) {
+    resetCharacterRotationAcceleration();
     return;
   }
 
+  if (rotationDirection !== characterRotationDirection) {
+    characterRotationDirection = rotationDirection;
+    characterRotationHoldSeconds = 0;
+  } else {
+    characterRotationHoldSeconds += deltaSeconds;
+  }
+
+  const rotationAccelerationMultiplier = getCharacterRotationAccelerationMultiplier(characterRotationHoldSeconds);
+  const aimingRotationDistanceMultiplier = getAimingRotationDistanceMultiplier();
+  const rotationRadians = rotationDirection
+    * CHARACTER_ROTATION_SPEED_RADIANS
+    * rotationAccelerationMultiplier
+    * aimingRotationDistanceMultiplier
+    * deltaSeconds;
+
   viewerScene.rotateCharacterAroundBall(
     ballPhysics.getPosition(),
-    rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
+    rotationRadians,
   );
   viewerScene.orbitNormalCameraAroundBall(
     ballPhysics.getPosition(),
-    rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
+    rotationRadians,
   );
   invalidateAimingPreview();
 
+}
+
+/**
+ * Converts held up/down input into a smooth head-speed change so taps stay precise and holds ramp up.
+ */
+function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
+  if (viewerScene.isFreeCameraEnabled()) {
+    resetAimingPreviewHeadSpeedAcceleration();
+    return;
+  }
+
+  if (!canUseAimingControls()) {
+    resetAimingPreviewHeadSpeedAcceleration();
+    return;
+  }
+
+  const headSpeedDirection = Number(increaseAimingPreviewHeadSpeed) - Number(decreaseAimingPreviewHeadSpeed);
+  if (headSpeedDirection === 0) {
+    resetAimingPreviewHeadSpeedAcceleration();
+    return;
+  }
+
+  if (!viewerScene.isAimingCameraEnabled()) {
+    viewerScene.setAimingCameraEnabled(true);
+  }
+
+  if (headSpeedDirection !== aimingPreviewHeadSpeedDirection) {
+    aimingPreviewHeadSpeedDirection = headSpeedDirection;
+    aimingPreviewHeadSpeedHoldSeconds = 0;
+  } else {
+    aimingPreviewHeadSpeedHoldSeconds += deltaSeconds;
+  }
+
+  const adjustmentRate = getAimingPreviewHeadSpeedAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds);
+  adjustAimingPreviewHeadSpeed(headSpeedDirection * adjustmentRate * deltaSeconds);
+}
+
+/**
+ * Clears the hold-duration state so tap-versus-hold acceleration always restarts cleanly.
+ */
+function resetCharacterRotationAcceleration() {
+  characterRotationHoldSeconds = 0;
+  characterRotationDirection = 0;
+}
+
+/**
+ * Clears held up/down acceleration so the next tap starts from the fine-adjustment rate.
+ */
+function resetAimingPreviewHeadSpeedAcceleration() {
+  aimingPreviewHeadSpeedHoldSeconds = 0;
+  aimingPreviewHeadSpeedDirection = 0;
+}
+
+/**
+ * Ramps rotation speed from a precise tap speed into a faster sustained turn while the input is held.
+ */
+function getCharacterRotationAccelerationMultiplier(holdSeconds) {
+  const holdAlpha = CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS > 1e-8
+    ? THREE.MathUtils.clamp(holdSeconds / CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS, 0, 1)
+    : 1;
+  return THREE.MathUtils.lerp(
+    CHARACTER_ROTATION_ACCELERATION_MIN_MULTIPLIER,
+    CHARACTER_ROTATION_ACCELERATION_MAX_MULTIPLIER,
+    holdAlpha,
+  );
+}
+
+/**
+ * Scales aiming rotation by preview carry distance so near and far landing points shift more consistently.
+ */
+function getAimingRotationDistanceMultiplier() {
+  if (!viewerScene.isAimingCameraEnabled() || !aimingPreview.isVisible) {
+    return 1;
+  }
+
+  const carryDistanceMeters = Math.max(aimingPreview.carryDistanceMeters, 1);
+  return THREE.MathUtils.clamp(
+    AIMING_ROTATION_DISTANCE_REFERENCE_METERS / carryDistanceMeters,
+    AIMING_ROTATION_DISTANCE_MIN_MULTIPLIER,
+    AIMING_ROTATION_DISTANCE_MAX_MULTIPLIER,
+  );
+}
+
+/**
+ * Ramps the aiming-preview head-speed change rate from a small nudge into a faster hold adjustment.
+ */
+function getAimingPreviewHeadSpeedAdjustmentRate(holdSeconds) {
+  const holdAlpha = AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS > 1e-8
+    ? THREE.MathUtils.clamp(holdSeconds / AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS, 0, 1)
+    : 1;
+  return THREE.MathUtils.lerp(
+    AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND,
+    holdAlpha,
+  );
 }
 
 /**
@@ -531,11 +689,17 @@ function applyRemoteControl(action, active) {
       if (active) {
         rotateCharacterRight = false;
       }
+      if (!active) {
+        resetCharacterRotationAcceleration();
+      }
       break;
     case CONTROL_ACTIONS.rotateRight:
       rotateCharacterRight = active;
       if (active) {
         rotateCharacterLeft = false;
+      }
+      if (!active) {
+        resetCharacterRotationAcceleration();
       }
       break;
     default:

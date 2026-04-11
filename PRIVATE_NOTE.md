@@ -6,6 +6,12 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 adjust how harsh the camera rotate based on distance from the preview contact point
 
 ---
+bounce feel unnatural
+it push forward too much even i use sand wedge with high loft
+after it bounce it go forward too much, could you check the physics?
+
+
+---
 
 refactor how camera work
 normally when press left/right will rotate camera
