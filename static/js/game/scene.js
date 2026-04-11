@@ -150,7 +150,7 @@ export function createViewerScene(canvas) {
 
   const restoreNormalCameraPose = () => {
     const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
-    controls.target.copy(followTarget).add(normalCameraTargetOffset);
+    controls.target.copy(followTarget);
     camera.position.copy(controls.target).add(normalCameraOffset);
     controls.update();
     applyTiltedCameraTarget(camera.position, controls.target, tiltedCameraTarget);
@@ -158,9 +158,8 @@ export function createViewerScene(canvas) {
   };
 
   const syncNormalCameraPoseFromCurrentView = () => {
-    const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
     normalCameraOffset.copy(camera.position).sub(controls.target);
-    normalCameraTargetOffset.copy(controls.target).sub(followTarget);
+    normalCameraTargetOffset.set(0, 0, 0);
   };
 
   const composeAimingCameraPose = (previewPoint, targetPosition) => {
@@ -509,12 +508,11 @@ export function createViewerScene(canvas) {
      */
     orbitNormalCameraAroundBall(ballPosition, angleRadians) {
       normalCameraOffset.applyAxisAngle(WORLD_UP, angleRadians);
-      normalCameraTargetOffset.applyAxisAngle(WORLD_UP, angleRadians);
       if (cameraMode !== CAMERA_MODE_NORMAL) {
         return;
       }
 
-      controls.target.copy(ballPosition).add(normalCameraTargetOffset);
+      controls.target.copy(ballPosition);
       camera.position.copy(controls.target).add(normalCameraOffset);
       controls.update();
       this.applyCameraTilt();
@@ -538,7 +536,7 @@ export function createViewerScene(canvas) {
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
         : 500;
       normalCameraOffset.copy(camera.position).sub(lookFocusPoint);
-      normalCameraTargetOffset.copy(lookFocusPoint).sub(BALL_START_POSITION);
+      normalCameraTargetOffset.set(0, 0, 0);
       controls.update();
       this.applyCameraTilt();
       camera.updateProjectionMatrix();
@@ -574,7 +572,7 @@ export function createViewerScene(canvas) {
       }
 
       const followAlpha = 1 - Math.exp(-CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
-      desiredCameraTarget.copy(ballRoot.position).add(normalCameraTargetOffset);
+      desiredCameraTarget.copy(ballRoot.position);
       desiredCameraPosition.copy(desiredCameraTarget).add(normalCameraOffset);
       controls.target.lerp(desiredCameraTarget, followAlpha);
       camera.position.lerp(desiredCameraPosition, followAlpha);
