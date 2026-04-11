@@ -10,6 +10,9 @@ export const CONTROL_ACTIONS = Object.freeze({
   clubNext: 'club.next',
   rotateLeft: 'character.rotateLeft',
   rotateRight: 'character.rotateRight',
+  aimIncrease: 'aim.preview.increase',
+  aimDecrease: 'aim.preview.decrease',
+  aimCameraToggle: 'camera.aim.toggle',
 });
 
 export function encodeSwingStatePacket({
@@ -64,12 +67,18 @@ export function decodeSwingStatePacket(buffer, targetQuaternion, targetState = {
   return targetState;
 }
 
-export function encodeControlMessage(action, active = true) {
-  return JSON.stringify({
+export function encodeControlMessage(action, active = true, value = null) {
+  const payload = {
     type: 'control',
     action,
     active,
-  });
+  };
+
+  if (Number.isFinite(value)) {
+    payload.value = Math.max(0, Math.min(1, value));
+  }
+
+  return JSON.stringify(payload);
 }
 
 export function decodeControlMessage(payload) {
@@ -81,6 +90,7 @@ export function decodeControlMessage(payload) {
     type: payload.type,
     action: payload.action,
     active: payload.active !== false,
+    value: Number.isFinite(payload.value) ? Math.max(0, Math.min(1, payload.value)) : null,
   };
 }
 

@@ -35,11 +35,24 @@ const joystickState = {
   pointerId: null,
   originX: 0,
   originY: 0,
-  direction: null,
+  rotateAction: null,
+  rotateStrength: 0,
+  aimAction: null,
+  aimStrength: 0,
+  pointerDownTimeMs: 0,
+  maxDistanceFromOrigin: 0,
+  lastTapTimeMs: 0,
+  lastTapX: 0,
+  lastTapY: 0,
 };
 
-const JOYSTICK_RADIUS = 56;
-const JOYSTICK_DEADZONE = 18;
+const JOYSTICK_RADIUS = 90;
+const JOYSTICK_DEADZONE = 0.0001;
+const JOYSTICK_TAP_MAX_DURATION_MS = 240;
+const JOYSTICK_DOUBLE_TAP_WINDOW_MS = 320;
+const JOYSTICK_TAP_MAX_MOVEMENT = 16;
+const JOYSTICK_DOUBLE_TAP_MAX_DISTANCE = 40;
+const JOYSTICK_NETWORK_STEP = 0.02;
 
 let motionEnabled = false;
 let hasOrientation = false;
@@ -272,12 +285,14 @@ function bindAimJoystick() {
     joystickState.pointerId = event.pointerId;
     joystickState.originX = event.clientX - rect.left;
     joystickState.originY = event.clientY - rect.top;
+    joystickState.pointerDownTimeMs = performance.now();
+    joystickState.maxDistanceFromOrigin = 0;
     joystickZone.classList.add('is-active');
     joystickZone.setPointerCapture(event.pointerId);
     joystickVisual.style.setProperty('--joystick-x', `${joystickState.originX}px`);
     joystickVisual.style.setProperty('--joystick-y', `${joystickState.originY}px`);
     joystickKnob.style.transform = 'translate(-50%, -50%)';
-    applyAimFromDelta(0);
+    applyAimFromDelta(0, 0);
   });
 
   joystickZone.addEventListener('pointermove', (event) => {
@@ -288,11 +303,17 @@ function bindAimJoystick() {
     event.preventDefault();
     const rect = joystickZone.getBoundingClientRect();
     const currentX = event.clientX - rect.left;
+    const currentY = event.clientY - rect.top;
     const deltaX = currentX - joystickState.originX;
-    const limitedX = clamp(deltaX, -JOYSTICK_RADIUS, JOYSTICK_RADIUS);
+    const deltaY = currentY - joystickState.originY;
+    const limitedDelta = limitJoystickDelta(deltaX, deltaY);
 
-    joystickKnob.style.transform = `translate(calc(-50% + ${limitedX}px), -50%)`;
-    applyAimFromDelta(limitedX);
+    joystickState.maxDistanceFromOrigin = Math.max(
+      joystickState.maxDistanceFromOrigin,
+      Math.hypot(limitedDelta.x, limitedDelta.y),
+    );
+    joystickKnob.style.transform = `translate(calc(-50% + ${limitedDelta.x}px), calc(-50% + ${limitedDelta.y}px))`;
+    applyAimFromDelta(limitedDelta.x, limitedDelta.y);
   });
 
   const endInteraction = (event) => {
@@ -301,6 +322,7 @@ function bindAimJoystick() {
     }
 
     event.preventDefault();
+    maybeToggleAimCameraFromTap(event);
     releaseAimJoystick();
   };
 
@@ -318,12 +340,12 @@ function sendControlTap(action) {
   sendControlState(action, true);
 }
 
-function sendControlState(action, active) {
+function sendControlState(action, active, value = null) {
   if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
     return;
   }
 
-  controlSocket.send(encodeControlMessage(action, active));
+  controlSocket.send(encodeControlMessage(action, active, value));
 }
 
 function setControlButtonsEnabled(enabled) {
@@ -471,35 +493,33 @@ function isAimEnabled() {
   return controlSocket?.readyState === WebSocket.OPEN;
 }
 
-function applyAimFromDelta(deltaX) {
-  let direction = null;
+/**
+ * Maps the 2D joystick displacement into separate analog rotate and aim-control magnitudes.
+ */
+function applyAimFromDelta(deltaX, deltaY) {
+  const normalizedX = normalizeJoystickAxis(deltaX);
+  const normalizedY = normalizeJoystickAxis(-deltaY);
 
-  if (deltaX <= -JOYSTICK_DEADZONE) {
-    direction = CONTROL_ACTIONS.rotateLeft;
-  } else if (deltaX >= JOYSTICK_DEADZONE) {
-    direction = CONTROL_ACTIONS.rotateRight;
+  if (normalizedX < 0) {
+    updateJoystickAction('rotate', CONTROL_ACTIONS.rotateLeft, Math.abs(normalizedX));
+  } else if (normalizedX > 0) {
+    updateJoystickAction('rotate', CONTROL_ACTIONS.rotateRight, normalizedX);
+  } else {
+    updateJoystickAction('rotate', null, 0);
   }
 
-  if (direction === joystickState.direction) {
-    return;
-  }
-
-  if (joystickState.direction) {
-    sendControlState(joystickState.direction, false);
-  }
-
-  joystickState.direction = direction;
-
-  if (direction) {
-    sendControlState(direction, true);
+  if (normalizedY < 0) {
+    updateJoystickAction('aim', CONTROL_ACTIONS.aimDecrease, Math.abs(normalizedY));
+  } else if (normalizedY > 0) {
+    updateJoystickAction('aim', CONTROL_ACTIONS.aimIncrease, normalizedY);
+  } else {
+    updateJoystickAction('aim', null, 0);
   }
 }
 
 function stopAimControls() {
-  if (joystickState.direction) {
-    sendControlState(joystickState.direction, false);
-    joystickState.direction = null;
-  }
+  updateJoystickAction('rotate', null, 0);
+  updateJoystickAction('aim', null, 0);
 }
 
 function releaseAimJoystick() {
@@ -515,4 +535,96 @@ function releaseAimJoystick() {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Clamps the joystick knob to a circular range so diagonal movement keeps a consistent maximum magnitude.
+ */
+function limitJoystickDelta(deltaX, deltaY) {
+  const distance = Math.hypot(deltaX, deltaY);
+  if (distance <= JOYSTICK_RADIUS || distance <= 1e-8) {
+    return { x: deltaX, y: deltaY };
+  }
+
+  const scale = JOYSTICK_RADIUS / distance;
+  return {
+    x: deltaX * scale,
+    y: deltaY * scale,
+  };
+}
+
+/**
+ * Keeps small motions in a deadzone and remaps the remainder into a 0..1 analog range.
+ */
+function normalizeJoystickAxis(delta) {
+  const magnitude = Math.abs(delta);
+  if (magnitude <= JOYSTICK_DEADZONE) {
+    return 0;
+  }
+
+  const normalizedMagnitude = clamp(
+    (magnitude - JOYSTICK_DEADZONE) / Math.max(JOYSTICK_RADIUS - JOYSTICK_DEADZONE, 1),
+    0,
+    1,
+  );
+  return Math.sign(delta) * normalizedMagnitude;
+}
+
+/**
+ * Sends only the changed joystick action/value pair so the viewer can mix analog mobile input with keyboard input.
+ */
+function updateJoystickAction(channel, action, strength) {
+  const actionKey = channel === 'rotate' ? 'rotateAction' : 'aimAction';
+  const strengthKey = channel === 'rotate' ? 'rotateStrength' : 'aimStrength';
+  const nextStrength = roundJoystickStrength(strength);
+  const currentAction = joystickState[actionKey];
+  const currentStrength = joystickState[strengthKey];
+
+  if (currentAction === action && Math.abs(currentStrength - nextStrength) <= 1e-3) {
+    return;
+  }
+
+  if (currentAction && (currentAction !== action || nextStrength === 0)) {
+    sendControlState(currentAction, false, 0);
+  }
+
+  joystickState[actionKey] = action;
+  joystickState[strengthKey] = action ? nextStrength : 0;
+
+  if (action && nextStrength > 0) {
+    sendControlState(action, true, nextStrength);
+  }
+}
+
+function roundJoystickStrength(value) {
+  const clampedValue = clamp(value, 0, 1);
+  return Math.round(clampedValue / JOYSTICK_NETWORK_STEP) * JOYSTICK_NETWORK_STEP;
+}
+
+/**
+ * Treats a quick, low-movement release as a tap and toggles the aim camera on a nearby second tap.
+ */
+function maybeToggleAimCameraFromTap(event) {
+  const tapDurationMs = performance.now() - joystickState.pointerDownTimeMs;
+  const isTap = tapDurationMs <= JOYSTICK_TAP_MAX_DURATION_MS
+    && joystickState.maxDistanceFromOrigin <= JOYSTICK_TAP_MAX_MOVEMENT;
+  if (!isTap) {
+    return;
+  }
+
+  const now = performance.now();
+  const rect = joystickZone.getBoundingClientRect();
+  const tapX = event.clientX - rect.left;
+  const tapY = event.clientY - rect.top;
+  const tapDistance = Math.hypot(tapX - joystickState.lastTapX, tapY - joystickState.lastTapY);
+  const isDoubleTap = now - joystickState.lastTapTimeMs <= JOYSTICK_DOUBLE_TAP_WINDOW_MS
+    && tapDistance <= JOYSTICK_DOUBLE_TAP_MAX_DISTANCE;
+
+  joystickState.lastTapTimeMs = isDoubleTap ? 0 : now;
+  joystickState.lastTapX = tapX;
+  joystickState.lastTapY = tapY;
+
+  if (isDoubleTap) {
+    sendControlTap(CONTROL_ACTIONS.aimCameraToggle);
+  }
 }

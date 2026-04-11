@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
   AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT,
+  AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS,
   AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS,
@@ -14,6 +16,7 @@ import {
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
+  CHARACTER_ROTATION_ANALOG_RESPONSE_EXPONENT,
   CHARACTER_ROTATION_ACCELERATION_MAX_MULTIPLIER,
   CHARACTER_ROTATION_ACCELERATION_MIN_MULTIPLIER,
   CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS,
@@ -24,6 +27,8 @@ import {
   HOLE_MARKER_LABEL_EDGE_PADDING_PX,
   HOLE_MARKER_LABEL_TOP_OFFSET_RATIO,
   PHONE_ANGULAR_SPEED_TO_CLUB_HEAD_SPEED_GAIN,
+  REMOTE_CONTROL_INPUT_SMOOTHING,
+  REMOTE_CONTROL_INPUT_SNAP_EPSILON,
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
@@ -82,6 +87,14 @@ let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 let increaseAimingPreviewHeadSpeed = false;
 let decreaseAimingPreviewHeadSpeed = false;
+let remoteRotateLeftStrength = 0;
+let remoteRotateRightStrength = 0;
+let remoteAimIncreaseStrength = 0;
+let remoteAimDecreaseStrength = 0;
+let remoteRotateLeftTargetStrength = 0;
+let remoteRotateRightTargetStrength = 0;
+let remoteAimIncreaseTargetStrength = 0;
+let remoteAimDecreaseTargetStrength = 0;
 let freeCameraMoveForward = false;
 let freeCameraMoveBackward = false;
 let freeCameraMoveLeft = false;
@@ -95,6 +108,8 @@ let characterRotationHoldSeconds = 0;
 let characterRotationDirection = 0;
 let aimingPreviewHeadSpeedHoldSeconds = 0;
 let aimingPreviewHeadSpeedDirection = 0;
+let aimingPreviewHeadSpeedAnalogHoldSeconds = 0;
+let aimingPreviewHeadSpeedAnalogDirection = 0;
 let practiceSwingBallVisualDirty = true;
 let practiceSwingBallVisualChildCount = -1;
 
@@ -169,13 +184,24 @@ controlSocket.addEventListener('message', (event) => {
     return;
   }
 
-  applyRemoteControl(controlMessage.action, controlMessage.active);
+  applyRemoteControl(controlMessage.action, controlMessage.active, controlMessage.value);
 });
 
 controlSocket.addEventListener('close', () => {
-  rotateCharacterLeft = false;
-  rotateCharacterRight = false;
-  resetCharacterRotationAcceleration();
+  remoteRotateLeftStrength = 0;
+  remoteRotateRightStrength = 0;
+  remoteAimIncreaseStrength = 0;
+  remoteAimDecreaseStrength = 0;
+  remoteRotateLeftTargetStrength = 0;
+  remoteRotateRightTargetStrength = 0;
+  remoteAimIncreaseTargetStrength = 0;
+  remoteAimDecreaseTargetStrength = 0;
+  if (!rotateCharacterLeft && !rotateCharacterRight) {
+    resetCharacterRotationAcceleration();
+  }
+  if (!increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
+    resetAimingPreviewHeadSpeedAcceleration();
+  }
 });
 
 window.addEventListener('resize', () => {
@@ -210,20 +236,9 @@ window.addEventListener('keydown', (event) => {
       return;
     }
 
-    if (!viewerScene.isAimingCameraEnabled() && !canUseAimingControls()) {
+    if (toggleAimingCamera()) {
       event.preventDefault();
-      return;
     }
-
-    viewerScene.setAimingCameraEnabled(!viewerScene.isAimingCameraEnabled());
-    resetCharacterRotationAcceleration();
-    if (!viewerScene.isAimingCameraEnabled()) {
-      increaseAimingPreviewHeadSpeed = false;
-      decreaseAimingPreviewHeadSpeed = false;
-      resetAimingPreviewHeadSpeedAcceleration();
-    }
-    event.preventDefault();
-    hud.setStatus(getGameplayCameraStatusMessage());
     return;
   }
 
@@ -487,6 +502,7 @@ function animate() {
 
   const deltaSeconds = animationClock.getDelta();
   framesSinceLastSample += 1;
+  updateRemoteControlInput(deltaSeconds);
   updateCharacterRotationInput(deltaSeconds);
   updateAimingPreviewHeadSpeedInput(deltaSeconds);
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
@@ -550,24 +566,37 @@ function updateCharacterRotationInput(deltaSeconds) {
     return;
   }
 
-  const rotationDirection = Number(rotateCharacterLeft) - Number(rotateCharacterRight);
+  const keyboardRotationDirection = getKeyboardRotationInputDirection();
+  const remoteRotationDirection = getRemoteRotationInputDirection();
+  const rotationDirection = keyboardRotationDirection !== 0 ? keyboardRotationDirection : remoteRotationDirection;
   if (rotationDirection === 0) {
     resetCharacterRotationAcceleration();
     return;
   }
 
-  if (rotationDirection !== characterRotationDirection) {
+  let rotationSpeedMultiplier = 1;
+  if (keyboardRotationDirection !== 0) {
+    if (rotationDirection !== characterRotationDirection) {
+      characterRotationDirection = rotationDirection;
+      characterRotationHoldSeconds = 0;
+    } else {
+      characterRotationHoldSeconds += deltaSeconds;
+    }
+
+    rotationSpeedMultiplier = getCharacterRotationAccelerationMultiplier(characterRotationHoldSeconds);
+  } else {
     characterRotationDirection = rotationDirection;
     characterRotationHoldSeconds = 0;
-  } else {
-    characterRotationHoldSeconds += deltaSeconds;
+    rotationSpeedMultiplier = getAnalogResponseMagnitude(
+      Math.abs(rotationDirection),
+      CHARACTER_ROTATION_ANALOG_RESPONSE_EXPONENT,
+    );
   }
 
-  const rotationAccelerationMultiplier = getCharacterRotationAccelerationMultiplier(characterRotationHoldSeconds);
   const aimingRotationDistanceMultiplier = getAimingRotationDistanceMultiplier();
   const rotationRadians = rotationDirection
     * CHARACTER_ROTATION_SPEED_RADIANS
-    * rotationAccelerationMultiplier
+    * rotationSpeedMultiplier
     * aimingRotationDistanceMultiplier
     * deltaSeconds;
 
@@ -597,7 +626,9 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
     return;
   }
 
-  const headSpeedDirection = Number(increaseAimingPreviewHeadSpeed) - Number(decreaseAimingPreviewHeadSpeed);
+  const keyboardHeadSpeedDirection = getKeyboardAimingPreviewHeadSpeedInputDirection();
+  const remoteHeadSpeedDirection = getRemoteAimingPreviewHeadSpeedInputDirection();
+  const headSpeedDirection = keyboardHeadSpeedDirection !== 0 ? keyboardHeadSpeedDirection : remoteHeadSpeedDirection;
   if (headSpeedDirection === 0) {
     resetAimingPreviewHeadSpeedAcceleration();
     return;
@@ -607,14 +638,25 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
     viewerScene.setAimingCameraEnabled(true);
   }
 
-  if (headSpeedDirection !== aimingPreviewHeadSpeedDirection) {
-    aimingPreviewHeadSpeedDirection = headSpeedDirection;
-    aimingPreviewHeadSpeedHoldSeconds = 0;
+  let adjustmentRate = AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND;
+  if (keyboardHeadSpeedDirection !== 0) {
+    resetAimingPreviewHeadSpeedAnalogAcceleration();
+    if (headSpeedDirection !== aimingPreviewHeadSpeedDirection) {
+      aimingPreviewHeadSpeedDirection = headSpeedDirection;
+      aimingPreviewHeadSpeedHoldSeconds = 0;
+    } else {
+      aimingPreviewHeadSpeedHoldSeconds += deltaSeconds;
+    }
+
+    adjustmentRate = getAimingPreviewHeadSpeedAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds);
   } else {
-    aimingPreviewHeadSpeedHoldSeconds += deltaSeconds;
+    resetAimingPreviewHeadSpeedAcceleration();
+    adjustmentRate = getAnalogAimingPreviewHeadSpeedAdjustmentRate(
+      headSpeedDirection,
+      deltaSeconds,
+    );
   }
 
-  const adjustmentRate = getAimingPreviewHeadSpeedAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds);
   adjustAimingPreviewHeadSpeed(headSpeedDirection * adjustmentRate * deltaSeconds);
 }
 
@@ -632,6 +674,14 @@ function resetCharacterRotationAcceleration() {
 function resetAimingPreviewHeadSpeedAcceleration() {
   aimingPreviewHeadSpeedHoldSeconds = 0;
   aimingPreviewHeadSpeedDirection = 0;
+}
+
+/**
+ * Clears the mobile analog hold state so the next joystick pull starts from the precise initial adjustment rate.
+ */
+function resetAimingPreviewHeadSpeedAnalogAcceleration() {
+  aimingPreviewHeadSpeedAnalogHoldSeconds = 0;
+  aimingPreviewHeadSpeedAnalogDirection = 0;
 }
 
 /**
@@ -675,6 +725,41 @@ function getAimingPreviewHeadSpeedAdjustmentRate(holdSeconds) {
     AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
     AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND,
     holdAlpha,
+  );
+}
+
+/**
+ * Applies a dedicated ramp for mobile analog input so small stick holds stay precise while sustained larger pulls can still speed up.
+ */
+function getAnalogAimingPreviewHeadSpeedAdjustmentRate(headSpeedDirection, deltaSeconds) {
+  const analogDirection = Math.sign(headSpeedDirection);
+  if (analogDirection !== aimingPreviewHeadSpeedAnalogDirection) {
+    aimingPreviewHeadSpeedAnalogDirection = analogDirection;
+    aimingPreviewHeadSpeedAnalogHoldSeconds = 0;
+  } else {
+    aimingPreviewHeadSpeedAnalogHoldSeconds += deltaSeconds;
+  }
+
+  const targetRate = THREE.MathUtils.lerp(
+    AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND,
+    getAnalogResponseMagnitude(
+      Math.abs(headSpeedDirection),
+      AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT,
+    ),
+  );
+  const rampAlpha = AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS > 1e-8
+    ? THREE.MathUtils.clamp(
+      aimingPreviewHeadSpeedAnalogHoldSeconds / AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS,
+      0,
+      1,
+    )
+    : 1;
+
+  return THREE.MathUtils.lerp(
+    AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    targetRate,
+    rampAlpha,
   );
 }
 
@@ -753,7 +838,81 @@ function getGameplayCameraStatusMessage() {
   return viewerScene.isAimingCameraEnabled() ? 'Aiming camera enabled.' : 'Normal camera enabled.';
 }
 
-function applyRemoteControl(action, active) {
+/**
+ * Smooths remote joystick values so packet jitter and inconsistent mobile event timing do not show up as camera jitter.
+ */
+function updateRemoteControlInput(deltaSeconds) {
+  remoteRotateLeftStrength = smoothRemoteStrength(remoteRotateLeftStrength, remoteRotateLeftTargetStrength, deltaSeconds);
+  remoteRotateRightStrength = smoothRemoteStrength(remoteRotateRightStrength, remoteRotateRightTargetStrength, deltaSeconds);
+  remoteAimIncreaseStrength = smoothRemoteStrength(remoteAimIncreaseStrength, remoteAimIncreaseTargetStrength, deltaSeconds);
+  remoteAimDecreaseStrength = smoothRemoteStrength(remoteAimDecreaseStrength, remoteAimDecreaseTargetStrength, deltaSeconds);
+}
+
+/**
+ * Returns the local keyboard rotation direction without mixing in networked analog input.
+ */
+function getKeyboardRotationInputDirection() {
+  return Number(rotateCharacterLeft) - Number(rotateCharacterRight);
+}
+
+/**
+ * Returns the smoothed mobile joystick rotation direction.
+ */
+function getRemoteRotationInputDirection() {
+  return remoteRotateLeftStrength - remoteRotateRightStrength;
+}
+
+/**
+ * Returns the local keyboard aiming-preview direction without mixing in networked analog input.
+ */
+function getKeyboardAimingPreviewHeadSpeedInputDirection() {
+  return Number(increaseAimingPreviewHeadSpeed) - Number(decreaseAimingPreviewHeadSpeed);
+}
+
+/**
+ * Returns the smoothed mobile joystick aiming-preview direction.
+ */
+function getRemoteAimingPreviewHeadSpeedInputDirection() {
+  return remoteAimIncreaseStrength - remoteAimDecreaseStrength;
+}
+
+/**
+ * Shapes analog stick magnitude so small deflections stay controllable while full deflection still reaches full speed.
+ */
+function getAnalogResponseMagnitude(magnitude, exponent) {
+  return Math.pow(THREE.MathUtils.clamp(magnitude, 0, 1), exponent);
+}
+
+function smoothRemoteStrength(current, target, deltaSeconds) {
+  const smoothingAlpha = 1 - Math.exp(-REMOTE_CONTROL_INPUT_SMOOTHING * deltaSeconds);
+  const next = THREE.MathUtils.lerp(current, target, smoothingAlpha);
+  return Math.abs(next - target) <= REMOTE_CONTROL_INPUT_SNAP_EPSILON ? target : next;
+}
+
+/**
+ * Mirrors the Space-bar gameplay rule: aiming can always be turned off, but only turned on while the ball is ready.
+ */
+function toggleAimingCamera() {
+  if (!viewerScene.isAimingCameraEnabled() && !canUseAimingControls()) {
+    return false;
+  }
+
+  viewerScene.setAimingCameraEnabled(!viewerScene.isAimingCameraEnabled());
+  resetCharacterRotationAcceleration();
+  if (!viewerScene.isAimingCameraEnabled()) {
+    increaseAimingPreviewHeadSpeed = false;
+    decreaseAimingPreviewHeadSpeed = false;
+    remoteAimIncreaseStrength = 0;
+    remoteAimDecreaseStrength = 0;
+    resetAimingPreviewHeadSpeedAcceleration();
+  }
+  hud.setStatus(getGameplayCameraStatusMessage());
+  return true;
+}
+
+function applyRemoteControl(action, active, value = null) {
+  const analogStrength = active ? Math.max(0, Math.min(1, value ?? 1)) : 0;
+
   switch (action) {
     case CONTROL_ACTIONS.clubPrevious:
       if (active) {
@@ -766,21 +925,44 @@ function applyRemoteControl(action, active) {
       }
       break;
     case CONTROL_ACTIONS.rotateLeft:
-      rotateCharacterLeft = active;
+      remoteRotateLeftTargetStrength = analogStrength;
       if (active) {
-        rotateCharacterRight = false;
+        remoteRotateRightTargetStrength = 0;
       }
-      if (!active) {
+      if (!rotateCharacterLeft && remoteRotateLeftTargetStrength === 0 && !rotateCharacterRight && remoteRotateRightTargetStrength === 0) {
         resetCharacterRotationAcceleration();
       }
       break;
     case CONTROL_ACTIONS.rotateRight:
-      rotateCharacterRight = active;
+      remoteRotateRightTargetStrength = analogStrength;
       if (active) {
-        rotateCharacterLeft = false;
+        remoteRotateLeftTargetStrength = 0;
       }
-      if (!active) {
+      if (!rotateCharacterLeft && remoteRotateLeftTargetStrength === 0 && !rotateCharacterRight && remoteRotateRightTargetStrength === 0) {
         resetCharacterRotationAcceleration();
+      }
+      break;
+    case CONTROL_ACTIONS.aimIncrease:
+      remoteAimIncreaseTargetStrength = analogStrength;
+      if (active) {
+        remoteAimDecreaseTargetStrength = 0;
+      }
+      if (remoteAimIncreaseTargetStrength === 0 && remoteAimDecreaseTargetStrength === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
+        resetAimingPreviewHeadSpeedAcceleration();
+      }
+      break;
+    case CONTROL_ACTIONS.aimDecrease:
+      remoteAimDecreaseTargetStrength = analogStrength;
+      if (active) {
+        remoteAimIncreaseTargetStrength = 0;
+      }
+      if (remoteAimIncreaseTargetStrength === 0 && remoteAimDecreaseTargetStrength === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
+        resetAimingPreviewHeadSpeedAcceleration();
+      }
+      break;
+    case CONTROL_ACTIONS.aimCameraToggle:
+      if (active) {
+        toggleAimingCamera();
       }
       break;
     default:
