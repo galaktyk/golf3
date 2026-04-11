@@ -5,7 +5,7 @@ import {
   BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
   BALL_RADIUS,
   CLUB_HEAD_COLLIDER_RADIUS,
-  CLUB_HEAD_CONTACT_MAX_VERTICAL_OFFSET,
+
   CLUB_HEAD_CONTACT_MIN_FORWARD_ALIGNMENT,
   CLUB_HEAD_HORIZONTAL_LAUNCH_LIMIT_DEGREES,
   CLUB_HEAD_IMPACT_MIN_SPEED,
@@ -55,19 +55,21 @@ export function resolveClubBallImpact(
     return null;
   }
 
+  const resolvedImpactSample = {
+    ...impactSample,
+    clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
+  };
+  const launchMetrics = getLaunchMetrics(resolvedImpactSample, activeClub);
+
   const launchData = buildImpactLaunchData(
-    {
-      ...impactSample,
-      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
-    },
+    resolvedImpactSample,
     activeClub,
+    launchMetrics,
   );
   const launchPreview = buildLaunchPreview(
-    {
-      ...impactSample,
-      clubHeadSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
-    },
+    resolvedImpactSample,
     activeClub,
+    launchMetrics,
   );
 
   return {
@@ -118,11 +120,11 @@ export function getNeutralClubLaunchPreview(estimatedClubHeadSpeedMetersPerSecon
   );
 }
 
-function buildLaunchPreview(impactSample, activeClub) {
-  const launchMetrics = getLaunchMetrics(impactSample, activeClub);
+function buildLaunchPreview(impactSample, activeClub, launchMetrics = null) {
+  const resolvedLaunchMetrics = launchMetrics ?? getLaunchMetrics(impactSample, activeClub);
 
   return {
-    ...launchMetrics,
+    ...resolvedLaunchMetrics,
     clubHeadSpeedMetersPerSecond: impactSample.clubHeadSpeedMetersPerSecond,
     isReady: impactSample.clubHeadSpeedMetersPerSecond > 0.1,
   };
@@ -168,7 +170,8 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
   }
 
   if (c <= 0) {
-    return null;
+    // A fast sweep can land inside the contact sphere on the first sampled point.
+    return 0;
   }
 
   const b = SEGMENT_TO_BALL.dot(SEGMENT_SWEEP);
@@ -189,13 +192,13 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
   return contactAlpha;
 }
 
-function buildImpactLaunchData(impactSample, activeClub) {
-  const launchMetrics = getLaunchMetrics(impactSample, activeClub);
+function buildImpactLaunchData(impactSample, activeClub, launchMetrics = null) {
+  const resolvedLaunchMetrics = launchMetrics ?? getLaunchMetrics(impactSample, activeClub);
 
   return {
-    ballSpeed: launchMetrics.ballSpeed,
-    verticalLaunchAngle: launchMetrics.verticalLaunchAngle,
-    horizontalLaunchAngle: launchMetrics.horizontalLaunchAngle,
+    ballSpeed: resolvedLaunchMetrics.ballSpeed,
+    verticalLaunchAngle: resolvedLaunchMetrics.verticalLaunchAngle,
+    horizontalLaunchAngle: resolvedLaunchMetrics.horizontalLaunchAngle,
     spinSpeed: BALL_IMPACT_DEBUG_SPIN_SPEED,
     spinAxis: BALL_IMPACT_DEBUG_SPIN_AXIS,
   };
@@ -254,8 +257,6 @@ function getDynamicLoftDegrees(measuredFacePitchDegrees, baseLoftDegrees, active
   const maxDynamicLoftDeltaDegrees = Number.isFinite(activeClub?.maxDynamicLoftDeltaDegrees)
     ? activeClub.maxDynamicLoftDeltaDegrees
     : 8;
-
-  console.log('launch with measured face pitch', measuredFacePitchDegrees, 'base loft', baseLoftDegrees, 'orientation loft influence', orientationLoftInfluence, 'max dynamic loft delta', maxDynamicLoftDeltaDegrees);
   const orientationDeltaDegrees = THREE.MathUtils.clamp(
     (measuredFacePitchDegrees - baseLoftDegrees) * orientationLoftInfluence,
     -maxDynamicLoftDeltaDegrees,
@@ -324,6 +325,7 @@ function getLaunchDirection(impactSample) {
   CLUB_HEAD_LAUNCH_DIRECTION.copy(CLUB_HEAD_LAUNCH_DIRECTION_LOCAL)
     .applyQuaternion(impactSample.quaternion);
   if (CLUB_HEAD_LAUNCH_DIRECTION.lengthSq() <= 1e-8) {
+   
     return false;
   }
 
@@ -353,10 +355,7 @@ function isAllowedImpactGeometry(impactSample, ballPosition) {
   }
 
   HORIZONTAL_CONTACT_DIRECTION.subVectors(ballPosition, impactSample.position);
-  const verticalOffsetMeters = Math.abs(HORIZONTAL_CONTACT_DIRECTION.y);
-  if (verticalOffsetMeters > CLUB_HEAD_CONTACT_MAX_VERTICAL_OFFSET) {
-    return false;
-  }
+
 
   HORIZONTAL_CONTACT_DIRECTION.y = 0;
   if (HORIZONTAL_CONTACT_DIRECTION.lengthSq() <= 1e-8) {

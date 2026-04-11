@@ -1,4 +1,5 @@
 import {
+  CLUB_SWING_WHOOSH_MAX_SPEED,
   SHOT_AUDIO_LIGHT_MAX_IMPACT_SPEED,
   SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED,
   SHOT_AUDIO_VOLUME,
@@ -9,6 +10,7 @@ const SHOT_AUDIO_PATHS = {
   medium: '/assets/audio_clip/shot/shot_medium_normal.wav',
   strong: '/assets/audio_clip/shot/shot_strong_normal.wav',
   pangya: '/assets/audio_clip/shot/pangya.wav',
+  whoosh: '/assets/audio_clip/whoosh/whoosh_foley1.wav',
 };
 
 const AUDIO_UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'];
@@ -19,6 +21,7 @@ export function createShotImpactAudio() {
     medium: createClipState(SHOT_AUDIO_PATHS.medium),
     strong: createClipState(SHOT_AUDIO_PATHS.strong),
     pangya: createClipState(SHOT_AUDIO_PATHS.pangya),
+    whoosh: createClipState(SHOT_AUDIO_PATHS.whoosh),
   };
 
   const unlockAudio = () => {
@@ -27,6 +30,7 @@ export function createShotImpactAudio() {
     primeClip(clips.medium.base);
     primeClip(clips.strong.base);
     primeClip(clips.pangya.base);
+    primeClip(clips.whoosh.base);
   };
 
   addUnlockListeners(unlockAudio);
@@ -42,6 +46,10 @@ export function createShotImpactAudio() {
     },
     playPangya() {
       playClip(clips.pangya);
+    },
+    playWhoosh(clubHeadSpeedMetersPerSecond) {
+      const volume = getWhooshVolume(clubHeadSpeedMetersPerSecond);
+      playClip(clips.whoosh, volume);
     },
   };
 }
@@ -82,9 +90,12 @@ function removeUnlockListeners(unlockAudio) {
   }
 }
 
-function playClip(clipState) {
+function playClip(clipState, volume = clipState.base.volume) {
+  const resolvedVolume = Math.max(0, Math.min(volume, 1));
+
   if (isClipAvailable(clipState.base)) {
     clipState.base.currentTime = 0;
+    clipState.base.volume = resolvedVolume;
     const playPromise = clipState.base.play();
     if (playPromise?.catch) {
       playPromise.catch(() => {});
@@ -93,7 +104,7 @@ function playClip(clipState) {
   }
 
   const playbackClip = clipState.base.cloneNode();
-  playbackClip.volume = clipState.base.volume;
+  playbackClip.volume = resolvedVolume;
   playbackClip.preload = 'auto';
   playbackClip.currentTime = 0;
   clipState.activeClones.add(playbackClip);
@@ -117,6 +128,14 @@ function playClip(clipState) {
 
 function isClipAvailable(clip) {
   return clip.paused || clip.ended || clip.currentTime <= 0;
+}
+
+function getWhooshVolume(clubHeadSpeedMetersPerSecond) {
+  if (!Number.isFinite(clubHeadSpeedMetersPerSecond) || clubHeadSpeedMetersPerSecond <= 0) {
+    return 0;
+  }
+
+  return SHOT_AUDIO_VOLUME * Math.min(clubHeadSpeedMetersPerSecond, CLUB_SWING_WHOOSH_MAX_SPEED) / CLUB_SWING_WHOOSH_MAX_SPEED;
 }
 
 function primeClip(clip) {

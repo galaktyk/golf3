@@ -22,6 +22,9 @@ import {
   CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS,
   CHARACTER_ROTATION_SPEED_DEGREES,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
+  CLUB_SWING_WHOOSH_COOLDOWN_MS,
+  CLUB_SWING_WHOOSH_MIN_SPEED,
+  CLUB_SWING_WHOOSH_REARM_SPEED,
   FPS_LABEL_UPDATE_INTERVAL_MS,
   HOLE_MARKER_LABEL_DEPTH,
   HOLE_MARKER_LABEL_EDGE_PADDING_PX,
@@ -81,6 +84,8 @@ let packetsSinceLastSample = 0;
 let framesSinceLastSample = 0;
 let playerState = 'control';
 let clubBallContactLatched = true;
+let clubWhooshLatched = false;
+let lastClubWhooshTimeMs = -Infinity;
 let activeClub = ACTIVE_CLUB;
 let practiceSwingMode = false;
 let rotateCharacterLeft = false;
@@ -508,6 +513,7 @@ function animate() {
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
   updateAimingPreviewIfNeeded();
+  updateClubWhooshAudio();
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
   let ballTelemetry = ballPhysics.getDebugTelemetry();
@@ -1046,6 +1052,35 @@ function detectClubBallImpact(characterTelemetry) {
   clubBallContactLatched = true;
 }
 
+/**
+ * Plays a single swing whoosh when the incoming club speed crosses the configured whoosh threshold, even if the swing misses the ball.
+ */
+function updateClubWhooshAudio() {
+  const ballTelemetry = ballPhysics.getDebugTelemetry();
+  const canPlayWhoosh = playerState === 'control' && ballTelemetry.phase === 'ready';
+
+  if (!canPlayWhoosh) {
+    clubWhooshLatched = false;
+    return;
+  }
+
+  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond();
+  const now = performance.now();
+  if (clubWhooshLatched && incomingClubHeadSpeedMetersPerSecond < CLUB_SWING_WHOOSH_REARM_SPEED) {
+    clubWhooshLatched = false;
+  }
+
+  if (incomingClubHeadSpeedMetersPerSecond > CLUB_SWING_WHOOSH_MIN_SPEED) {
+    const isWhooshOffCooldown = now - lastClubWhooshTimeMs >= CLUB_SWING_WHOOSH_COOLDOWN_MS;
+    if (!clubWhooshLatched && isWhooshOffCooldown) {
+      shotImpactAudio.playWhoosh(incomingClubHeadSpeedMetersPerSecond);
+      clubWhooshLatched = true;
+      lastClubWhooshTimeMs = now;
+    }
+    return;
+  }
+}
+
 function getIncomingClubHeadSpeedMetersPerSecond() {
 
 
@@ -1143,6 +1178,8 @@ function resetShotFlow() {
     viewerScene.setAimingCameraEnabled(false);
     faceCameraTowardHole(ballPhysics.getPosition());
   }
+  clubWhooshLatched = false;
+  lastClubWhooshTimeMs = -Infinity;
   playerState = 'control';
   clubBallContactLatched = true;
   syncSwingPreviewTarget();
