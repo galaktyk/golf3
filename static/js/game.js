@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, decodeControlMessage, decodeJoystickMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
+  AIMING_CAMERA_ENTRY_MIN_MAGNITUDE,
   AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_DEGREES,
   AIMING_MARKER_PIXEL_HEIGHT,
   AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT,
@@ -94,14 +95,10 @@ let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 let increaseAimingPreviewHeadSpeed = false;
 let decreaseAimingPreviewHeadSpeed = false;
-let remoteRotateLeftStrength = 0;
-let remoteRotateRightStrength = 0;
-let remoteAimIncreaseStrength = 0;
-let remoteAimDecreaseStrength = 0;
-let remoteRotateLeftTargetStrength = 0;
-let remoteRotateRightTargetStrength = 0;
-let remoteAimIncreaseTargetStrength = 0;
-let remoteAimDecreaseTargetStrength = 0;
+let remoteJoystickX = 0;
+let remoteJoystickY = 0;
+let remoteJoystickTargetX = 0;
+let remoteJoystickTargetY = 0;
 let freeCameraMoveForward = false;
 let freeCameraMoveBackward = false;
 let freeCameraMoveLeft = false;
@@ -189,7 +186,14 @@ controlSocket.addEventListener('message', (event) => {
     return;
   }
 
-  const controlMessage = decodeControlMessage(JSON.parse(event.data));
+  const payload = JSON.parse(event.data);
+  const joystickMessage = decodeJoystickMessage(payload);
+  if (joystickMessage) {
+    applyRemoteJoystickInput(joystickMessage.x, joystickMessage.y);
+    return;
+  }
+
+  const controlMessage = decodeControlMessage(payload);
   if (!controlMessage) {
     return;
   }
@@ -198,14 +202,7 @@ controlSocket.addEventListener('message', (event) => {
 });
 
 controlSocket.addEventListener('close', () => {
-  remoteRotateLeftStrength = 0;
-  remoteRotateRightStrength = 0;
-  remoteAimIncreaseStrength = 0;
-  remoteAimDecreaseStrength = 0;
-  remoteRotateLeftTargetStrength = 0;
-  remoteRotateRightTargetStrength = 0;
-  remoteAimIncreaseTargetStrength = 0;
-  remoteAimDecreaseTargetStrength = 0;
+  resetRemoteJoystickInput();
   if (!rotateCharacterLeft && !rotateCharacterRight) {
     resetCharacterRotationAcceleration();
   }
@@ -873,10 +870,8 @@ function getGameplayCameraStatusMessage() {
  * Smooths remote joystick values so packet jitter and inconsistent mobile event timing do not show up as camera jitter.
  */
 function updateRemoteControlInput(deltaSeconds) {
-  remoteRotateLeftStrength = smoothRemoteStrength(remoteRotateLeftStrength, remoteRotateLeftTargetStrength, deltaSeconds);
-  remoteRotateRightStrength = smoothRemoteStrength(remoteRotateRightStrength, remoteRotateRightTargetStrength, deltaSeconds);
-  remoteAimIncreaseStrength = smoothRemoteStrength(remoteAimIncreaseStrength, remoteAimIncreaseTargetStrength, deltaSeconds);
-  remoteAimDecreaseStrength = smoothRemoteStrength(remoteAimDecreaseStrength, remoteAimDecreaseTargetStrength, deltaSeconds);
+  remoteJoystickX = smoothRemoteStrength(remoteJoystickX, remoteJoystickTargetX, deltaSeconds);
+  remoteJoystickY = smoothRemoteStrength(remoteJoystickY, remoteJoystickTargetY, deltaSeconds);
 }
 
 /**
@@ -890,7 +885,11 @@ function getKeyboardRotationInputDirection() {
  * Returns the smoothed mobile joystick rotation direction.
  */
 function getRemoteRotationInputDirection() {
-  return remoteRotateLeftStrength - remoteRotateRightStrength;
+  if (isRemoteAimEntryGestureActive()) {
+    return 0;
+  }
+
+  return -remoteJoystickX;
 }
 
 /**
@@ -904,19 +903,24 @@ function getKeyboardAimingPreviewHeadSpeedInputDirection() {
  * Returns the smoothed mobile joystick aiming-preview direction.
  */
 function getRemoteAimingPreviewHeadSpeedInputDirection() {
-  return remoteAimIncreaseStrength - remoteAimDecreaseStrength;
+  return remoteJoystickY;
 }
 
 /**
- * Treats a near-vertical remote joystick pull as the mobile equivalent of keyboard up/down so it can enter aim mode directly.
+ * Treats a strong near-vertical remote joystick pull as the mobile equivalent of keyboard up/down so it can enter aim mode directly.
  */
 function isRemoteAimEntryGestureActive() {
-  const verticalDirection = remoteAimIncreaseTargetStrength - remoteAimDecreaseTargetStrength;
+  const verticalDirection = remoteJoystickTargetY;
   if (verticalDirection === 0) {
     return false;
   }
 
-  const horizontalDirection = remoteRotateLeftTargetStrength - remoteRotateRightTargetStrength;
+  const horizontalDirection = remoteJoystickTargetX;
+  const radialMagnitude = Math.hypot(horizontalDirection, verticalDirection);
+  if (radialMagnitude < AIMING_CAMERA_ENTRY_MIN_MAGNITUDE) {
+    return false;
+  }
+
   const verticalMagnitude = Math.abs(verticalDirection);
   const horizontalMagnitude = Math.abs(horizontalDirection);
   if (horizontalMagnitude <= 1e-6) {
@@ -941,6 +945,21 @@ function smoothRemoteStrength(current, target, deltaSeconds) {
 }
 
 /**
+ * Applies the latest raw mobile joystick axes so gameplay state can interpret them centrally.
+ */
+function applyRemoteJoystickInput(x, y) {
+  remoteJoystickTargetX = THREE.MathUtils.clamp(x, -1, 1);
+  remoteJoystickTargetY = THREE.MathUtils.clamp(y, -1, 1);
+}
+
+function resetRemoteJoystickInput() {
+  remoteJoystickX = 0;
+  remoteJoystickY = 0;
+  remoteJoystickTargetX = 0;
+  remoteJoystickTargetY = 0;
+}
+
+/**
  * Mirrors the Space-bar gameplay rule: aiming can always be turned off, but only turned on while the ball is ready.
  */
 function toggleAimingCamera() {
@@ -953,8 +972,6 @@ function toggleAimingCamera() {
   if (!viewerScene.isAimingCameraEnabled()) {
     increaseAimingPreviewHeadSpeed = false;
     decreaseAimingPreviewHeadSpeed = false;
-    remoteAimIncreaseStrength = 0;
-    remoteAimDecreaseStrength = 0;
     resetAimingPreviewHeadSpeedAcceleration();
   }
   hud.setStatus(getGameplayCameraStatusMessage());
@@ -986,38 +1003,26 @@ function applyRemoteControl(action, active, value = null) {
       }
       break;
     case CONTROL_ACTIONS.rotateLeft:
-      remoteRotateLeftTargetStrength = analogStrength;
-      if (active) {
-        remoteRotateRightTargetStrength = 0;
-      }
-      if (!rotateCharacterLeft && remoteRotateLeftTargetStrength === 0 && !rotateCharacterRight && remoteRotateRightTargetStrength === 0) {
+      remoteJoystickTargetX = active ? -analogStrength : Math.max(remoteJoystickTargetX, 0);
+      if (!rotateCharacterLeft && remoteJoystickTargetX === 0 && !rotateCharacterRight) {
         resetCharacterRotationAcceleration();
       }
       break;
     case CONTROL_ACTIONS.rotateRight:
-      remoteRotateRightTargetStrength = analogStrength;
-      if (active) {
-        remoteRotateLeftTargetStrength = 0;
-      }
-      if (!rotateCharacterLeft && remoteRotateLeftTargetStrength === 0 && !rotateCharacterRight && remoteRotateRightTargetStrength === 0) {
+      remoteJoystickTargetX = active ? analogStrength : Math.min(remoteJoystickTargetX, 0);
+      if (!rotateCharacterLeft && remoteJoystickTargetX === 0 && !rotateCharacterRight) {
         resetCharacterRotationAcceleration();
       }
       break;
     case CONTROL_ACTIONS.aimIncrease:
-      remoteAimIncreaseTargetStrength = analogStrength;
-      if (active) {
-        remoteAimDecreaseTargetStrength = 0;
-      }
-      if (remoteAimIncreaseTargetStrength === 0 && remoteAimDecreaseTargetStrength === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
+      remoteJoystickTargetY = active ? analogStrength : Math.min(remoteJoystickTargetY, 0);
+      if (remoteJoystickTargetY === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
         resetAimingPreviewHeadSpeedAcceleration();
       }
       break;
     case CONTROL_ACTIONS.aimDecrease:
-      remoteAimDecreaseTargetStrength = analogStrength;
-      if (active) {
-        remoteAimIncreaseTargetStrength = 0;
-      }
-      if (remoteAimIncreaseTargetStrength === 0 && remoteAimDecreaseTargetStrength === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
+      remoteJoystickTargetY = active ? -analogStrength : Math.max(remoteJoystickTargetY, 0);
+      if (remoteJoystickTargetY === 0 && !increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
         resetAimingPreviewHeadSpeedAcceleration();
       }
       break;

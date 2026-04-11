@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CONTROL_ACTIONS, encodeControlMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
+import { CONTROL_ACTIONS, encodeControlMessage, encodeJoystickMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
 
 const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
@@ -37,10 +37,8 @@ const joystickState = {
   pointerId: null,
   originX: 0,
   originY: 0,
-  rotateAction: null,
-  rotateStrength: 0,
-  aimAction: null,
-  aimStrength: 0,
+  axisX: 0,
+  axisY: 0,
   pointerDownTimeMs: 0,
   maxDistanceFromOrigin: 0,
   lastTapTimeMs: 0,
@@ -504,32 +502,17 @@ function isAimEnabled() {
 }
 
 /**
- * Maps the 2D joystick displacement into separate analog rotate and aim-control magnitudes.
+ * Sends the normalized joystick axes so the viewer owns all gameplay interpretation.
  */
 function applyAimFromDelta(deltaX, deltaY) {
   const normalizedX = normalizeJoystickAxis(deltaX);
   const normalizedY = normalizeJoystickAxis(-deltaY);
 
-  if (normalizedX < 0) {
-    updateJoystickAction('rotate', CONTROL_ACTIONS.rotateLeft, Math.abs(normalizedX));
-  } else if (normalizedX > 0) {
-    updateJoystickAction('rotate', CONTROL_ACTIONS.rotateRight, normalizedX);
-  } else {
-    updateJoystickAction('rotate', null, 0);
-  }
-
-  if (normalizedY < 0) {
-    updateJoystickAction('aim', CONTROL_ACTIONS.aimDecrease, Math.abs(normalizedY));
-  } else if (normalizedY > 0) {
-    updateJoystickAction('aim', CONTROL_ACTIONS.aimIncrease, normalizedY);
-  } else {
-    updateJoystickAction('aim', null, 0);
-  }
+  updateJoystickAxes(normalizedX, normalizedY);
 }
 
 function stopAimControls() {
-  updateJoystickAction('rotate', null, 0);
-  updateJoystickAction('aim', null, 0);
+  updateJoystickAxes(0, 0);
 }
 
 function releaseAimJoystick() {
@@ -581,34 +564,35 @@ function normalizeJoystickAxis(delta) {
 }
 
 /**
- * Sends only the changed joystick action/value pair so the viewer can mix analog mobile input with keyboard input.
+ * Sends only changed joystick axes so the phone remains a thin input device.
  */
-function updateJoystickAction(channel, action, strength) {
-  const actionKey = channel === 'rotate' ? 'rotateAction' : 'aimAction';
-  const strengthKey = channel === 'rotate' ? 'rotateStrength' : 'aimStrength';
-  const nextStrength = roundJoystickStrength(strength);
-  const currentAction = joystickState[actionKey];
-  const currentStrength = joystickState[strengthKey];
+function updateJoystickAxes(axisX, axisY) {
+  const nextAxisX = roundJoystickStrength(axisX);
+  const nextAxisY = roundJoystickStrength(axisY);
 
-  if (currentAction === action && Math.abs(currentStrength - nextStrength) <= 1e-3) {
+  if (
+    Math.abs(joystickState.axisX - nextAxisX) <= 1e-3
+    && Math.abs(joystickState.axisY - nextAxisY) <= 1e-3
+  ) {
     return;
   }
 
-  if (currentAction && (currentAction !== action || nextStrength === 0)) {
-    sendControlState(currentAction, false, 0);
-  }
-
-  joystickState[actionKey] = action;
-  joystickState[strengthKey] = action ? nextStrength : 0;
-
-  if (action && nextStrength > 0) {
-    sendControlState(action, true, nextStrength);
-  }
+  joystickState.axisX = nextAxisX;
+  joystickState.axisY = nextAxisY;
+  sendJoystickState(nextAxisX, nextAxisY);
 }
 
 function roundJoystickStrength(value) {
-  const clampedValue = clamp(value, 0, 1);
+  const clampedValue = clamp(value, -1, 1);
   return Math.round(clampedValue / JOYSTICK_NETWORK_STEP) * JOYSTICK_NETWORK_STEP;
+}
+
+function sendJoystickState(axisX, axisY) {
+  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  controlSocket.send(encodeJoystickMessage(axisX, axisY));
 }
 
 /**

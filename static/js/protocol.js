@@ -17,6 +17,11 @@ export const CONTROL_ACTIONS = Object.freeze({
   aimCameraToggle: 'camera.aim.toggle',
 });
 
+export const REMOTE_INPUT_TYPES = Object.freeze({
+  control: 'control',
+  joystick: 'joystick',
+});
+
 export function encodeSwingStatePacket({
   quaternion,
   perpendicularAngularSpeedRadiansPerSecond = 0,
@@ -71,7 +76,7 @@ export function decodeSwingStatePacket(buffer, targetQuaternion, targetState = {
 
 export function encodeControlMessage(action, active = true, value = null) {
   const payload = {
-    type: 'control',
+    type: REMOTE_INPUT_TYPES.control,
     action,
     active,
   };
@@ -83,8 +88,16 @@ export function encodeControlMessage(action, active = true, value = null) {
   return JSON.stringify(payload);
 }
 
+export function encodeJoystickMessage(x = 0, y = 0) {
+  return JSON.stringify({
+    type: REMOTE_INPUT_TYPES.joystick,
+    x: clampToUnitAxis(x),
+    y: clampToUnitAxis(y),
+  });
+}
+
 export function decodeControlMessage(payload) {
-  if (!payload || payload.type !== 'control' || typeof payload.action !== 'string') {
+  if (!payload || payload.type !== REMOTE_INPUT_TYPES.control || typeof payload.action !== 'string') {
     return null;
   }
 
@@ -93,6 +106,18 @@ export function decodeControlMessage(payload) {
     action: payload.action,
     active: payload.active !== false,
     value: Number.isFinite(payload.value) ? Math.max(0, Math.min(1, payload.value)) : null,
+  };
+}
+
+export function decodeJoystickMessage(payload) {
+  if (!payload || payload.type !== REMOTE_INPUT_TYPES.joystick) {
+    return null;
+  }
+
+  return {
+    type: payload.type,
+    x: clampToUnitAxis(payload.x),
+    y: clampToUnitAxis(payload.y),
   };
 }
 
@@ -123,4 +148,12 @@ function encodeHundredths(value) {
 
 function decodeHundredths(value) {
   return value / 100;
+}
+
+function clampToUnitAxis(value) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(-1, Math.min(1, value));
 }
