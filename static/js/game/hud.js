@@ -6,6 +6,7 @@ import {
   formatScalar,
   formatVector3,
 } from '/static/js/game/formatting.js';
+import { SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES } from '/static/js/game/constants.js';
 
 function formatGroundTransitionDebug(transitionDebug) {
   if (!transitionDebug?.captureAttempted) {
@@ -47,9 +48,37 @@ function formatGroundTransitionComponents(transitionDebug) {
 
 const SWING_PREVIEW_TARGET_PERCENT = 80;
 const SWING_PREVIEW_MAX_PERCENT = 100;
+const SWING_PREVIEW_HORIZONTAL_BAR_WIDTH_UNITS = 90;
+const SWING_PREVIEW_HORIZONTAL_MIN_ANGLE_DEGREES = -45;
+const SWING_PREVIEW_HORIZONTAL_MAX_ANGLE_DEGREES = 45;
+const SWING_PREVIEW_HORIZONTAL_ANGLE_RANGE_DEGREES = SWING_PREVIEW_HORIZONTAL_MAX_ANGLE_DEGREES
+  - SWING_PREVIEW_HORIZONTAL_MIN_ANGLE_DEGREES;
 
 function clampSwingPreviewPercent(percent) {
   return Math.max(0, Math.min(SWING_PREVIEW_MAX_PERCENT, percent));
+}
+
+/**
+ * Limits the preview marker to the visible Pangya-style bar range.
+ */
+function clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees) {
+  return Math.max(
+    SWING_PREVIEW_HORIZONTAL_MIN_ANGLE_DEGREES,
+    Math.min(SWING_PREVIEW_HORIZONTAL_MAX_ANGLE_DEGREES, horizontalLaunchAngleDegrees),
+  );
+}
+
+/**
+ * Converts the clamped horizontal launch angle to a left offset across the 90-unit bar.
+ */
+function getSwingPreviewHorizontalMarkerPercent(horizontalLaunchAngleDegrees) {
+  if (!Number.isFinite(horizontalLaunchAngleDegrees)) {
+    return 50;
+  }
+
+  const clampedAngleDegrees = clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees);
+  return ((SWING_PREVIEW_HORIZONTAL_MAX_ANGLE_DEGREES - clampedAngleDegrees)
+    / SWING_PREVIEW_HORIZONTAL_ANGLE_RANGE_DEGREES) * 100;
 }
 
 function getSwingPreviewFillPercent(capturedSpeedMetersPerSecond, targetSpeedMetersPerSecond) {
@@ -69,6 +98,34 @@ export function createViewerHud(dom) {
     targetSpeedMetersPerSecond: null,
     capturedSpeedMetersPerSecond: null,
   };
+
+  function updateSwingPreviewHorizontalAngle(horizontalLaunchAngleDegrees) {
+    if (
+      !dom.swingPreviewHorizontalBar
+      || !dom.swingPreviewHorizontalPangyaZone
+      || !dom.swingPreviewHorizontalMarker
+    ) {
+      return;
+    }
+
+    dom.swingPreviewHorizontalPangyaZone.style.width = `${SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES * 2}px`;
+
+    if (!Number.isFinite(horizontalLaunchAngleDegrees)) {
+      dom.swingPreviewHorizontalMarker.hidden = true;
+      dom.swingPreviewHorizontalBar.setAttribute('aria-label', 'Horizontal launch angle preview');
+      return;
+    }
+
+    const markerPercent = getSwingPreviewHorizontalMarkerPercent(horizontalLaunchAngleDegrees);
+    dom.swingPreviewHorizontalMarker.hidden = false;
+    dom.swingPreviewHorizontalMarker.style.left = `${markerPercent}%`;
+
+    const clampedAngleDegrees = clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees);
+    dom.swingPreviewHorizontalBar.setAttribute(
+      'aria-label',
+      `Horizontal launch angle ${formatDegrees(horizontalLaunchAngleDegrees)} shown on a ${SWING_PREVIEW_HORIZONTAL_BAR_WIDTH_UNITS}-unit bar and clamped to ${formatDegrees(clampedAngleDegrees)} for display`,
+    );
+  }
 
   return {
     initialize(cameraPosition, incomingQuaternion) {
@@ -187,6 +244,8 @@ export function createViewerHud(dom) {
     },
 
     updateLaunchPreview(preview) {
+      updateSwingPreviewHorizontalAngle(preview?.horizontalLaunchAngle ?? null);
+
       if (
 
          !dom.previewClubSpeedLabel

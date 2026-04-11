@@ -119,19 +119,37 @@
       </div>
       <div class="swing-preview-layout">
         <div class="swing-preview-figure">
-          <div
-            id="viewer-swing-preview-bar"
-            class="swing-preview-bar"
-            role="img"
-            aria-label="Last swing speed compared to target speed"
-          >
-            <div id="viewer-swing-preview-fill" class="swing-preview-fill"></div>
-            <div id="viewer-swing-preview-target-line" class="swing-preview-target-line" aria-hidden="true"></div>
-          </div>
-
           <div class="swing-preview-target-anchor" aria-live="polite">
             <span class="debug-label">Target</span>
             <span id="viewer-swing-preview-target-speed" class="debug-value swing-preview-target-speed">-</span>
+          </div>
+          <div class="swing-preview-meter-stack">
+            <div
+              id="viewer-swing-preview-horizontal-bar"
+              class="swing-preview-horizontal-bar"
+              role="img"
+              aria-label="Horizontal launch angle preview"
+            >
+              <div
+                id="viewer-swing-preview-horizontal-pangya-zone"
+                class="swing-preview-horizontal-pangya-zone"
+                aria-hidden="true"
+              ></div>
+              <div
+                id="viewer-swing-preview-horizontal-marker"
+                class="swing-preview-horizontal-marker"
+                aria-hidden="true"
+              ></div>
+            </div>
+            <div
+              id="viewer-swing-preview-bar"
+              class="swing-preview-bar"
+              role="img"
+              aria-label="Last swing speed compared to target speed"
+            >
+              <div id="viewer-swing-preview-fill" class="swing-preview-fill"></div>
+              <div id="viewer-swing-preview-target-line" class="swing-preview-target-line" aria-hidden="true"></div>
+            </div>
           </div>
         </div>
         <div class="swing-preview-meta">
