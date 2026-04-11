@@ -8,3 +8,4 @@ description: Describe when these instructions should be loaded by the agent base
 Provide project context and coding guidelines that AI should follow when generating code, answering questions, or reviewing changes.
 
 - when writing function please provide a docstring and comments for any non-obvious code sections
+- encourage to re-arrange file or folder structure since this app is still in early stage and there is no established structure yet.

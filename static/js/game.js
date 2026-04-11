@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { CONTROL_ACTIONS, decodeControlMessage, decodeSwingStatePacket } from '/static/js/protocol.js';
 import {
   AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
@@ -20,7 +23,7 @@ import { predictFirstContactPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { getViewerDom } from '/static/js/game/dom.js';
-import { formatDistanceYards, formatHeightDeltaMeters } from '/static/js/game/formatting.js';
+import { formatDistanceYards, formatHeightDeltaMeters, formatMetersPerSecond } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
 import { getNeutralClubLaunchPreview, resolveClubBallImpact } from '/static/js/game/impact/clubImpact.js';
 import { createShotImpactAudio } from '/static/js/game/impact/shotAudio.js';
@@ -73,6 +76,7 @@ let freeCameraLookActive = false;
 let hasFreeCameraFallbackPointerPosition = false;
 let lastFreeCameraPointerClientX = 0;
 let lastFreeCameraPointerClientY = 0;
+let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -205,6 +209,20 @@ window.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
+    if (isTextEntryTarget(event.target)) {
+      return;
+    }
+
+    adjustAimingPreviewHeadSpeed(
+      event.code === 'ArrowUp'
+        ? AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND
+        : -AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND,
+    );
+    event.preventDefault();
+    return;
+  }
+
   if (event.repeat) {
     return;
   }
@@ -252,6 +270,11 @@ window.addEventListener('keyup', (event) => {
 
   if (event.code === 'ArrowRight') {
     rotateCharacterRight = false;
+    event.preventDefault();
+    return;
+  }
+
+  if (event.code === 'ArrowUp' || event.code === 'ArrowDown') {
     event.preventDefault();
   }
 });
@@ -631,6 +654,25 @@ function invalidateAimingPreview() {
   aimingPreview.dirty = true;
 }
 
+/**
+ * Adjusts the neutral aiming preview club-head speed and forces the landing marker to refresh.
+ */
+function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
+  const nextHeadSpeedMetersPerSecond = THREE.MathUtils.clamp(
+    aimingPreviewHeadSpeedMetersPerSecond + deltaMetersPerSecond,
+    AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+  );
+  if (Math.abs(nextHeadSpeedMetersPerSecond - aimingPreviewHeadSpeedMetersPerSecond) <= 1e-8) {
+    return;
+  }
+
+  aimingPreviewHeadSpeedMetersPerSecond = nextHeadSpeedMetersPerSecond;
+  console.log('adjusted aiming preview head speed to', aimingPreviewHeadSpeedMetersPerSecond);
+  invalidateAimingPreview();
+  hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
+}
+
 function updateAimingPreviewIfNeeded(characterTelemetry) {
   if (!aimingPreview.dirty) {
     return;
@@ -647,7 +689,7 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
   }
 
   const launchPreview = getNeutralClubLaunchPreview(
-    AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+    aimingPreviewHeadSpeedMetersPerSecond,
     activeClub,
   );
   if (!launchPreview?.isReady) {
