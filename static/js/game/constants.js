@@ -22,12 +22,12 @@ export const BALL_GRAVITY_ACCELERATION = 9.81;
 export const BALL_AIR_DRAG = 0.04;
 
 // Hop energy
-export const BALL_BOUNCE_RESTITUTION = 0.23;
+export const BALL_BOUNCE_RESTITUTION = 0.2;
 export const BALL_IMPACT_FRICTION = 0.08;
-export const BALL_ROLLING_FRICTION = 1.4;
+export const BALL_ROLLING_FRICTION = 2.4;
 export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.45;
 export const BALL_GROUND_CAPTURE_SPEED = 2.4;
-export const BALL_STOP_SPEED = 0.08;
+export const BALL_STOP_SPEED = 0.02;
 
 export const BALL_COLLISION_SKIN = 0.001;
 export const BALL_COLLISION_STEP_DISTANCE = 0.01;
@@ -77,19 +77,25 @@ export const CHARACTER_ROTATION_SPEED_DEGREES = 45;
 export const CHARACTER_VISUAL_YAW_OFFSET_DEGREES = 0;
 export const WORLD_FORWARD = new THREE.Vector3(0, 0, -1);
 
-
+// Camera mode 1: normal
 export const CAMERA_START_DISTANCE = 6;
 export const CAMERA_LOOK_AHEAD_DISTANCE = 0;
 export const CAMERA_TILT_OFFSET_DEGREES = 12;
 export const CAMERA_FOLLOW_STIFFNESS = 8;
 
-export const AIMING_CAMERA_DISTANCE = 8;
-export const AIMING_CAMERA_HEIGHT = 5;
-export const AIMING_CAMERA_FOLLOW_STIFFNESS = 20;
 
+// Camera mode 2: aiming
+export const AIMING_CAMERA_DISTANCE = 10;
+export const AIMING_CAMERA_HEIGHT = 8;
+export const AIMING_CAMERA_FOLLOW_STIFFNESS = 50;
+
+
+// Free camera mode
 export const FREE_CAMERA_MOVE_SPEED = 30;
 export const FREE_CAMERA_LOOK_SENSITIVITY = 0.0025;
 export const FREE_CAMERA_PITCH_LIMIT_DEGREES = 85;
+
+
 export const MAX_RENDER_PIXEL_RATIO = 0.65;
 export const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
 export const FPS_LABEL_UPDATE_INTERVAL_MS = 250;

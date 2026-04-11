@@ -85,6 +85,7 @@ export function createViewerScene(canvas) {
   const aimingCameraDirection = new THREE.Vector3();
   const normalCameraTargetOffset = new THREE.Vector3();
   const aimingCameraFocusPoint = new THREE.Vector3();
+  const aimingCameraLookAtMatrix = new THREE.Matrix4();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
@@ -564,9 +565,11 @@ export function createViewerScene(canvas) {
         const aimingFollowAlpha = aimingCameraNeedsSnap
           ? 1
           : 1 - Math.exp(-AIMING_CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
+        aimingCameraLookAtMatrix.lookAt(desiredCameraPosition, desiredCameraTarget, WORLD_UP);
         camera.position.lerp(desiredCameraPosition, aimingFollowAlpha);
-        controls.target.lerp(desiredCameraTarget, aimingFollowAlpha);
-        camera.lookAt(desiredCameraTarget);
+        controls.target.copy(desiredCameraTarget);
+        camera.quaternion.setFromRotationMatrix(aimingCameraLookAtMatrix);
+        camera.updateMatrixWorld(true);
         aimingCameraNeedsSnap = false;
         return;
       }
