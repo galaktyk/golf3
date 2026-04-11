@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="viewer-body">
-  <div class="hud">
+  <div class="hud hud-bottom-right">
     <div class="panel panel-debug">
       <div class="panel-heading">
         <p class="eyebrow">Viewer Debug</p>
@@ -111,25 +111,46 @@
       </div>
     </div>
   </div>
-  <div id="viewer-launch-preview-panel" class="hud hud-bottom-right">
-    <div class="panel panel-debug panel-launch-preview">
+  <div id="viewer-swing-preview-panel" class="hud hud-left-center">
+    <div class="panel panel-debug panel-swing-preview">
       <div class="panel-heading">
-        <p class="eyebrow">Launch Preview</p>
-        <p id="viewer-launch-preview-message" class="panel-status-text">Updates when a shot launches.</p>
+        <p class="eyebrow">Swing Preview</p>
+        <p id="viewer-swing-preview-message" class="panel-status-text">Aim first, then swing to compare against the target speed.</p>
       </div>
-      <div class="debug-grid">
-        <span class="debug-label">Head Speed</span>
-        <span id="viewer-preview-club-speed" class="debug-value">-</span>
-        <span class="debug-label">Ball Speed</span>
-        <span id="viewer-preview-ball-speed" class="debug-value">-</span>
-        <span class="debug-label">Horizontal LA</span>
-        <span id="viewer-preview-horizontal-launch-angle" class="debug-value">-</span>
-        <span class="debug-label">Face Pitch</span>
-        <span id="viewer-preview-face-pitch" class="debug-value">-</span>
-        <span class="debug-label">Dynamic Loft</span>
-        <span id="viewer-preview-dynamic-loft" class="debug-value">-</span>
-        <span class="debug-label">Launch</span>
-        <span id="viewer-preview-launch-angle" class="debug-value">-</span>
+      <div class="swing-preview-layout">
+        <div class="swing-preview-figure">
+          <div
+            id="viewer-swing-preview-bar"
+            class="swing-preview-bar"
+            role="img"
+            aria-label="Last swing speed compared to target speed"
+          >
+            <div id="viewer-swing-preview-fill" class="swing-preview-fill"></div>
+            <div id="viewer-swing-preview-target-line" class="swing-preview-target-line" aria-hidden="true"></div>
+          </div>
+
+          <div class="swing-preview-target-anchor" aria-live="polite">
+            <span class="debug-label">Target</span>
+            <span id="viewer-swing-preview-target-speed" class="debug-value swing-preview-target-speed">-</span>
+          </div>
+        </div>
+        <div class="swing-preview-meta">
+        
+          <div class="debug-grid swing-preview-meta-grid">
+            <span class="debug-label">Head Speed</span>
+            <span id="viewer-preview-club-speed" class="debug-value">-</span>
+            <span class="debug-label">Ball Speed</span>
+            <span id="viewer-preview-ball-speed" class="debug-value">-</span>
+            <span class="debug-label">Horizontal LA</span>
+            <span id="viewer-preview-horizontal-launch-angle" class="debug-value">-</span>
+            <span class="debug-label">Face Pitch</span>
+            <span id="viewer-preview-face-pitch" class="debug-value">-</span>
+            <span class="debug-label">Dynamic Loft</span>
+            <span id="viewer-preview-dynamic-loft" class="debug-value">-</span>
+            <span class="debug-label">Launch</span>
+            <span id="viewer-preview-launch-angle" class="debug-value">-</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>

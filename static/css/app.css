@@ -91,6 +91,14 @@ body::before {
   bottom: 10px;
 }
 
+.hud-left-center {
+  top: 50%;
+  left: 10px;
+  bottom: auto;
+  transform: translateY(-50%);
+  width: min(340px, calc(100vw - 20px));
+}
+
 .controller-body {
   height: 100dvh;
   overflow: hidden;
@@ -464,8 +472,89 @@ p {
   width: min(240px, calc(100vw - 20px));
 }
 
-.panel-launch-preview {
-  width: min(260px, calc(100vw - 20px));
+.panel-swing-preview {
+  width: min(340px, calc(100vw - 20px));
+}
+
+.swing-preview-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.swing-preview-figure {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding-left: 96px;
+  min-height: 214px;
+}
+
+.swing-preview-bar {
+  position: relative;
+  width: 46px;
+  min-height: 214px;
+  border: 2px solid rgba(0, 0, 0, 0.86);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.swing-preview-fill {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.92);
+  transition: height 220ms ease-out;
+}
+
+.swing-preview-target-line {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  bottom: 80%;
+  background: rgba(0, 0, 0, 0.86);
+  z-index: 1;
+}
+
+.swing-preview-scale-labels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+
+.swing-preview-scale-label {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.swing-preview-target-anchor {
+  position: absolute;
+  left: 0;
+  bottom: calc(80% - 15px);
+  display: grid;
+  gap: 2px;
+  min-width: 84px;
+}
+
+.swing-preview-target-speed {
+  text-align: right;
+}
+
+.swing-preview-meta {
+  flex: 1 1 auto;
+  display: grid;
+  gap: 10px;
+}
+
+.swing-preview-meta-grid {
+  width: 100%;
+}
+
+.swing-preview-launch-message {
+  margin-bottom: 2px;
 }
 
 .club-selector-row {
@@ -522,8 +611,37 @@ p {
     width: min(260px, calc((100vw - 24px) / 2));
   }
 
+  .hud-left-center {
+    top: auto;
+    left: 8px;
+    bottom: 120px;
+    transform: none;
+    width: min(320px, calc(100vw - 16px));
+  }
+
   .panel {
     padding: 9px 10px;
+  }
+
+  .swing-preview-layout {
+    gap: 10px;
+  }
+
+  .swing-preview-figure,
+  .swing-preview-bar {
+    min-height: 180px;
+  }
+
+  .swing-preview-bar {
+    width: 40px;
+  }
+
+  .swing-preview-target-anchor {
+    min-width: 74px;
+  }
+
+  .panel-swing-preview {
+    width: min(320px, calc(100vw - 16px));
   }
 
   h1 {

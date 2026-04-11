@@ -62,6 +62,9 @@ const character = loadCharacter(viewerScene, (message) => hud.setStatus(message)
 const ballPhysics = createBallPhysics(viewerScene);
 const ballTrail = createBallTrail(BALL_RADIUS);
 const shotImpactAudio = createShotImpactAudio();
+const practiceSwingBallColor = new THREE.Color('#31e0ff');
+const PRACTICE_SWING_BALL_OPACITY = 0.26;
+const ballMaterialVisualState = new WeakMap();
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -74,6 +77,7 @@ let framesSinceLastSample = 0;
 let playerState = 'control';
 let clubBallContactLatched = true;
 let activeClub = ACTIVE_CLUB;
+let practiceSwingMode = false;
 let rotateCharacterLeft = false;
 let rotateCharacterRight = false;
 let increaseAimingPreviewHeadSpeed = false;
@@ -91,6 +95,8 @@ let characterRotationHoldSeconds = 0;
 let characterRotationDirection = 0;
 let aimingPreviewHeadSpeedHoldSeconds = 0;
 let aimingPreviewHeadSpeedDirection = 0;
+let practiceSwingBallVisualDirty = true;
+let practiceSwingBallVisualChildCount = -1;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const holeProjection = new THREE.Vector3();
@@ -108,6 +114,7 @@ const aimingPreview = {
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
 hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+syncSwingPreviewTarget();
 initializeLaunchDebugUi();
 initializeClubDebugUi();
 
@@ -314,6 +321,17 @@ window.addEventListener('keydown', (event) => {
 
   if (event.code === 'KeyR') {
     resetShotFlow();
+    event.preventDefault();
+    return;
+  }
+
+  if (event.code === 'KeyP') {
+    if (isTextEntryTarget(event.target)) {
+      return;
+    }
+
+    togglePracticeSwingMode();
+    event.preventDefault();
   }
 });
 
@@ -489,11 +507,13 @@ function animate() {
     playerState = 'control';
     clubBallContactLatched = true;
     ballTelemetry = ballPhysics.getDebugTelemetry();
+    hud.updateSwingPreviewCapture(null, aimingPreviewHeadSpeedMetersPerSecond);
     invalidateAimingPreview();
   }
 
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
   viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
+  syncPracticeSwingBallVisualState();
   ballTrail.update(ballPhysics.getPosition(), trailTelemetry, deltaSeconds);
   viewerScene.updateFreeCamera(deltaSeconds, {
     forward: Number(freeCameraMoveForward) - Number(freeCameraMoveBackward),
@@ -666,6 +686,67 @@ function canUseAimingControls() {
 }
 
 /**
+ * Keeps practice mode in the viewer layer so practice swings can reuse impact math without entering physics.
+ */
+function togglePracticeSwingMode() {
+  if (!canUseAimingControls()) {
+    hud.setStatus('Practice swing mode is available only while the ball is ready.');
+    return false;
+  }
+
+  practiceSwingMode = !practiceSwingMode;
+  practiceSwingBallVisualDirty = true;
+  syncPracticeSwingBallVisualState();
+  hud.setStatus(practiceSwingMode
+    ? 'Practice swing mode enabled.'
+    : 'Practice swing mode disabled.');
+  return true;
+}
+
+/**
+ * Applies the practice ball look lazily so the ball model can load asynchronously and still pick up the mode.
+ */
+function syncPracticeSwingBallVisualState() {
+  const childCount = viewerScene.ballRoot.children.length;
+  if (!practiceSwingBallVisualDirty && childCount === practiceSwingBallVisualChildCount) {
+    return;
+  }
+
+  practiceSwingBallVisualDirty = false;
+  practiceSwingBallVisualChildCount = childCount;
+  viewerScene.ballRoot.traverse((node) => {
+    if (!node.isMesh || !node.material) {
+      return;
+    }
+
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if (!material) {
+        continue;
+      }
+
+      if (!ballMaterialVisualState.has(material)) {
+        ballMaterialVisualState.set(material, {
+          wireframe: Boolean(material.wireframe),
+          transparent: Boolean(material.transparent),
+          opacity: Number.isFinite(material.opacity) ? material.opacity : 1,
+          color: material.color?.clone?.() ?? null,
+        });
+      }
+
+      const visualState = ballMaterialVisualState.get(material);
+      material.wireframe = visualState.wireframe;
+      material.transparent = practiceSwingMode ? true : visualState.transparent;
+      material.opacity = practiceSwingMode ? PRACTICE_SWING_BALL_OPACITY : visualState.opacity;
+      if (visualState.color && material.color) {
+        material.color.copy(practiceSwingMode ? practiceSwingBallColor : visualState.color);
+      }
+      material.needsUpdate = true;
+    }
+  });
+}
+
+/**
  * Maps the current gameplay camera mode to a short HUD status message.
  */
 function getGameplayCameraStatusMessage() {
@@ -746,7 +827,12 @@ function detectClubBallImpact(characterTelemetry) {
   }
 
   hud.updateLaunchPreview(impact.launchPreview);
-  launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
+  updateSwingPreviewCaptureFromImpact(impact);
+  if (practiceSwingMode) {
+    handlePracticeLaunch(impact);
+  } else {
+    launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
+  }
   clubBallContactLatched = true;
 }
 
@@ -793,6 +879,23 @@ function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = n
   invalidateAimingPreview();
 }
 
+/**
+ * Emits practice launch data locally so preview UI can react without advancing the real shot state.
+ */
+function handlePracticeLaunch(impact) {
+  window.dispatchEvent(new CustomEvent('practiceLaunch', {
+    detail: {
+      practiceSwingMode: true,
+      impactSpeedMetersPerSecond: impact.impactSpeedMetersPerSecond,
+      launchData: { ...impact.launchData },
+      launchPreview: impact.launchPreview ? { ...impact.launchPreview } : null,
+      referenceForward: impact.referenceForward ? impact.referenceForward.clone() : null,
+      timestampMs: performance.now(),
+    },
+  }));
+  hud.setStatus(`Practice launch captured at ${formatMetersPerSecond(impact.launchPreview?.ballSpeed ?? 0)} ball speed.`);
+}
+
 function getLaunchImpactSpeedMetersPerSecond(launchData, impactSpeedMetersPerSecond) {
   if (Number.isFinite(impactSpeedMetersPerSecond) && impactSpeedMetersPerSecond > 0) {
     return impactSpeedMetersPerSecond;
@@ -823,6 +926,8 @@ function resetShotFlow() {
   ballTrail.reset();
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
   viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
+  practiceSwingBallVisualDirty = true;
+  syncPracticeSwingBallVisualState();
   viewerScene.positionCharacterForBall(ballPhysics.getPosition());
   if (!viewerScene.isFreeCameraEnabled()) {
     viewerScene.setAimingCameraEnabled(false);
@@ -830,6 +935,8 @@ function resetShotFlow() {
   }
   playerState = 'control';
   clubBallContactLatched = true;
+  syncSwingPreviewTarget();
+  hud.updateSwingPreviewCapture(null, aimingPreviewHeadSpeedMetersPerSecond);
   updateLaunchDebugUiState();
   invalidateAimingPreview();
 }
@@ -900,6 +1007,7 @@ function moveActiveClub(delta) {
     : 0;
   activeClub = ACTIVE_CLUB_SET.clubs[nextClubIndex];
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+  syncSwingPreviewTarget();
   invalidateAimingPreview();
 }
 
@@ -922,8 +1030,26 @@ function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
 
   aimingPreviewHeadSpeedMetersPerSecond = nextHeadSpeedMetersPerSecond;
   console.log('adjusted aiming preview head speed to', aimingPreviewHeadSpeedMetersPerSecond);
+  syncSwingPreviewTarget();
   invalidateAimingPreview();
   hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
+}
+
+function syncSwingPreviewTarget() {
+  hud.updateSwingPreviewTarget(aimingPreviewHeadSpeedMetersPerSecond);
+}
+
+/**
+ * Mirrors the impact-captured head speed into the swing preview widget for both practice and real swings.
+ */
+function updateSwingPreviewCaptureFromImpact(impact) {
+  const capturedHeadSpeedMetersPerSecond = Number.isFinite(impact?.launchPreview?.clubHeadSpeedMetersPerSecond)
+    ? impact.launchPreview.clubHeadSpeedMetersPerSecond
+    : impact?.impactSpeedMetersPerSecond;
+  hud.updateSwingPreviewCapture(
+    capturedHeadSpeedMetersPerSecond,
+    aimingPreviewHeadSpeedMetersPerSecond,
+  );
 }
 
 function updateAimingPreviewIfNeeded() {

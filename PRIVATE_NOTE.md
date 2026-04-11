@@ -3,34 +3,66 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
----
-bounce feel unnatural
-it push forward too much even i use sand wedge with high loft
-after it bounce it go forward too much, could you check the physics?
+add horizontal launch angle in the swing preview widget
 
-
+add aim line preview
 ---
 
-refactor how camera work
-normally when press left/right will rotate camera
-and press up/down will adjust aimpreview
 
-now when press up/down will warp camera to the near contact preview position and look at it (along with adjusting the aim preview)
-in that mode when press left/right will still rotate character and aim preview but the camera will follow the near contact preview position and look at it
+putt and green line why physics break
 
-press space will exit the aiming mode and warp camera back to normal position
+---
 
-in total now we have 3 camera mode
-1. normal mode
-2. aiming mode
-3. free camera mode
+wind
 
+---
 
-*we might need to reconsider how character and camera and ball hierarchy work in the scene to make this easier to implement and less buggy
+course collision texture tag
 
 
 
 
+
+change to webrtc with qrcode for signaling
+use qr as set forward
+
+
+
+
+
+---
+add new widget for practice swing preview
+
+in the widget will have a vertical bar fill fill detected head speed 
+this bar will calibrated adjust to aiming preview head
+the bar top at 80% is the  aiming preview head speed m/s (show this number on the side of the bar)
+bottom is 0% , top is 120%
+
+so use  flow is like
+1. aim for the spot
+2. check the require head speed for that aiming spot
+3. practice swing and try to fill the bar to the required head speed level
+4. disable practice swing mode and do the real swing with the same head speed as the practice swing as possible
+
+
+any question?
+
+
+
+
+
+
+---
+when fill the bar make it animate from bottom and fill up 
+
+
+
+
+---
+add spin
+
+
+---
 
 
 ---

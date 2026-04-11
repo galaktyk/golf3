@@ -45,7 +45,31 @@ function formatGroundTransitionComponents(transitionDebug) {
     + `t ${transitionDebug.preImpactTangentSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactTangentSpeedMetersPerSecond.toFixed(2)}`;
 }
 
+const SWING_PREVIEW_TARGET_PERCENT = 80;
+const SWING_PREVIEW_MAX_PERCENT = 100;
+
+function clampSwingPreviewPercent(percent) {
+  return Math.max(0, Math.min(SWING_PREVIEW_MAX_PERCENT, percent));
+}
+
+function getSwingPreviewFillPercent(capturedSpeedMetersPerSecond, targetSpeedMetersPerSecond) {
+  if (!Number.isFinite(targetSpeedMetersPerSecond) || targetSpeedMetersPerSecond <= 1e-6) {
+    return 0;
+  }
+
+  if (!Number.isFinite(capturedSpeedMetersPerSecond) || capturedSpeedMetersPerSecond <= 0) {
+    return 0;
+  }
+
+  return clampSwingPreviewPercent((capturedSpeedMetersPerSecond / targetSpeedMetersPerSecond) * SWING_PREVIEW_TARGET_PERCENT);
+}
+
 export function createViewerHud(dom) {
+  const swingPreviewState = {
+    targetSpeedMetersPerSecond: null,
+    capturedSpeedMetersPerSecond: null,
+  };
+
   return {
     initialize(cameraPosition, incomingQuaternion) {
       this.updateSocketState('Connecting');
@@ -59,6 +83,8 @@ export function createViewerHud(dom) {
       this.updateGroundTransitionDebug(null);
       this.updateShotStates('control', 'ready', null);
       this.updateClubDebug(null, null);
+      this.updateSwingPreviewTarget(null);
+      this.updateSwingPreviewCapture(null);
       this.updateLaunchPreview(null);
       this.updateLaunchPanelVisible(false);
     },
@@ -162,8 +188,8 @@ export function createViewerHud(dom) {
 
     updateLaunchPreview(preview) {
       if (
-        !dom.launchPreviewMessage
-        || !dom.previewClubSpeedLabel
+
+         !dom.previewClubSpeedLabel
         || !dom.previewBallSpeedLabel
         || !dom.previewHorizontalLaunchAngleLabel
         || !dom.previewFacePitchLabel
@@ -174,7 +200,7 @@ export function createViewerHud(dom) {
       }
 
       if (!preview) {
-        dom.launchPreviewMessage.textContent = 'Updates when a shot launches.';
+
         dom.previewClubSpeedLabel.textContent = '-';
         dom.previewBallSpeedLabel.textContent = '-';
         dom.previewHorizontalLaunchAngleLabel.textContent = '-';
@@ -184,13 +210,77 @@ export function createViewerHud(dom) {
         return;
       }
 
-      dom.launchPreviewMessage.textContent = 'Captured at launch from phone motion and club face impact.';
+    
       dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
       dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
       dom.previewHorizontalLaunchAngleLabel.textContent = formatDegrees(preview.horizontalLaunchAngle);
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
       dom.previewLaunchAngleLabel.textContent = formatDegrees(preview.verticalLaunchAngle);
+    },
+
+    updateSwingPreviewTarget(targetSpeedMetersPerSecond) {
+      if (
+        !dom.swingPreviewMessage
+        || !dom.swingPreviewBar
+        || !dom.swingPreviewTargetLine
+        || !dom.swingPreviewTargetSpeedLabel
+      ) {
+        return;
+      }
+
+      swingPreviewState.targetSpeedMetersPerSecond = targetSpeedMetersPerSecond;
+      dom.swingPreviewTargetLine.style.bottom = `${SWING_PREVIEW_TARGET_PERCENT}%`;
+      dom.swingPreviewTargetSpeedLabel.textContent = formatMetersPerSecond(targetSpeedMetersPerSecond);
+      if (Number.isFinite(swingPreviewState.capturedSpeedMetersPerSecond) && swingPreviewState.capturedSpeedMetersPerSecond >= 0) {
+        this.updateSwingPreviewCapture(
+          swingPreviewState.capturedSpeedMetersPerSecond,
+          targetSpeedMetersPerSecond,
+        );
+        return;
+      }
+
+      if (!Number.isFinite(targetSpeedMetersPerSecond) || targetSpeedMetersPerSecond <= 0) {
+        dom.swingPreviewMessage.textContent = 'Waiting for a target head speed from the aiming preview.';
+      } else if (!Number.isFinite(swingPreviewState.capturedSpeedMetersPerSecond)
+        || swingPreviewState.capturedSpeedMetersPerSecond < 0) {
+        dom.swingPreviewMessage.textContent = 'Aim first, then swing to compare against the target speed.';
+      }
+    },
+
+    updateSwingPreviewCapture(capturedSpeedMetersPerSecond, targetSpeedMetersPerSecond = null) {
+      if (
+        !dom.swingPreviewMessage
+        || !dom.swingPreviewBar
+        || !dom.swingPreviewFill
+      ) {
+        return;
+      }
+
+      swingPreviewState.capturedSpeedMetersPerSecond = capturedSpeedMetersPerSecond;
+      swingPreviewState.targetSpeedMetersPerSecond = targetSpeedMetersPerSecond
+        ?? swingPreviewState.targetSpeedMetersPerSecond;
+
+      if (!Number.isFinite(capturedSpeedMetersPerSecond) || capturedSpeedMetersPerSecond < 0) {
+        dom.swingPreviewFill.style.height = '0%';
+        dom.swingPreviewBar.setAttribute('aria-label', 'Last swing speed compared to target speed');
+        if (Number.isFinite(targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond)
+          && (targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond) > 0) {
+          dom.swingPreviewMessage.textContent = 'Aim first, then swing to compare against the target speed.';
+        }
+        return;
+      }
+
+      const fillPercent = getSwingPreviewFillPercent(
+        capturedSpeedMetersPerSecond,
+        targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond,
+      );
+      dom.swingPreviewFill.style.height = `${fillPercent}%`;
+      dom.swingPreviewBar.setAttribute(
+        'aria-label',
+        `Last swing speed ${formatMetersPerSecond(capturedSpeedMetersPerSecond)} against target ${formatMetersPerSecond(targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond)}`,
+      );
+      dom.swingPreviewMessage.textContent = 'Last swing captured. Match the 80% target line.';
     },
 
     updateLaunchPanelVisible(visible) {
