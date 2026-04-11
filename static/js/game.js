@@ -614,32 +614,42 @@ function updateCharacterRotationInput(deltaSeconds) {
 
 /**
  * Converts held up/down input into a smooth head-speed change so taps stay precise and holds ramp up.
+ * Keyboard input may still enter aim mode directly, while phone joystick input only adjusts after a double-tap toggle.
  */
 function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
   if (viewerScene.isFreeCameraEnabled()) {
     resetAimingPreviewHeadSpeedAcceleration();
+    resetAimingPreviewHeadSpeedAnalogAcceleration();
     return;
   }
 
   if (!canUseAimingControls()) {
     resetAimingPreviewHeadSpeedAcceleration();
+    resetAimingPreviewHeadSpeedAnalogAcceleration();
     return;
   }
 
   const keyboardHeadSpeedDirection = getKeyboardAimingPreviewHeadSpeedInputDirection();
   const remoteHeadSpeedDirection = getRemoteAimingPreviewHeadSpeedInputDirection();
-  const headSpeedDirection = keyboardHeadSpeedDirection !== 0 ? keyboardHeadSpeedDirection : remoteHeadSpeedDirection;
+  const isKeyboardInputActive = keyboardHeadSpeedDirection !== 0;
+  const headSpeedDirection = isKeyboardInputActive ? keyboardHeadSpeedDirection : remoteHeadSpeedDirection;
   if (headSpeedDirection === 0) {
     resetAimingPreviewHeadSpeedAcceleration();
+    resetAimingPreviewHeadSpeedAnalogAcceleration();
     return;
   }
 
   if (!viewerScene.isAimingCameraEnabled()) {
+    if (!isKeyboardInputActive) {
+      resetAimingPreviewHeadSpeedAnalogAcceleration();
+      return;
+    }
+
     viewerScene.setAimingCameraEnabled(true);
   }
 
   let adjustmentRate = AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND;
-  if (keyboardHeadSpeedDirection !== 0) {
+  if (isKeyboardInputActive) {
     resetAimingPreviewHeadSpeedAnalogAcceleration();
     if (headSpeedDirection !== aimingPreviewHeadSpeedDirection) {
       aimingPreviewHeadSpeedDirection = headSpeedDirection;
@@ -774,17 +784,25 @@ function canUseAimingControls() {
  * Keeps practice mode in the viewer layer so practice swings can reuse impact math without entering physics.
  */
 function togglePracticeSwingMode() {
-  if (!canUseAimingControls()) {
+  return setPracticeSwingMode(!practiceSwingMode);
+}
+
+/**
+ * Applies an explicit swing mode so remote UI buttons can select practice or actual play directly.
+ */
+function setPracticeSwingMode(enabled) {
+  const shouldEnablePracticeMode = Boolean(enabled);
+  if (shouldEnablePracticeMode && !canUseAimingControls()) {
     hud.setStatus('Practice swing mode is available only while the ball is ready.');
     return false;
   }
 
-  practiceSwingMode = !practiceSwingMode;
+  practiceSwingMode = shouldEnablePracticeMode;
   practiceSwingBallVisualDirty = true;
   syncPracticeSwingBallVisualState();
-  hud.setStatus(practiceSwingMode
+  hud.setStatus(shouldEnablePracticeMode
     ? 'Practice swing mode enabled.'
-    : 'Practice swing mode disabled.');
+    : 'Actual swing mode enabled.');
   return true;
 }
 
@@ -922,6 +940,16 @@ function applyRemoteControl(action, active, value = null) {
     case CONTROL_ACTIONS.clubNext:
       if (active) {
         selectNextClub();
+      }
+      break;
+    case CONTROL_ACTIONS.practiceSwingEnable:
+      if (active) {
+        setPracticeSwingMode(true);
+      }
+      break;
+    case CONTROL_ACTIONS.actualSwingEnable:
+      if (active) {
+        setPracticeSwingMode(false);
       }
       break;
     case CONTROL_ACTIONS.rotateLeft:

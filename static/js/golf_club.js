@@ -5,6 +5,8 @@ const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
 const clubPrevButton = document.querySelector('#club-prev-button');
 const clubNextButton = document.querySelector('#club-next-button');
+const practiceSwingButton = document.querySelector('#practice-swing-button');
+const actualSwingButton = document.querySelector('#actual-swing-button');
 const joystickZone = document.querySelector('#aim-joystick');
 const joystickVisual = joystickZone?.querySelector('.aim-joystick-visual');
 const joystickKnob = joystickZone?.querySelector('.aim-joystick-knob');
@@ -87,6 +89,14 @@ clubPrevButton.addEventListener('click', () => {
 
 clubNextButton.addEventListener('click', () => {
   sendControlTap(CONTROL_ACTIONS.clubNext);
+});
+
+practiceSwingButton?.addEventListener('click', () => {
+  sendControlTap(CONTROL_ACTIONS.practiceSwingEnable);
+});
+
+actualSwingButton?.addEventListener('click', () => {
+  sendControlTap(CONTROL_ACTIONS.actualSwingEnable);
 });
 
 bindAimJoystick();
@@ -349,7 +359,7 @@ function sendControlState(action, active, value = null) {
 }
 
 function setControlButtonsEnabled(enabled) {
-  for (const button of [clubPrevButton, clubNextButton]) {
+  for (const button of [clubPrevButton, clubNextButton, practiceSwingButton, actualSwingButton]) {
     if (button) {
       button.disabled = !enabled;
     }

@@ -15,6 +15,10 @@
   --muted: #9eb0c4;
   --accent: #9ad3ff;
   --accent-strong: #62b3eb;
+  --practice: #66c9ff;
+  --practice-strong: #1f88d8;
+  --actual: #ffbf66;
+  --actual-strong: #f28b1f;
   --warning: #ffd27d;
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
 }
@@ -108,6 +112,7 @@ body::before {
 }
 
 .controller-shell {
+  position: relative;
   width: 100%;
   height: 100dvh;
   display: grid;
@@ -124,6 +129,18 @@ body::before {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+}
+
+.controller-corner-actions {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
 }
 
 .panel {
@@ -328,6 +345,34 @@ p {
   min-height: 48px;
 }
 
+.mode-button {
+  pointer-events: auto;
+  width: clamp(84px, 24vw, 108px);
+  min-height: 0;
+  aspect-ratio: 1;
+  padding: 10px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+  line-height: 1.1;
+  font-size: 0.82rem;
+  border-radius: 18px;
+}
+
+.practice-mode-button {
+  background: linear-gradient(145deg, var(--practice), var(--practice-strong));
+  color: #06233a;
+  box-shadow: 0 14px 30px rgba(31, 136, 216, 0.34);
+}
+
+.actual-mode-button {
+  background: linear-gradient(145deg, var(--actual), var(--actual-strong));
+  color: #3b1d00;
+  box-shadow: 0 14px 30px rgba(242, 139, 31, 0.3);
+}
+
 .club-button {
   aspect-ratio: 1;
   min-height: 112px;
@@ -378,6 +423,11 @@ p {
     grid-template-rows: 35dvh minmax(0, 1fr);
   }
 
+  .controller-corner-actions {
+    left: 10px;
+    right: 10px;
+  }
+
   .controller-dock {
     padding-inline: 10px;
   }
@@ -389,6 +439,11 @@ p {
   .club-button {
     min-height: 96px;
     font-size: 1.7rem;
+  }
+
+  .mode-button {
+    width: clamp(78px, 25vw, 96px);
+    font-size: 0.74rem;
   }
 }
 

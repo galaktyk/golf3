@@ -8,6 +8,8 @@ export const SWING_PACKET_SIZE_BYTES = 16;
 export const CONTROL_ACTIONS = Object.freeze({
   clubPrevious: 'club.previous',
   clubNext: 'club.next',
+  practiceSwingEnable: 'swing.practice.enable',
+  actualSwingEnable: 'swing.actual.enable',
   rotateLeft: 'character.rotateLeft',
   rotateRight: 'character.rotateRight',
   aimIncrease: 'aim.preview.increase',

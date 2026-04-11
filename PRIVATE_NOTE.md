@@ -1,6 +1,12 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
+phone ui
+put blue button "Practice swing" for enter practice mode on top left
+put orange button "Actual swing" for enter real swing mode on top right 
+
+
+---
 
 
 add horizontal launch angle in the swing preview widget
