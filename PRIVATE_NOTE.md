@@ -1,10 +1,7 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
-phone ui
-put blue button "Practice swing" for enter practice mode on top left
-put orange button "Actual swing" for enter real swing mode on top right 
-
+club head speed is too random even i try to swing with the same speed, how many frame this use for calculate club head speed?
 
 ---
 
