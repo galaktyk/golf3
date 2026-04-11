@@ -3,6 +3,31 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
+adjust how harsh the camera rotate based on distance from the preview contact point
+
+---
+
+refactor how camera work
+normally when press left/right will rotate camera
+and press up/down will adjust aimpreview
+
+now when press up/down will warp camera to the near contact preview position and look at it (along with adjusting the aim preview)
+in that mode when press left/right will still rotate character and aim preview but the camera will follow the near contact preview position and look at it
+
+press space will exit the aiming mode and warp camera back to normal position
+
+in total now we have 3 camera mode
+1. normal mode
+2. aiming mode
+3. free camera mode
+
+
+*we might need to reconsider how character and camera and ball hierarchy work in the scene to make this easier to implement and less buggy
+
+
+
+
+
 
 ---
 beside club smash factor

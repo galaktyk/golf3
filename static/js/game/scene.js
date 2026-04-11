@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { findGroundSupport } from '/static/js/game/collision.js';
 import {
+  AIMING_CAMERA_DISTANCE,
+  AIMING_CAMERA_FOLLOW_STIFFNESS,
+  AIMING_CAMERA_HEIGHT,
   BALL_START_POSITION,
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
@@ -23,6 +26,9 @@ const FREE_CAMERA_PITCH_LIMIT_RADIANS = THREE.MathUtils.degToRad(FREE_CAMERA_PIT
 const CHARACTER_GROUND_MIN_NORMAL_Y = 0.35;
 const CHARACTER_GROUND_PROBE_DISTANCE = 3;
 const CHARACTER_GROUND_PROBE_RADIUS = 0;
+const CAMERA_MODE_NORMAL = 'normal';
+const CAMERA_MODE_AIMING = 'aiming';
+const CAMERA_MODE_FREE = 'free';
 
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
@@ -76,6 +82,9 @@ export function createViewerScene(canvas) {
   const characterOrientationRight = new THREE.Vector3();
   const characterOrientationBackward = new THREE.Vector3();
   const characterOrientationMatrix = new THREE.Matrix4();
+  const aimingCameraDirection = new THREE.Vector3();
+  const normalCameraTargetOffset = new THREE.Vector3();
+  const aimingCameraFocusPoint = new THREE.Vector3();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
@@ -91,12 +100,13 @@ export function createViewerScene(canvas) {
   let clubHeadCollider = null;
   let holeMarker = null;
   let aimingMarker = null;
-  let ballCameraFollowEnabled = true;
-  let freeCameraEnabled = false;
+  let cameraMode = CAMERA_MODE_NORMAL;
+  let lastGameplayCameraMode = CAMERA_MODE_NORMAL;
+  let aimingCameraNeedsSnap = false;
   let freeCameraYaw = 0;
   let freeCameraPitch = 0;
   let characterYawRadians = 0;
-  const ballCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
+  const normalCameraOffset = new THREE.Vector3().subVectors(camera.position, BALL_START_POSITION);
   const desiredCameraPosition = new THREE.Vector3();
   const desiredCameraTarget = new THREE.Vector3();
   const tiltedCameraTarget = new THREE.Vector3();
@@ -138,13 +148,34 @@ export function createViewerScene(canvas) {
     camera.updateMatrixWorld(true);
   };
 
-  const restoreBallCameraFollowPose = () => {
+  const restoreNormalCameraPose = () => {
     const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
-    controls.target.copy(followTarget);
-    camera.position.copy(followTarget).add(ballCameraOffset);
+    controls.target.copy(followTarget).add(normalCameraTargetOffset);
+    camera.position.copy(controls.target).add(normalCameraOffset);
     controls.update();
     applyTiltedCameraTarget(camera.position, controls.target, tiltedCameraTarget);
     camera.lookAt(tiltedCameraTarget);
+  };
+
+  const syncNormalCameraPoseFromCurrentView = () => {
+    const followTarget = ballRoot.position.lengthSq() > 0 ? ballRoot.position : BALL_START_POSITION;
+    normalCameraOffset.copy(camera.position).sub(controls.target);
+    normalCameraTargetOffset.copy(controls.target).sub(followTarget);
+  };
+
+  const composeAimingCameraPose = (previewPoint, targetPosition) => {
+    targetPosition.copy(previewPoint);
+    aimingCameraDirection.copy(normalCameraOffset);
+    aimingCameraDirection.y = 0;
+    if (aimingCameraDirection.lengthSq() <= 1e-8) {
+      getCharacterForward(aimingCameraDirection).multiplyScalar(-1);
+    } else {
+      aimingCameraDirection.normalize();
+    }
+
+    desiredCameraPosition.copy(previewPoint)
+      .addScaledVector(aimingCameraDirection, AIMING_CAMERA_DISTANCE)
+      .addScaledVector(WORLD_UP, AIMING_CAMERA_HEIGHT);
   };
 
   const updateCharacterOrientation = (groundNormal) => {
@@ -239,11 +270,11 @@ export function createViewerScene(canvas) {
   setCharacterAddressPosition(BALL_START_POSITION);
 
   controls.addEventListener('change', () => {
-    if (!ballCameraFollowEnabled) {
+    if (cameraMode !== CAMERA_MODE_NORMAL) {
       return;
     }
 
-    ballCameraOffset.copy(camera.position).sub(controls.target);
+    syncNormalCameraPoseFromCurrentView();
   });
 
   updateRendererSize(renderer);
@@ -303,7 +334,7 @@ export function createViewerScene(canvas) {
     },
 
     applyCameraTilt() {
-      if (freeCameraEnabled) {
+      if (cameraMode !== CAMERA_MODE_NORMAL) {
         return;
       }
 
@@ -312,7 +343,7 @@ export function createViewerScene(canvas) {
     },
 
     updateControls() {
-      if (freeCameraEnabled) {
+      if (cameraMode !== CAMERA_MODE_NORMAL) {
         return;
       }
 
@@ -324,29 +355,66 @@ export function createViewerScene(canvas) {
     },
 
 
+    getCameraMode() {
+      return cameraMode;
+    },
+
     isFreeCameraEnabled() {
-      return freeCameraEnabled;
+      return cameraMode === CAMERA_MODE_FREE;
+    },
+
+    isNormalCameraEnabled() {
+      return cameraMode === CAMERA_MODE_NORMAL;
+    },
+
+    isAimingCameraEnabled() {
+      return cameraMode === CAMERA_MODE_AIMING;
+    },
+
+    /**
+     * Switches the viewer between gameplay camera modes and the free camera without sharing pose state.
+     */
+    setCameraMode(nextMode) {
+      const resolvedMode = [CAMERA_MODE_NORMAL, CAMERA_MODE_AIMING, CAMERA_MODE_FREE].includes(nextMode)
+        ? nextMode
+        : CAMERA_MODE_NORMAL;
+      if (cameraMode === resolvedMode) {
+        return cameraMode;
+      }
+
+      const previousMode = cameraMode;
+      if (resolvedMode === CAMERA_MODE_FREE) {
+        if (previousMode !== CAMERA_MODE_FREE) {
+          lastGameplayCameraMode = previousMode;
+        }
+        syncFreeCameraAnglesFromCamera();
+      }
+
+      cameraMode = resolvedMode;
+      controls.enabled = false;
+      if (resolvedMode === CAMERA_MODE_NORMAL) {
+        restoreNormalCameraPose();
+      }
+      if (resolvedMode === CAMERA_MODE_AIMING) {
+        aimingCameraNeedsSnap = true;
+      }
+
+      return cameraMode;
     },
 
     setFreeCameraEnabled(enabled) {
-      if (freeCameraEnabled === enabled) {
-        return freeCameraEnabled;
-      }
+      const nextMode = enabled
+        ? CAMERA_MODE_FREE
+        : (lastGameplayCameraMode === CAMERA_MODE_AIMING ? CAMERA_MODE_AIMING : CAMERA_MODE_NORMAL);
+      return this.setCameraMode(nextMode) === CAMERA_MODE_FREE;
+    },
 
-      freeCameraEnabled = enabled;
-      controls.enabled = !enabled;
-      if (enabled) {
-        syncFreeCameraAnglesFromCamera();
-        ballCameraFollowEnabled = false;
-      } else {
-        this.setBallCameraFollowEnabled(true);
-      }
-
-      return freeCameraEnabled;
+    setAimingCameraEnabled(enabled) {
+      return this.setCameraMode(enabled ? CAMERA_MODE_AIMING : CAMERA_MODE_NORMAL) === CAMERA_MODE_AIMING;
     },
 
     rotateFreeCamera(deltaX, deltaY) {
-      if (!freeCameraEnabled) {
+      if (cameraMode !== CAMERA_MODE_FREE) {
         return;
       }
 
@@ -360,7 +428,7 @@ export function createViewerScene(canvas) {
     },
 
     updateFreeCamera(deltaSeconds, movementInput) {
-      if (!freeCameraEnabled) {
+      if (cameraMode !== CAMERA_MODE_FREE) {
         return;
       }
 
@@ -385,21 +453,14 @@ export function createViewerScene(canvas) {
       camera.updateMatrixWorld(true);
     },
 
-    setBallCameraFollowEnabled(enabled) {
-      ballCameraFollowEnabled = enabled;
-      if (enabled) {
-        restoreBallCameraFollowPose();
-      }
-    },
-
     placeMapOriginAtTee() {
       mapRoot.position.set(-MAP_TEE_ORIGIN.x, -MAP_TEE_ORIGIN.y, -MAP_TEE_ORIGIN.z);
     },
 
     positionBallAtStart() {
       ballRoot.position.copy(BALL_START_POSITION);
-      if (ballCameraFollowEnabled) {
-        restoreBallCameraFollowPose();
+      if (cameraMode === CAMERA_MODE_NORMAL) {
+        restoreNormalCameraPose();
       }
     },
 
@@ -432,17 +493,31 @@ export function createViewerScene(canvas) {
       }
 
       this.rotateCharacterAroundBall(ballPosition, rotationDelta);
+      if (cameraMode === CAMERA_MODE_NORMAL) {
+        this.orbitNormalCameraAroundBall(ballPosition, rotationDelta);
+      }
     },
 
     rotateCharacterAroundBall(ballPosition, angleRadians) {
       characterYawRadians += angleRadians;
       setCharacterAddressPosition(ballPosition);
-      ballCameraOffset.applyAxisAngle(WORLD_UP, angleRadians);
-      controls.target.copy(ballPosition);
-      camera.position.copy(ballPosition).add(ballCameraOffset);
+      characterRoot.updateMatrixWorld(true);
+    },
+
+    /**
+     * Rotates the stored normal gameplay camera pose around the current ball position.
+     */
+    orbitNormalCameraAroundBall(ballPosition, angleRadians) {
+      normalCameraOffset.applyAxisAngle(WORLD_UP, angleRadians);
+      normalCameraTargetOffset.applyAxisAngle(WORLD_UP, angleRadians);
+      if (cameraMode !== CAMERA_MODE_NORMAL) {
+        return;
+      }
+
+      controls.target.copy(ballPosition).add(normalCameraTargetOffset);
+      camera.position.copy(controls.target).add(normalCameraOffset);
       controls.update();
       this.applyCameraTilt();
-      characterRoot.updateMatrixWorld(true);
     },
 
 
@@ -462,24 +537,45 @@ export function createViewerScene(canvas) {
       controls.maxDistance = mapBounds && !mapBounds.isEmpty()
         ? Math.max(mapBounds.getSize(new THREE.Vector3()).length() * 2, 20)
         : 500;
-      ballCameraOffset.copy(camera.position).sub(lookFocusPoint);
+      normalCameraOffset.copy(camera.position).sub(lookFocusPoint);
+      normalCameraTargetOffset.copy(lookFocusPoint).sub(BALL_START_POSITION);
       controls.update();
       this.applyCameraTilt();
       camera.updateProjectionMatrix();
     },
 
     resetBallCameraFollow() {
-      restoreBallCameraFollowPose();
+      restoreNormalCameraPose();
     },
 
-    updateBallFollowCamera(deltaSeconds) {
-      if (!ballCameraFollowEnabled || freeCameraEnabled) {
+    /**
+     * Updates the active gameplay camera pose from either the ball follow target or the aiming preview target.
+     */
+    updateBallFollowCamera(deltaSeconds, aimingPreviewState = null) {
+      if (cameraMode === CAMERA_MODE_FREE) {
+        return;
+      }
+
+      if (cameraMode === CAMERA_MODE_AIMING) {
+        if (!aimingPreviewState?.isVisible) {
+          return;
+        }
+
+        aimingCameraFocusPoint.copy(aimingPreviewState.point);
+        composeAimingCameraPose(aimingCameraFocusPoint, desiredCameraTarget);
+        const aimingFollowAlpha = aimingCameraNeedsSnap
+          ? 1
+          : 1 - Math.exp(-AIMING_CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
+        camera.position.lerp(desiredCameraPosition, aimingFollowAlpha);
+        controls.target.lerp(desiredCameraTarget, aimingFollowAlpha);
+        camera.lookAt(desiredCameraTarget);
+        aimingCameraNeedsSnap = false;
         return;
       }
 
       const followAlpha = 1 - Math.exp(-CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
-      desiredCameraTarget.copy(ballRoot.position);
-      desiredCameraPosition.copy(ballRoot.position).add(ballCameraOffset);
+      desiredCameraTarget.copy(ballRoot.position).add(normalCameraTargetOffset);
+      desiredCameraPosition.copy(desiredCameraTarget).add(normalCameraOffset);
       controls.target.lerp(desiredCameraTarget, followAlpha);
       camera.position.lerp(desiredCameraPosition, followAlpha);
     },
@@ -497,7 +593,7 @@ export function createViewerScene(canvas) {
     resize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
-      if (freeCameraEnabled) {
+      if (cameraMode === CAMERA_MODE_FREE) {
         applyFreeCameraRotation();
       }
       updateRendererSize(renderer);

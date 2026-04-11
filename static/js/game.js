@@ -84,6 +84,7 @@ const holeCameraSpace = new THREE.Vector3();
 const holeWorldPosition = new THREE.Vector3();
 const aimingMarkerCameraSpace = new THREE.Vector3();
 const aimingPreviewLandingPoint = new THREE.Vector3();
+const characterForwardForPreview = new THREE.Vector3();
 const aimingPreview = {
   dirty: true,
   isVisible: false,
@@ -163,12 +164,34 @@ window.addEventListener('resize', () => {
 window.addEventListener('keydown', (event) => {
   if (event.code === 'KeyF' && !event.repeat) {
     const freeCameraEnabled = viewerScene.setFreeCameraEnabled(!viewerScene.isFreeCameraEnabled());
+    rotateCharacterLeft = false;
+    rotateCharacterRight = false;
+    freeCameraMoveForward = false;
+    freeCameraMoveBackward = false;
+    freeCameraMoveLeft = false;
+    freeCameraMoveRight = false;
     if (!freeCameraEnabled && document.pointerLockElement === dom.canvas) {
       document.exitPointerLock();
     }
     endFreeCameraLook();
     event.preventDefault();
-    hud.setStatus(freeCameraEnabled ? 'Free camera enabled.' : 'Follow camera enabled.');
+    hud.setStatus(freeCameraEnabled ? 'Free camera enabled.' : getGameplayCameraStatusMessage());
+    return;
+  }
+
+  if (event.code === 'Space' && !event.repeat) {
+    if (isTextEntryTarget(event.target) || viewerScene.isFreeCameraEnabled()) {
+      return;
+    }
+
+    if (!viewerScene.isAimingCameraEnabled() && !canUseAimingControls()) {
+      event.preventDefault();
+      return;
+    }
+
+    viewerScene.setAimingCameraEnabled(!viewerScene.isAimingCameraEnabled());
+    event.preventDefault();
+    hud.setStatus(getGameplayCameraStatusMessage());
     return;
   }
 
@@ -199,6 +222,11 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+    if (viewerScene.isFreeCameraEnabled()) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === 'ArrowLeft') {
       rotateCharacterLeft = true;
     } else {
@@ -214,11 +242,27 @@ window.addEventListener('keydown', (event) => {
       return;
     }
 
+    if (viewerScene.isFreeCameraEnabled()) {
+      event.preventDefault();
+      return;
+    }
+
+    if (!canUseAimingControls()) {
+      event.preventDefault();
+      return;
+    }
+
+    const aimingWasEnabled = viewerScene.isAimingCameraEnabled();
+    viewerScene.setAimingCameraEnabled(true);
+
     adjustAimingPreviewHeadSpeed(
       event.code === 'ArrowUp'
         ? AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND
         : -AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND,
     );
+    if (!aimingWasEnabled) {
+      hud.setStatus(getGameplayCameraStatusMessage());
+    }
     event.preventDefault();
     return;
   }
@@ -384,7 +428,7 @@ function animate() {
   updateCharacterRotationInput(deltaSeconds);
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
-  updateAimingPreviewIfNeeded(characterTelemetry);
+  updateAimingPreviewIfNeeded();
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
   let ballTelemetry = ballPhysics.getDebugTelemetry();
@@ -393,6 +437,7 @@ function animate() {
   if (playerState === 'waiting' && ballPhysics.consumeShotSettled()) {
     viewerScene.positionCharacterForBall(ballTelemetry.position);
     if (!viewerScene.isFreeCameraEnabled()) {
+      viewerScene.setAimingCameraEnabled(false);
       faceCameraTowardHole(ballTelemetry.position);
     }
     ballPhysics.prepareForNextShot();
@@ -409,7 +454,9 @@ function animate() {
     forward: Number(freeCameraMoveForward) - Number(freeCameraMoveBackward),
     right: Number(freeCameraMoveRight) - Number(freeCameraMoveLeft),
   });
-  viewerScene.updateBallFollowCamera(deltaSeconds);
+  viewerScene.updateBallFollowCamera(deltaSeconds, aimingPreview.isVisible
+    ? { isVisible: true, point: aimingPreviewLandingPoint }
+    : { isVisible: false, point: null });
   updateCharacterDebugTelemetry(characterTelemetry);
   updateBallDebugTelemetry(ballTelemetry);
   updateFpsIfNeeded();
@@ -432,7 +479,7 @@ function updateCharacterRotationInput(deltaSeconds) {
     return;
   }
 
-  if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+  if (!canUseAimingControls()) {
     return;
   }
 
@@ -445,8 +492,26 @@ function updateCharacterRotationInput(deltaSeconds) {
     ballPhysics.getPosition(),
     rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
   );
+  viewerScene.orbitNormalCameraAroundBall(
+    ballPhysics.getPosition(),
+    rotationDirection * CHARACTER_ROTATION_SPEED_RADIANS * deltaSeconds,
+  );
   invalidateAimingPreview();
 
+}
+
+/**
+ * Returns whether the player can currently change the gameplay aiming state.
+ */
+function canUseAimingControls() {
+  return playerState === 'control' && ballPhysics.getStateSnapshot().phase === 'ready';
+}
+
+/**
+ * Maps the current gameplay camera mode to a short HUD status message.
+ */
+function getGameplayCameraStatusMessage() {
+  return viewerScene.isAimingCameraEnabled() ? 'Aiming camera enabled.' : 'Normal camera enabled.';
 }
 
 function applyRemoteControl(action, active) {
@@ -549,6 +614,9 @@ function getIncomingClubHeadSpeedMetersPerSecond() {
 }
 
 function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = null) {
+  if (!viewerScene.isFreeCameraEnabled()) {
+    viewerScene.setAimingCameraEnabled(false);
+  }
   if (Math.abs(launchData.horizontalLaunchAngle) <= SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES) {
     shotImpactAudio.playPangya();
   }
@@ -589,8 +657,11 @@ function releaseClubBallContactLatch(clubHeadPosition) {
 function resetShotFlow() {
   ballPhysics.reset();
   ballTrail.reset();
+  viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
+  viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
   viewerScene.positionCharacterForBall(ballPhysics.getPosition());
   if (!viewerScene.isFreeCameraEnabled()) {
+    viewerScene.setAimingCameraEnabled(false);
     faceCameraTowardHole(ballPhysics.getPosition());
   }
   playerState = 'control';
@@ -691,7 +762,7 @@ function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
   hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
 }
 
-function updateAimingPreviewIfNeeded(characterTelemetry) {
+function updateAimingPreviewIfNeeded() {
   if (!aimingPreview.dirty) {
     return;
   }
@@ -727,7 +798,7 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
     viewerScene,
     ballPhysics.getPosition(),
     aimingPreviewLaunchData,
-    null,
+    viewerScene.getCharacterForward(characterForwardForPreview),
   );
   if (!firstContactPreview) {
     aimingPreview.dirty = false;
