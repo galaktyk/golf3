@@ -3,6 +3,16 @@ import {
   BALL_AIR_DRAG,
   BALL_BOUNCE_RESTITUTION,
   BALL_COLLISION_SKIN,
+  BALL_CONTACT_GENTLE_BRAKE_SCALE,
+  BALL_CONTACT_FULL_BRAKE_AIRTIME_SECONDS,
+  BALL_CONTACT_GENTLE_ENTRY_AIRTIME_SECONDS,
+  BALL_CONTACT_GENTLE_ENTRY_NORMAL_SPEED,
+  BALL_CONTACT_GENTLE_MIN_DURATION_SECONDS,
+  BALL_CONTACT_GENTLE_ROLLING_SLIP_SPEED,
+  BALL_CONTACT_SPEED_FRICTION,
+  BALL_CONTACT_MAX_ROLLING_SPEED,
+  BALL_CONTACT_MIN_DURATION_SECONDS,
+  BALL_CONTACT_ROLLING_SLIP_SPEED,
   BALL_FIXED_STEP_SECONDS,
   BALL_GROUND_CAPTURE_NORMAL_SPEED,
   BALL_GROUND_CAPTURE_SPEED,
@@ -14,8 +24,13 @@ import {
   BALL_IMPACT_REFERENCE_NORMAL_SPEED,
   BALL_MAX_COLLISION_ITERATIONS,
   BALL_MAX_FIXED_STEPS_PER_FRAME,
+  BALL_HARD_LANDING_NORMAL_SPEED,
   BALL_RADIUS,
-  BALL_ROLLING_FRICTION,
+  BALL_ROLLING_RESISTANCE,
+  BALL_SLIDING_FRICTION,
+  BALL_SPIN_AIR_DAMPING,
+  BALL_SPIN_GROUND_DAMPING,
+  BALL_STATIC_FRICTION,
   BALL_START_POSITION,
   BALL_STOP_SPEED,
   BALL_DEFAULT_LAUNCH_DATA,
@@ -33,12 +48,19 @@ const CAMERA_FORWARD = new THREE.Vector3();
 const HORIZONTAL_FORWARD = new THREE.Vector3();
 const LAUNCH_DIRECTION = new THREE.Vector3();
 const LAUNCH_VELOCITY = new THREE.Vector3();
-const STEP_TRANSLATION = new THREE.Vector3();
-const ROLL_AXIS = new THREE.Vector3();
+const LAUNCH_RIGHT = new THREE.Vector3();
 const DELTA_ROTATION = new THREE.Quaternion();
 const ZERO_VECTOR = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const PREV_AIR_POSITION = new THREE.Vector3();
+const CONTACT_OFFSET = new THREE.Vector3();
+const CONTACT_POINT_VELOCITY = new THREE.Vector3();
+const CONTACT_TANGENT_VELOCITY = new THREE.Vector3();
+const CONTACT_IMPULSE_DELTA = new THREE.Vector3();
+const CONTACT_SPIN_VELOCITY = new THREE.Vector3();
+const TARGET_ANGULAR_VELOCITY = new THREE.Vector3();
+const ANGULAR_STEP_AXIS = new THREE.Vector3();
+const ANGULAR_NORMAL_COMPONENT = new THREE.Vector3();
+const TANGENT_VELOCITY = new THREE.Vector3();
 
 function createGroundTransitionDebug() {
   return {
@@ -52,6 +74,9 @@ function createGroundTransitionDebug() {
     postImpactNormalSpeedMetersPerSecond: 0,
     postImpactTangentSpeedMetersPerSecond: 0,
     snapLossMetersPerSecond: 0,
+    preImpactSpinRpm: 0,
+    postImpactSpinRpm: 0,
+    postSnapSpinRpm: 0,
     impactNormal: null,
     supportNormal: null,
     movementState: null,
@@ -61,6 +86,7 @@ function createGroundTransitionDebug() {
 export function createBallPhysics(viewerScene) {
   const position = BALL_START_POSITION.clone();
   const velocity = new THREE.Vector3();
+  const angularVelocity = new THREE.Vector3();
   const orientation = new THREE.Quaternion();
   const previousPosition = position.clone();
   const previousOrientation = orientation.clone();
@@ -74,9 +100,12 @@ export function createBallPhysics(viewerScene) {
   let hasCourseContact = false;
   let debugAutoLaunchConsumed = false;
   let shotSettled = false;
+  let contactAgeSeconds = 0;
+  let contactBrakeScale = 1;
+  let airborneTimeSeconds = 0;
   let lastGroundTransitionDebug = createGroundTransitionDebug();
 
-  const snapToGround = (maxSnapDistance) => {
+  const snapToGround = (maxSnapDistance, groundedMovementState = movementState) => {
     const support = findGroundSupport(viewerScene.courseCollision, position, BALL_RADIUS, maxSnapDistance);
     if (!support || support.normal.y < BALL_GROUNDED_NORMAL_MIN_Y) {
       return false;
@@ -96,13 +125,17 @@ export function createBallPhysics(viewerScene) {
 
     if (velocity.lengthSq() < BALL_STOP_SPEED * BALL_STOP_SPEED) {
       velocity.set(0, 0, 0);
+      angularVelocity.set(0, 0, 0);
     }
 
     SUPPORT_PROJECTED_GRAVITY.copy(GRAVITY);
     SUPPORT_PROJECTED_GRAVITY.addScaledVector(supportNormal, -SUPPORT_PROJECTED_GRAVITY.dot(supportNormal));
-    movementState = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY) ? 'rest' : 'ground';
+    movementState = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY) ? 'rest' : groundedMovementState;
     if (phase === 'moving' && movementState === 'rest') {
       shotSettled = true;
+    }
+    if (movementState !== 'contact') {
+      contactBrakeScale = 1;
     }
     return true;
   };
@@ -112,7 +145,7 @@ export function createBallPhysics(viewerScene) {
       return;
     }
 
-    if (!snapToGround(BALL_GROUND_SNAP_DISTANCE * 2)) {
+    if (!snapToGround(BALL_GROUND_SNAP_DISTANCE * 2, 'ground')) {
       movementState = velocity.lengthSq() > 0 ? 'air' : 'waiting';
     }
 
@@ -125,7 +158,7 @@ export function createBallPhysics(viewerScene) {
   };
 
   const stepAir = (deltaSeconds) => {
-    PREV_AIR_POSITION.copy(position);
+    airborneTimeSeconds += deltaSeconds;
     velocity.addScaledVector(GRAVITY, deltaSeconds);
     velocity.multiplyScalar(Math.exp(-BALL_AIR_DRAG * deltaSeconds));
     let remainingFraction = 1;
@@ -142,7 +175,8 @@ export function createBallPhysics(viewerScene) {
 
       if (!sweep.collided) {
         movementState = 'air';
-        applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
+        applyAirSpinDamping(angularVelocity, deltaSeconds);
+        integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
         return;
       }
 
@@ -153,7 +187,8 @@ export function createBallPhysics(viewerScene) {
           - preImpactNormalSpeedMetersPerSecond * preImpactNormalSpeedMetersPerSecond,
         0,
       ));
-      resolveImpactVelocity(velocity, sweep.hitNormal);
+      const preImpactSpinRpm = getSpinRpm(angularVelocity);
+      resolveImpactVelocity(velocity, angularVelocity, sweep.hitNormal);
       const postImpactSpeedMetersPerSecond = velocity.length();
       const postImpactNormalSpeedMetersPerSecond = Math.max(velocity.dot(sweep.hitNormal), 0);
       const postImpactTangentSpeedMetersPerSecond = Math.sqrt(Math.max(
@@ -175,22 +210,39 @@ export function createBallPhysics(viewerScene) {
           postImpactNormalSpeedMetersPerSecond,
           postImpactTangentSpeedMetersPerSecond,
           snapLossMetersPerSecond: 0,
+          preImpactSpinRpm,
+          postImpactSpinRpm: getSpinRpm(angularVelocity),
+          postSnapSpinRpm: 0,
           impactNormal: sweep.hitNormal.clone(),
           supportNormal: null,
           movementState: null,
         };
         supportNormal.copy(sweep.hitNormal);
 
-        if (snapToGround(BALL_GROUND_SNAP_DISTANCE)) {
+        const enterContactState = preImpactNormalSpeedMetersPerSecond > BALL_HARD_LANDING_NORMAL_SPEED
+          || postImpactSpeedMetersPerSecond > BALL_CONTACT_MAX_ROLLING_SPEED;
+        const landingState = enterContactState ? 'contact' : 'ground';
+        if (snapToGround(BALL_GROUND_SNAP_DISTANCE, landingState)) {
+          if (enterContactState) {
+            contactAgeSeconds = 0;
+            contactBrakeScale = getGroundContactBrakeScale(
+              preImpactNormalSpeedMetersPerSecond,
+              airborneTimeSeconds,
+            );
+          } else {
+            contactBrakeScale = 1;
+          }
+          airborneTimeSeconds = 0;
           lastGroundTransitionDebug.snappedToGround = true;
           lastGroundTransitionDebug.postSnapSpeedMetersPerSecond = velocity.length();
           lastGroundTransitionDebug.snapLossMetersPerSecond = Math.max(
             postImpactSpeedMetersPerSecond - lastGroundTransitionDebug.postSnapSpeedMetersPerSecond,
             0,
           );
+          lastGroundTransitionDebug.postSnapSpinRpm = getSpinRpm(angularVelocity);
           lastGroundTransitionDebug.supportNormal = supportNormal.clone();
           lastGroundTransitionDebug.movementState = movementState;
-          applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
+          integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
           return;
         }
       }
@@ -201,17 +253,17 @@ export function createBallPhysics(viewerScene) {
       position.addScaledVector(sweep.hitNormal, separationPush);
       movementState = 'air';
     }
-    applyRollingRotation(PREV_AIR_POSITION, position, WORLD_UP);
+    applyAirSpinDamping(angularVelocity, deltaSeconds);
+    integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
   };
 
   const stepGround = (deltaSeconds) => {
-    const groundPrevPosition = position.clone();
     PROJECTED_GRAVITY.copy(GRAVITY);
     PROJECTED_GRAVITY.addScaledVector(supportNormal, -PROJECTED_GRAVITY.dot(supportNormal));
 
     velocity.addScaledVector(PROJECTED_GRAVITY, deltaSeconds);
-
-    applyRollingFriction(velocity, deltaSeconds);
+    applyRollingResistance(velocity, deltaSeconds);
+    syncRollingAngularVelocity(angularVelocity, velocity, supportNormal);
     DISPLACEMENT.copy(velocity).multiplyScalar(deltaSeconds);
 
     const groundSweepRadius = Math.max(BALL_RADIUS - BALL_COLLISION_SKIN, BALL_RADIUS * 0.5);
@@ -229,20 +281,77 @@ export function createBallPhysics(viewerScene) {
       }
     }
 
-    if (!snapToGround(BALL_GROUND_SNAP_DISTANCE)) {
+    if (!snapToGround(BALL_GROUND_SNAP_DISTANCE, 'ground')) {
       movementState = 'air';
       return;
     }
 
     if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
       velocity.set(0, 0, 0);
+      angularVelocity.set(0, 0, 0);
       movementState = 'rest';
       if (phase === 'moving') {
         shotSettled = true;
       }
     }
 
-    applyRollingRotation(groundPrevPosition, position, supportNormal);
+    applyGroundSpinDamping(angularVelocity, deltaSeconds);
+    syncRollingAngularVelocity(angularVelocity, velocity, supportNormal);
+    integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
+  };
+
+  const stepContact = (deltaSeconds) => {
+    contactAgeSeconds += deltaSeconds;
+    PROJECTED_GRAVITY.copy(GRAVITY);
+    PROJECTED_GRAVITY.addScaledVector(supportNormal, -PROJECTED_GRAVITY.dot(supportNormal));
+
+    velocity.addScaledVector(PROJECTED_GRAVITY, deltaSeconds);
+    applyGroundContactForces(velocity, angularVelocity, supportNormal, deltaSeconds, contactBrakeScale);
+    DISPLACEMENT.copy(velocity).multiplyScalar(deltaSeconds);
+
+    const contactSweepRadius = Math.max(BALL_RADIUS - BALL_COLLISION_SKIN, BALL_RADIUS * 0.5);
+    const sweep = sweepSphereBVH(viewerScene.courseCollision, position, DISPLACEMENT, contactSweepRadius, {
+      maxIterations: BALL_MAX_COLLISION_ITERATIONS,
+      skin: BALL_COLLISION_SKIN,
+    });
+
+    position.copy(sweep.position);
+
+    if (sweep.collided) {
+      removeIntoNormalComponent(velocity, sweep.hitNormal);
+      if (sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y) {
+        supportNormal.copy(sweep.hitNormal);
+      }
+    }
+
+    if (!snapToGround(BALL_GROUND_SNAP_DISTANCE, 'contact')) {
+      movementState = 'air';
+      contactAgeSeconds = 0;
+      return;
+    }
+
+    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
+      velocity.set(0, 0, 0);
+      angularVelocity.set(0, 0, 0);
+      movementState = 'rest';
+      if (phase === 'moving') {
+        shotSettled = true;
+      }
+      return;
+    }
+
+    if (shouldTransitionToRolling(velocity, angularVelocity, supportNormal, contactAgeSeconds, contactBrakeScale)) {
+      movementState = 'ground';
+      contactAgeSeconds = 0;
+      contactBrakeScale = 1;
+      syncRollingAngularVelocity(angularVelocity, velocity, supportNormal);
+    }
+
+    applyGroundSpinDamping(angularVelocity, deltaSeconds);
+    if (movementState === 'ground') {
+      syncRollingAngularVelocity(angularVelocity, velocity, supportNormal);
+    }
+    integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
   };
 
   const stepRest = () => {
@@ -258,6 +367,7 @@ export function createBallPhysics(viewerScene) {
 
     if (!shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY)) {
       movementState = 'ground';
+      contactAgeSeconds = 0;
       return;
     }
 
@@ -271,6 +381,7 @@ export function createBallPhysics(viewerScene) {
     }
 
     velocity.set(0, 0, 0);
+    angularVelocity.set(0, 0, 0);
     movementState = 'rest';
     if (phase === 'moving') {
       shotSettled = true;
@@ -295,6 +406,11 @@ export function createBallPhysics(viewerScene) {
       return;
     }
 
+    if (movementState === 'contact') {
+      stepContact(deltaSeconds);
+      return;
+    }
+
     if (movementState === 'rest') {
       stepRest();
       return;
@@ -309,14 +425,19 @@ export function createBallPhysics(viewerScene) {
     ensureCourseContact();
     shotStartPosition.copy(position);
     velocity.copy(buildVelocityFromLaunchData(launchData, viewerScene, referenceForward));
+    angularVelocity.copy(buildAngularVelocityFromLaunchData(launchData, viewerScene, referenceForward));
     phase = 'moving';
     movementState = 'air';
+    contactAgeSeconds = 0;
+    contactBrakeScale = 1;
+    airborneTimeSeconds = 0;
     shotSettled = false;
   };
 
   const reset = () => {
     position.copy(BALL_START_POSITION);
     velocity.set(0, 0, 0);
+    angularVelocity.set(0, 0, 0);
     orientation.identity();
     shotStartPosition.copy(position);
     supportNormal.set(0, 1, 0);
@@ -324,6 +445,9 @@ export function createBallPhysics(viewerScene) {
     hasCourseContact = false;
     phase = 'ready';
     movementState = 'waiting';
+    contactAgeSeconds = 0;
+    contactBrakeScale = 1;
+    airborneTimeSeconds = 0;
     shotSettled = false;
     lastGroundTransitionDebug = createGroundTransitionDebug();
     ensureCourseContact();
@@ -336,9 +460,13 @@ export function createBallPhysics(viewerScene) {
   const prepareForNextShot = () => {
     if (velocity.lengthSq() < BALL_STOP_SPEED * BALL_STOP_SPEED) {
       velocity.set(0, 0, 0);
+      angularVelocity.set(0, 0, 0);
     }
 
     phase = 'ready';
+    contactAgeSeconds = 0;
+    contactBrakeScale = 1;
+    airborneTimeSeconds = 0;
     shotSettled = false;
   };
 
@@ -365,6 +493,8 @@ export function createBallPhysics(viewerScene) {
           position.z - shotStartPosition.z,
         ),
         speedMetersPerSecond: velocity.length(),
+        spinRpm: getSpinRpm(angularVelocity),
+        angularVelocity,
         velocity,
         groundTransitionDebug: lastGroundTransitionDebug,
       };
@@ -416,38 +546,106 @@ export function createBallPhysics(viewerScene) {
       renderOrientation.slerpQuaternions(previousOrientation, orientation, alpha);
     },
   };
-
-  function applyRollingRotation(previousPosition, nextPosition, surfaceNormal) {
-    STEP_TRANSLATION.subVectors(nextPosition, previousPosition);
-    const travelDistance = STEP_TRANSLATION.length();
-    if (travelDistance <= 1e-6) {
-      return;
-    }
-
-    ROLL_AXIS.crossVectors(surfaceNormal, STEP_TRANSLATION);
-    if (ROLL_AXIS.lengthSq() <= 1e-10) {
-      return;
-    }
-
-    ROLL_AXIS.normalize();
-    DELTA_ROTATION.setFromAxisAngle(ROLL_AXIS, travelDistance / BALL_RADIUS);
-    orientation.premultiply(DELTA_ROTATION).normalize();
-  }
 }
 
-function applyRollingFriction(velocity, deltaSeconds) {
-  const speed = velocity.length();
-  if (speed <= 1e-6) {
-    return;
+function applyGroundContactForces(velocity, angularVelocity, surfaceNormal, deltaSeconds, contactBrakeScale = 1) {
+  CONTACT_OFFSET.copy(surfaceNormal).multiplyScalar(-BALL_RADIUS);
+  CONTACT_SPIN_VELOCITY.copy(angularVelocity).cross(CONTACT_OFFSET);
+  CONTACT_POINT_VELOCITY.copy(velocity).add(CONTACT_SPIN_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.copy(CONTACT_POINT_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.addScaledVector(surfaceNormal, -CONTACT_TANGENT_VELOCITY.dot(surfaceNormal));
+
+  const slipSpeed = CONTACT_TANGENT_VELOCITY.length();
+  if (slipSpeed > 1e-6) {
+    const slidingDeltaSpeed = Math.min(
+      slipSpeed,
+      BALL_SLIDING_FRICTION * contactBrakeScale * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+    );
+    CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-slidingDeltaSpeed / slipSpeed);
+    velocity.add(CONTACT_IMPULSE_DELTA);
+    applySurfaceImpulseToAngularVelocity(angularVelocity, surfaceNormal, CONTACT_IMPULSE_DELTA);
   }
 
-  const deceleration = BALL_ROLLING_FRICTION * BALL_GRAVITY_ACCELERATION * deltaSeconds;
-  if (speed <= deceleration) {
+  // Landing contact should keep bleeding speed until the ball is slow enough to become a true roll.
+  const speed = velocity.length();
+  if (speed > BALL_CONTACT_MAX_ROLLING_SPEED) {
+    const contactBrakeSpeed = Math.min(
+      speed - BALL_CONTACT_MAX_ROLLING_SPEED,
+      BALL_CONTACT_SPEED_FRICTION * contactBrakeScale * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+    );
+    if (contactBrakeSpeed > 0) {
+      velocity.addScaledVector(velocity, -contactBrakeSpeed / speed);
+    }
+  }
+
+  applyRollingResistance(velocity, deltaSeconds);
+}
+
+function applyRollingResistance(velocity, deltaSeconds) {
+  const speed = velocity.length();
+  if (speed <= 1e-6) {
     velocity.set(0, 0, 0);
     return;
   }
 
-  velocity.addScaledVector(velocity, -deceleration / speed);
+  const rollingDeltaSpeed = Math.min(
+    speed,
+    BALL_ROLLING_RESISTANCE * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+  );
+  velocity.addScaledVector(velocity, -rollingDeltaSpeed / speed);
+}
+
+function shouldTransitionToRolling(velocity, angularVelocity, surfaceNormal, contactAgeSeconds, contactBrakeScale = 1) {
+  const minContactDurationSeconds = THREE.MathUtils.lerp(
+    BALL_CONTACT_GENTLE_MIN_DURATION_SECONDS,
+    BALL_CONTACT_MIN_DURATION_SECONDS,
+    contactBrakeScale,
+  );
+  if (contactAgeSeconds < minContactDurationSeconds) {
+    return false;
+  }
+
+  if (velocity.length() > BALL_CONTACT_MAX_ROLLING_SPEED) {
+    return false;
+  }
+
+  const rollingSlipSpeed = THREE.MathUtils.lerp(
+    BALL_CONTACT_GENTLE_ROLLING_SLIP_SPEED,
+    BALL_CONTACT_ROLLING_SLIP_SPEED,
+    contactBrakeScale,
+  );
+  return getContactSlipSpeed(velocity, angularVelocity, surfaceNormal) <= rollingSlipSpeed;
+}
+
+/**
+ * Scale landing-contact braking by both landing steepness and airtime.
+ * Long airborne shots should not keep the same gentle contact profile as putts.
+ */
+function getGroundContactBrakeScale(impactNormalSpeed, airborneTimeSeconds) {
+  const normalSpeedFactor = THREE.MathUtils.smoothstep(
+    impactNormalSpeed,
+    BALL_CONTACT_GENTLE_ENTRY_NORMAL_SPEED,
+    BALL_HARD_LANDING_NORMAL_SPEED,
+  );
+  const airtimeFactor = THREE.MathUtils.smoothstep(
+    airborneTimeSeconds,
+    BALL_CONTACT_GENTLE_ENTRY_AIRTIME_SECONDS,
+    BALL_CONTACT_FULL_BRAKE_AIRTIME_SECONDS,
+  );
+  return THREE.MathUtils.lerp(
+    BALL_CONTACT_GENTLE_BRAKE_SCALE,
+    1,
+    Math.max(normalSpeedFactor, airtimeFactor),
+  );
+}
+
+function getContactSlipSpeed(velocity, angularVelocity, surfaceNormal) {
+  CONTACT_OFFSET.copy(surfaceNormal).multiplyScalar(-BALL_RADIUS);
+  CONTACT_SPIN_VELOCITY.copy(angularVelocity).cross(CONTACT_OFFSET);
+  CONTACT_POINT_VELOCITY.copy(velocity).add(CONTACT_SPIN_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.copy(CONTACT_POINT_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.addScaledVector(surfaceNormal, -CONTACT_TANGENT_VELOCITY.dot(surfaceNormal));
+  return CONTACT_TANGENT_VELOCITY.length();
 }
 
 function shouldHoldAgainstSlope(velocity, projectedGravity) {
@@ -455,7 +653,7 @@ function shouldHoldAgainstSlope(velocity, projectedGravity) {
     return false;
   }
 
-  return projectedGravity.lengthSq() <= (BALL_ROLLING_FRICTION * BALL_GRAVITY_ACCELERATION) ** 2;
+  return projectedGravity.lengthSq() <= (BALL_STATIC_FRICTION * BALL_GRAVITY_ACCELERATION) ** 2;
 }
 
 function shouldEnterGroundMode(velocity, hitNormal) {
@@ -504,7 +702,55 @@ function buildVelocityFromLaunchData(launchData, viewerScene, referenceForward =
     .addScaledVector(THREE.Object3D.DEFAULT_UP, upwardSpeed);
 }
 
-function resolveImpactVelocity(velocity, hitNormal) {
+function buildAngularVelocityFromLaunchData(launchData, viewerScene, referenceForward = null) {
+  const spinSpeedRpm = Number.isFinite(launchData?.spinSpeed)
+    ? launchData.spinSpeed
+    : 0;
+  if (Math.abs(spinSpeedRpm) <= 1e-6) {
+    return TARGET_ANGULAR_VELOCITY.set(0, 0, 0);
+  }
+
+  const launchVelocity = buildVelocityFromLaunchData(launchData, viewerScene, referenceForward);
+  const launchSpeed = launchVelocity.length();
+  if (launchSpeed <= 1e-6) {
+    return TARGET_ANGULAR_VELOCITY.set(0, 0, 0);
+  }
+
+  LAUNCH_DIRECTION.copy(launchVelocity).multiplyScalar(1 / launchSpeed);
+  LAUNCH_RIGHT.crossVectors(LAUNCH_DIRECTION, WORLD_UP);
+  if (LAUNCH_RIGHT.lengthSq() <= 1e-8) {
+    LAUNCH_RIGHT.set(1, 0, 0);
+  } else {
+    LAUNCH_RIGHT.normalize();
+  }
+
+  if (typeof launchData?.spinAxis === 'object' && launchData.spinAxis) {
+    const { x, y, z } = launchData.spinAxis;
+    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      TARGET_ANGULAR_VELOCITY.set(x, y, z);
+    } else {
+      TARGET_ANGULAR_VELOCITY.copy(LAUNCH_RIGHT);
+    }
+  } else {
+    const spinAxisDegrees = Number.isFinite(launchData?.spinAxis)
+      ? launchData.spinAxis
+      : 0;
+    TARGET_ANGULAR_VELOCITY.copy(LAUNCH_RIGHT).applyAxisAngle(
+      LAUNCH_DIRECTION,
+      THREE.MathUtils.degToRad(spinAxisDegrees),
+    );
+  }
+
+  if (TARGET_ANGULAR_VELOCITY.lengthSq() <= 1e-8) {
+    TARGET_ANGULAR_VELOCITY.copy(LAUNCH_RIGHT);
+  } else {
+    TARGET_ANGULAR_VELOCITY.normalize();
+  }
+
+  return TARGET_ANGULAR_VELOCITY.multiplyScalar(THREE.MathUtils.degToRad(spinSpeedRpm * 6));
+}
+
+function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   const normalSpeed = velocity.dot(hitNormal);
   if (normalSpeed >= 0) {
     return;
@@ -512,15 +758,16 @@ function resolveImpactVelocity(velocity, hitNormal) {
 
   const incomingSpeed = velocity.length();
   const incomingNormalSpeed = Math.max(-normalSpeed, 0);
-  const incomingTangentSpeed = Math.sqrt(Math.max(
-    incomingSpeed * incomingSpeed - incomingNormalSpeed * incomingNormalSpeed,
-    0,
-  ));
-
   WORKING_NORMAL_COMPONENT.copy(hitNormal).multiplyScalar(normalSpeed);
-  velocity.sub(WORKING_NORMAL_COMPONENT);
+  TANGENT_VELOCITY.copy(velocity).sub(WORKING_NORMAL_COMPONENT);
 
-  // Ground contacts should absorb noticeably more forward speed on steeper, faster landings.
+  CONTACT_OFFSET.copy(hitNormal).multiplyScalar(-BALL_RADIUS);
+  CONTACT_SPIN_VELOCITY.copy(angularVelocity).cross(CONTACT_OFFSET);
+  CONTACT_POINT_VELOCITY.copy(TANGENT_VELOCITY).add(CONTACT_SPIN_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.copy(CONTACT_POINT_VELOCITY);
+  CONTACT_TANGENT_VELOCITY.addScaledVector(hitNormal, -CONTACT_TANGENT_VELOCITY.dot(hitNormal));
+  const incomingTangentSpeed = CONTACT_TANGENT_VELOCITY.length();
+
   const impactSeverity = incomingSpeed > 1e-6
     ? THREE.MathUtils.clamp(
       incomingNormalSpeed / Math.max(incomingNormalSpeed + incomingTangentSpeed, 1e-6),
@@ -533,13 +780,66 @@ function resolveImpactVelocity(velocity, hitNormal) {
     0,
     1,
   );
-  const groundImpactBlend = impactSeverity * impactStrength;
-  const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.05;
-  const maxFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_MAX_FRICTION : BALL_IMPACT_MAX_FRICTION * 0.1;
-  const friction = THREE.MathUtils.lerp(baseFriction, maxFriction, groundImpactBlend);
-  velocity.multiplyScalar(1 - friction);
+  const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.2;
+  const maxFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_MAX_FRICTION : BALL_IMPACT_MAX_FRICTION * 0.25;
+  const friction = THREE.MathUtils.lerp(baseFriction, maxFriction, impactSeverity * impactStrength);
+  const tangentDeltaSpeed = Math.min(incomingTangentSpeed, friction * incomingNormalSpeed);
+  if (incomingTangentSpeed > 1e-6 && tangentDeltaSpeed > 0) {
+    CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-tangentDeltaSpeed / incomingTangentSpeed);
+    TANGENT_VELOCITY.add(CONTACT_IMPULSE_DELTA);
+    applySurfaceImpulseToAngularVelocity(angularVelocity, hitNormal, CONTACT_IMPULSE_DELTA);
+  }
 
-  velocity.addScaledVector(hitNormal, -normalSpeed * BALL_BOUNCE_RESTITUTION);
+  const restitution = THREE.MathUtils.lerp(
+    0,
+    BALL_BOUNCE_RESTITUTION,
+    THREE.MathUtils.clamp(
+      (incomingNormalSpeed - BALL_GROUND_CAPTURE_NORMAL_SPEED)
+        / Math.max(BALL_IMPACT_REFERENCE_NORMAL_SPEED - BALL_GROUND_CAPTURE_NORMAL_SPEED, 1e-6),
+      0,
+      1,
+    ),
+  );
+
+  velocity.copy(TANGENT_VELOCITY).addScaledVector(hitNormal, incomingNormalSpeed * restitution);
+}
+
+function applySurfaceImpulseToAngularVelocity(angularVelocity, surfaceNormal, linearVelocityDelta) {
+  if (linearVelocityDelta.lengthSq() <= 1e-12) {
+    return;
+  }
+
+  TARGET_ANGULAR_VELOCITY.copy(surfaceNormal).cross(linearVelocityDelta).multiplyScalar(-5 / (2 * BALL_RADIUS));
+  angularVelocity.add(TARGET_ANGULAR_VELOCITY);
+}
+
+function applyAirSpinDamping(angularVelocity, deltaSeconds) {
+  angularVelocity.multiplyScalar(Math.exp(-BALL_SPIN_AIR_DAMPING * deltaSeconds));
+}
+
+function applyGroundSpinDamping(angularVelocity, deltaSeconds) {
+  angularVelocity.multiplyScalar(Math.exp(-BALL_SPIN_GROUND_DAMPING * deltaSeconds));
+}
+
+function syncRollingAngularVelocity(angularVelocity, velocity, surfaceNormal) {
+  TARGET_ANGULAR_VELOCITY.copy(surfaceNormal).cross(velocity).multiplyScalar(1 / BALL_RADIUS);
+  ANGULAR_NORMAL_COMPONENT.copy(surfaceNormal).multiplyScalar(angularVelocity.dot(surfaceNormal));
+  angularVelocity.copy(TARGET_ANGULAR_VELOCITY).add(ANGULAR_NORMAL_COMPONENT);
+}
+
+function integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds) {
+  const angularSpeed = angularVelocity.length();
+  if (angularSpeed <= 1e-6) {
+    return;
+  }
+
+  ANGULAR_STEP_AXIS.copy(angularVelocity).multiplyScalar(1 / angularSpeed);
+  DELTA_ROTATION.setFromAxisAngle(ANGULAR_STEP_AXIS, angularSpeed * deltaSeconds);
+  orientation.premultiply(DELTA_ROTATION).normalize();
+}
+
+function getSpinRpm(angularVelocity) {
+  return angularVelocity.length() * 30 / Math.PI;
 }
 
 function removeIntoNormalComponent(vector, normal) {

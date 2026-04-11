@@ -2,16 +2,32 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
+
+
+---
+revise putt mode
+1. current we have CLUB_HEAD_IMPACT_MIN_SPEED which not suit for putt
+maybe we need separate const for putt club limit at 0.5
+
+2. disable the aiming preview in putt mode
+
+2. the ball rolling friction seems too unrealistic in putt mode, like i put so much force and it move just a bit maybe it conflict with the physics on other mode about energy loss?
+
+
+
+---
+
+putt and green line why physics break
+
+
 ---
 
 
-add horizontal launch angle in the swing preview widget
 
 add aim line preview
 ---
 
 
-putt and green line why physics break
 
 ---
 

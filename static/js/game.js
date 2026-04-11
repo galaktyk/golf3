@@ -58,6 +58,7 @@ const incomingSwingState = {
 };
 const DEBUG_PARAMS = new URLSearchParams(window.location.search);
 const DEBUG_UI_ENABLED = DEBUG_PARAMS.get('debug') === 'true';
+console.log(`Debug UI enabled: ${DEBUG_UI_ENABLED}`);
 const LAUNCH_DEBUG_INPUT_FIELDS = [
   { key: 'ballSpeed', inputKey: 'launchBallSpeedInput' },
   { key: 'verticalLaunchAngle', inputKey: 'launchVerticalAngleInput' },
@@ -631,6 +632,12 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
     return;
   }
 
+  if (!isAimingPreviewEnabled()) {
+    resetAimingPreviewHeadSpeedAcceleration();
+    resetAimingPreviewHeadSpeedAnalogAcceleration();
+    return;
+  }
+
   if (!canUseAimingControls()) {
     resetAimingPreviewHeadSpeedAcceleration();
     resetAimingPreviewHeadSpeedAnalogAcceleration();
@@ -788,6 +795,13 @@ function getAnalogAimingPreviewHeadSpeedAdjustmentRate(headSpeedDirection, delta
  */
 function canUseAimingControls() {
   return playerState === 'control' && ballPhysics.getStateSnapshot().phase === 'ready';
+}
+
+/**
+ * Keeps the landing preview feature off for putts, where the ballistic marker is not useful.
+ */
+function isAimingPreviewEnabled() {
+  return activeClub?.category !== 'putter';
 }
 
 /**
@@ -1335,6 +1349,11 @@ function updateAimingPreviewIfNeeded() {
     return;
   }
   aimingPreview.isVisible = false;
+
+  if (!isAimingPreviewEnabled()) {
+    aimingPreview.dirty = false;
+    return;
+  }
 
   if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
     aimingPreview.dirty = false;

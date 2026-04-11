@@ -13,6 +13,7 @@ import {
   CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE,
   CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE,
   DEFAULT_CLUB_MIDDLE_SMASH_FACTOR,
+  PUTTER_CLUB_HEAD_IMPACT_MIN_SPEED,
 } from '/static/js/game/constants.js';
 import { interpolateClubHeadSample } from '/static/js/game/impact/contactHistory.js';
 
@@ -42,7 +43,7 @@ export function resolveClubBallImpact(
     return null;
   }
 
-  if (estimatedClubHeadSpeedMetersPerSecond < CLUB_HEAD_IMPACT_MIN_SPEED) {
+  if (estimatedClubHeadSpeedMetersPerSecond < getImpactMinSpeedMetersPerSecond(activeClub)) {
     return null;
   }
 
@@ -78,6 +79,15 @@ export function resolveClubBallImpact(
     impactSpeedMetersPerSecond: estimatedClubHeadSpeedMetersPerSecond,
     referenceForward: impactSample.characterFacingForward.clone(),
   };
+}
+
+/**
+ * Uses a lower capture threshold for putts so slow rolls can still register as valid impacts.
+ */
+function getImpactMinSpeedMetersPerSecond(activeClub) {
+  return activeClub?.category === 'putter'
+    ? PUTTER_CLUB_HEAD_IMPACT_MIN_SPEED
+    : CLUB_HEAD_IMPACT_MIN_SPEED;
 }
 
 /**

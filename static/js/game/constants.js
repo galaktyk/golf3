@@ -2,159 +2,299 @@ import * as THREE from 'three';
 import { ACTIVE_COURSE } from '/static/js/game/courseData.js';
 
 
-// Character position related to ball
+// Character position relative to the ball on the X axis. More negative moves the golfer farther left of the ball.
 export const CHARACTER_BALL_X_OFFSET = -0.87;
+// Character position relative to the ball on the Z axis. Higher values move the golfer farther behind/in front depending on rig orientation.
 export const CHARACTER_BALL_Z_OFFSET = 0.25;
 
 
 
 
+// Active course model path selected by courseData.
 export const MAP_MODEL_PATH = ACTIVE_COURSE.modelPath;
+// Tee position loaded from the active course definition.
 export const MAP_TEE_ORIGIN = ACTIVE_COURSE.tee.clone();
+// Local tee origin used as the default simulation start point.
 export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
 
-// TEMP: bigger ball for easier hit
+// Ball radius in meters. Larger values make the ball easier to hit and collide sooner with terrain.
 export const BALL_RADIUS = 0.04;
+// Ball spawn position at the tee, offset upward by the ball radius so it starts resting on the ground.
 export const BALL_START_POSITION = TEE_ORIGIN.clone().add(new THREE.Vector3(0, BALL_RADIUS, 0));
+// Physics fixed-step duration. Lower values increase simulation stability but cost more CPU.
 export const BALL_FIXED_STEP_SECONDS = 1 / 60;
+// Max fixed steps per rendered frame. Higher values reduce tunneling during frame drops but cost more CPU.
 export const BALL_MAX_FIXED_STEPS_PER_FRAME = 8;
+// Gravity acceleration in meters per second squared. Higher values make shots fall faster and bounce lower.
 export const BALL_GRAVITY_ACCELERATION = 9.81;
+// Air drag strength. Higher values reduce carry distance and top speed more quickly.
 export const BALL_AIR_DRAG = 0.04;
 
-// Hop energy
-export const BALL_BOUNCE_RESTITUTION = 0.2;
-export const BALL_IMPACT_FRICTION = 0.12;
-export const BALL_IMPACT_MAX_FRICTION = 0.55;
-export const BALL_IMPACT_REFERENCE_NORMAL_SPEED = 8.5;
-export const BALL_ROLLING_FRICTION = 1.6;
-export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.45;
-export const BALL_GROUND_CAPTURE_SPEED = 2.4;
-export const BALL_STOP_SPEED = 0.02;
+// Max normal-energy return on bounce. Higher values create higher, livelier hops.
+export const BALL_BOUNCE_RESTITUTION = 0.34;
+// Minimum tangential speed loss on impact. Higher values reduce forward skid on shallow bounces.
+export const BALL_IMPACT_FRICTION = 0.2;
+// Maximum tangential speed loss on hard impacts. Higher values make steep landings check harder.
+export const BALL_IMPACT_MAX_FRICTION = 0.75;
+// Normal-speed level where impact behavior reaches full strength. Lower values make bounce/friction ramp up sooner.
+export const BALL_IMPACT_REFERENCE_NORMAL_SPEED = 6.5;
 
+// Landing skid friction. Higher values scrub contact-point slip faster during the check phase.
+export const BALL_SLIDING_FRICTION = 2.0;
+// Extra braking while still in contact state above rolling speed. Higher values shorten rollout after landing.
+export const BALL_CONTACT_SPEED_FRICTION = 1.45;
+// Minimum brake multiplier for very shallow ground entries such as putts. Lower values preserve more speed before pure rolling begins.
+export const BALL_CONTACT_GENTLE_BRAKE_SCALE = 0.3;
+// Normal-speed level below which a captured landing keeps the gentlest contact braking profile.
+export const BALL_CONTACT_GENTLE_ENTRY_NORMAL_SPEED = 0.75;
+// Airtime below which a capture still behaves like a near-ground entry such as a putt or bump.
+export const BALL_CONTACT_GENTLE_ENTRY_AIRTIME_SECONDS = 0.08;
+// Airtime where landing contact should fully use the normal fairway brake profile.
+export const BALL_CONTACT_FULL_BRAKE_AIRTIME_SECONDS = 0.45;
+// Shortest contact time allowed for gentle ground entries before they can become steady rolling.
+export const BALL_CONTACT_GENTLE_MIN_DURATION_SECONDS = 0.02;
+// Slip-speed threshold allowed for gentle entries to graduate into rolling sooner.
+export const BALL_CONTACT_GENTLE_ROLLING_SLIP_SPEED = 0.85;
+
+
+// Ongoing rolling resistance once the ball is truly rolling. Higher values shorten putts and rollout.
+export const BALL_ROLLING_RESISTANCE = 0.1;
+// Slope-hold threshold at very low speed. Higher values make the ball rest on steeper slopes.
+export const BALL_STATIC_FRICTION = 0.28;
+// Minimum time the ball must stay in landing contact before it can become steady rolling.
+export const BALL_CONTACT_MIN_DURATION_SECONDS = 0.05;
+// Max allowed contact-point slip speed before entering rolling state. Lower values force a cleaner roll transition.
+export const BALL_CONTACT_ROLLING_SLIP_SPEED = 0.35;
+// Highest speed allowed before steady rolling begins. Lower values keep fast landings in the braking/contact phase longer.
+export const BALL_CONTACT_MAX_ROLLING_SPEED = 4;
+// Vertical impact-speed threshold for entering contact/skid mode. Lower values make more landings go through the braking phase.
+export const BALL_HARD_LANDING_NORMAL_SPEED = 2.0;
+// Spin damping in the air. Higher values decay airborne spin faster.
+export const BALL_SPIN_AIR_DAMPING = 0.12;
+// Spin damping while on the ground. Higher values remove ground spin faster.
+export const BALL_SPIN_GROUND_DAMPING = 0.9;
+// Legacy/utility spin-to-roll sync rate. Higher values would snap spin toward rolling faster if used.
+export const BALL_ROLLING_SPIN_MATCH_RATE = 18;
+// Rebound normal-speed threshold below which a bounce is captured to ground. Lower values allow more small hops.
+export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.28;
+// Total-speed threshold for capturing very slow rebounds to ground. Lower values allow more tiny bounces instead of ground capture.
+export const BALL_GROUND_CAPTURE_SPEED = 2.0;
+// Speed below which the ball can be treated as stopped for resting/slope checks.
+export const BALL_STOP_SPEED = 0.04;
+
+// Small collision padding to reduce sticking and repeated overlap issues.
 export const BALL_COLLISION_SKIN = 0.001;
+// Max distance per collision integration substep. Lower values increase sweep accuracy but cost more CPU.
 export const BALL_COLLISION_STEP_DISTANCE = 0.01;
+// Max number of collision movement substeps per physics step. Higher values reduce tunneling at high speed.
 export const BALL_MAX_COLLISION_SUBSTEPS = 12;
+// Max overlap/sweep solver iterations. Higher values help tricky geometry at higher CPU cost.
 export const BALL_MAX_COLLISION_ITERATIONS = 4;
+// Max distance to snap a ball down to the ground surface. Higher values make capture easier over uneven terrain.
 export const BALL_GROUND_SNAP_DISTANCE = 0.06;
+// Minimum surface normal Y to treat a face as ground instead of a wall. Lower values make steeper slopes count as ground.
 export const BALL_GROUNDED_NORMAL_MIN_Y = 0.6;
 
-// In metric units, for debugging purposes only
+// Default launch data used for debug shots and fallback launches.
 export const BALL_DEFAULT_LAUNCH_DATA = {
-  ballSpeed: 50.2, // m/s 
-  verticalLaunchAngle: 15.4,
-  horizontalLaunchAngle: 0,
-  spinSpeed: 3021, // RPM, not being use right now
-  spinAxis: -0.5 // degrees, not being use right now
+  ballSpeed: 50.2, // Launch speed in m/s.
+  verticalLaunchAngle: 15.4, // Vertical launch angle in degrees.
+  horizontalLaunchAngle: 0, // Horizontal start direction offset in degrees.
+  spinSpeed: 3021, // Spin magnitude in RPM for debug/default launches.
+  spinAxis: -0.5 // Spin axis tilt in degrees for debug/default launches.
 };
+// Fallback vertical launch angle used by the impact model when no better club/impact angle is provided.
 export const BALL_IMPACT_VERTICAL_LAUNCH_ANGLE = 15;
+// Debug impact spin magnitude used by current launch plumbing. Increase to simulate more backspin/sidespin globally.
 export const BALL_IMPACT_DEBUG_SPIN_SPEED = 0;
+// Debug impact spin axis used by current launch plumbing. Positive/negative values tilt the spin axis left or right.
 export const BALL_IMPACT_DEBUG_SPIN_AXIS = 0;
 
+// Club-head collision radius. Larger values make impacts easier to register.
 export const CLUB_HEAD_COLLIDER_RADIUS = 0.14;
+// How far the contact sphere is pulled back from the club tip. Higher values move impact farther from the visual tip.
 export const CLUB_HEAD_COLLIDER_TIP_BACKOFF = 0.05;
+// Lateral offset for the club-head collider. Adjust to better align the hit volume with the model.
 export const CLUB_HEAD_COLLIDER_SIDE_OFFSET = 0.1;
+// Local-space direction considered "forward" for launch calculations.
 export const CLUB_HEAD_LAUNCH_DIRECTION_LOCAL = new THREE.Vector3(0, 0, 1);
+// Minimum club-head speed required to count as a normal impact.
 export const CLUB_HEAD_IMPACT_MIN_SPEED = 5;
+// Lower impact threshold specifically for putters.
+export const PUTTER_CLUB_HEAD_IMPACT_MIN_SPEED = 0.5;
+// Minimum club speed that can trigger the whoosh sound.
 export const CLUB_SWING_WHOOSH_MIN_SPEED = 8;
+// Speed where the whoosh sound reaches its max intensity mapping.
 export const CLUB_SWING_WHOOSH_MAX_SPEED = 50;
+// Club speed below which the whoosh can arm again after a previous play.
 export const CLUB_SWING_WHOOSH_REARM_SPEED = 5;
+// Minimum time between whoosh plays.
 export const CLUB_SWING_WHOOSH_COOLDOWN_MS = 300;
+// Distance after contact where the club is considered safely released from the ball.
 export const CLUB_HEAD_CONTACT_RELEASE_DISTANCE = 0.18;
+// Time window stored for recent club-head motion samples.
 export const CLUB_HEAD_HISTORY_DURATION_SECONDS = 0.08;
+// Maximum stored swing-history samples. Higher values keep more motion history.
 export const CLUB_HEAD_HISTORY_MAX_SAMPLES = 8;
+// Minimum forward alignment for a swing to count as a valid strike. Higher values require a straighter through-ball motion.
 export const CLUB_HEAD_CONTACT_MIN_FORWARD_ALIGNMENT = 0.45;
 
+// Lower clamp for vertical launch from club impact.
 export const CLUB_HEAD_VERTICAL_LAUNCH_MIN_ANGLE = 0;
+// Upper clamp for vertical launch from club impact.
 export const CLUB_HEAD_VERTICAL_LAUNCH_MAX_ANGLE = 85;
+// Max sideways launch angle allowed from impact.
 export const CLUB_HEAD_HORIZONTAL_LAUNCH_LIMIT_DEGREES = 35;
+// Default smash factor for centered strikes. Higher values increase ball speed off the club.
 export const DEFAULT_CLUB_MIDDLE_SMASH_FACTOR = 1.35;
+// Converts phone/controller angular speed into club-head speed. Higher values make the same motion hit harder.
 export const PHONE_ANGULAR_SPEED_TO_CLUB_HEAD_SPEED_GAIN = 5.6;
+// Upper impact speed for using the light shot sound tier.
 export const SHOT_AUDIO_LIGHT_MAX_IMPACT_SPEED = 20;
+// Upper impact speed for using the medium shot sound tier.
 export const SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED = 30;
+// Max horizontal error angle for the special PangYa-like shot sound.
 export const SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES = 2;
+// Global shot audio volume multiplier.
 export const SHOT_AUDIO_VOLUME = 0.85;
 
+// Default preview swing speed used by the aiming simulator.
 export const AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND = 20;
+// Increment size when manually adjusting preview swing speed.
 export const AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND = 0.01;
+// Minimum allowed preview swing speed.
 export const AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND = 1;
+// Maximum allowed preview swing speed.
 export const AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND = 100;
 
 
+// Character placement offset relative to the ball when entering the setup pose.
 export const CHARACTER_SETUP_OFFSET = new THREE.Vector3(CHARACTER_BALL_X_OFFSET, -BALL_RADIUS, CHARACTER_BALL_Z_OFFSET);
+// Base character rotation speed in degrees per second.
 export const CHARACTER_ROTATION_SPEED_DEGREES = 30;
+// Minimum rotation acceleration multiplier when aim input first starts.
 export const CHARACTER_ROTATION_ACCELERATION_MIN_MULTIPLIER = 0.1;
+// Maximum rotation acceleration multiplier after ramp-up.
 export const CHARACTER_ROTATION_ACCELERATION_MAX_MULTIPLIER = 1.35;
+// Time needed to ramp aim rotation from min to max acceleration.
 export const CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS = 1.5;
 
-// when using phone joystick to adjust aim
+// Analog response curve for phone joystick aiming. Higher values make small stick motions less sensitive.
 export const CHARACTER_ROTATION_ANALOG_RESPONSE_EXPONENT = 1.2;
+// Visual yaw offset used to align the character model with gameplay forward.
 export const CHARACTER_VISUAL_YAW_OFFSET_DEGREES = 0;
+// Global world forward direction for camera and aiming calculations.
 export const WORLD_FORWARD = new THREE.Vector3(0, 0, -1);
 
-// Camera mode 1: normal
+// Default follow-camera distance from the target.
 export const CAMERA_START_DISTANCE = 6;
+// How far ahead of the target the normal camera looks. Higher values lead the motion more.
 export const CAMERA_LOOK_AHEAD_DISTANCE = 0;
+// Upward/downward tilt offset for the normal camera.
 export const CAMERA_TILT_OFFSET_DEGREES = 12;
+// Follow smoothing stiffness for the normal camera. Higher values feel snappier.
 export const CAMERA_FOLLOW_STIFFNESS = 8;
 
 
 // Camera mode 2: aiming
 
-// when adjusing
+// Minimum preview-speed adjustment rate when the player first starts adjusting.
 export const AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.01;
+// Maximum preview-speed adjustment rate after ramp-up.
 export const AIMING_PREVIEW_HEAD_SPEED_ADJUST_MAX_RATE_METERS_PER_SECOND = 14;
+// Time needed for digital preview-speed adjustment to ramp from min to max.
 export const AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS = 1.0;
+// Time needed for analog preview-speed adjustment to reach full rate.
 export const AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS = 1.5;
+// Analog response curve for preview-speed control. Higher values soften small input.
 export const AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT = 1.2;
+// Vertical tolerance for entering aiming camera mode.
 export const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_DEGREES = 10;
+// Minimum analog magnitude required to trigger aiming camera entry.
 export const AIMING_CAMERA_ENTRY_MIN_MAGNITUDE = 0.75;
+// Input smoothing factor for remote controls. Higher values smooth more aggressively.
 export const REMOTE_CONTROL_INPUT_SMOOTHING = 18;
+// Difference threshold below which smoothed remote input snaps to the target value.
 export const REMOTE_CONTROL_INPUT_SNAP_EPSILON = 0.0015;
 
 
 
+// Camera distance while in aiming mode.
 export const AIMING_CAMERA_DISTANCE = 9;
+// Camera height while in aiming mode.
 export const AIMING_CAMERA_HEIGHT = 7;
+// Follow stiffness in aiming mode. Higher values feel tighter and more immediate.
 export const AIMING_CAMERA_FOLLOW_STIFFNESS = 50;
+// Distance reference used when scaling aiming rotation behavior.
 export const AIMING_ROTATION_DISTANCE_REFERENCE_METERS = 50;
+// Minimum distance-based multiplier for aiming rotation speed.
 export const AIMING_ROTATION_DISTANCE_MIN_MULTIPLIER = 0.1;
+// Maximum distance-based multiplier for aiming rotation speed.
 export const AIMING_ROTATION_DISTANCE_MAX_MULTIPLIER = 1.6;
 
 
-// Free camera mode
+// Translation speed for free-camera movement.
 export const FREE_CAMERA_MOVE_SPEED = 30;
+// Mouse/look sensitivity for free camera. Higher values rotate faster.
 export const FREE_CAMERA_LOOK_SENSITIVITY = 0.0025;
+// Max absolute pitch angle for free camera to avoid flipping.
 export const FREE_CAMERA_PITCH_LIMIT_DEGREES = 85;
 
 
+// Render pixel ratio cap for performance. Higher values improve sharpness at higher GPU cost.
 export const MAX_RENDER_PIXEL_RATIO = 0.65;
+// Update interval for camera debug/info labels.
 export const CAMERA_LABEL_UPDATE_INTERVAL_MS = 120;
+// Update interval for FPS label refresh.
 export const FPS_LABEL_UPDATE_INTERVAL_MS = 250;
 
 
 
 
 
+// World-space hole location from the active course.
 export const COURSE_HOLE_POSITION = ACTIVE_COURSE.hole.clone();
+// Height of the vertical beam marker above the hole.
 export const HOLE_MARKER_BEAM_HEIGHT = 1000;
+// Radius of the beam's bright inner core.
 export const HOLE_MARKER_BEAM_CORE_RADIUS = 0.138;
+// Radius of the beam's outer glow.
 export const HOLE_MARKER_BEAM_GLOW_RADIUS = 0.22;
+// Color of the beam core.
 export const HOLE_MARKER_BEAM_CORE_COLOR = '#74fbff';
+// Color of the beam glow.
 export const HOLE_MARKER_BEAM_GLOW_COLOR = '#00eaff';
+// World depth for the hole label plane.
 export const HOLE_MARKER_LABEL_DEPTH = 2.8;
+// World height for the hole label plane.
 export const HOLE_MARKER_LABEL_HEIGHT = 0.26;
+// Vertical placement ratio for the hole label near the beam top.
 export const HOLE_MARKER_LABEL_TOP_OFFSET_RATIO = 0.1;
+// Padding inside the hole label canvas.
 export const HOLE_MARKER_LABEL_EDGE_PADDING_PX = 72;
+// Hole label canvas width in pixels.
 export const HOLE_MARKER_LABEL_CANVAS_WIDTH = 512;
+// Hole label canvas height in pixels.
 export const HOLE_MARKER_LABEL_CANVAS_HEIGHT = 256;
+// Font stack used for hole labels.
 export const HOLE_MARKER_LABEL_FONT_FAMILY = '"B GenJyuu Gothic X", "Segoe UI Variable", Aptos, sans-serif';
+// World depth for the move-mode label plane.
 export const MOVE_MODE_LABEL_DEPTH = 2.8;
+// World height for the move-mode label plane.
 export const MOVE_MODE_LABEL_HEIGHT = 0.3;
+// Vertical placement ratio for the move-mode label near the screen bottom.
 export const MOVE_MODE_LABEL_BOTTOM_OFFSET_RATIO = 0.1;
+// Move-mode label canvas width in pixels.
 export const MOVE_MODE_LABEL_CANVAS_WIDTH = 640;
+// Move-mode label canvas height in pixels.
 export const MOVE_MODE_LABEL_CANVAS_HEIGHT = 220;
+// Aiming marker canvas width in pixels.
 export const AIMING_MARKER_CANVAS_WIDTH = 384;
+// Aiming marker canvas height in pixels.
 export const AIMING_MARKER_CANVAS_HEIGHT = 320;
+// Visual pixel height of the aiming marker artwork.
 export const AIMING_MARKER_PIXEL_HEIGHT = 110;
+// World-space Y offset for the aiming marker above the ground.
 export const AIMING_MARKER_WORLD_Y_OFFSET = 0.01;
+// Unit conversion factor from meters to yards.
 export const METERS_TO_YARDS = 1.0936132983377078;
