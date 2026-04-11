@@ -23,7 +23,9 @@ export const BALL_AIR_DRAG = 0.04;
 
 // Hop energy
 export const BALL_BOUNCE_RESTITUTION = 0.2;
-export const BALL_IMPACT_FRICTION = 0.08;
+export const BALL_IMPACT_FRICTION = 0.12;
+export const BALL_IMPACT_MAX_FRICTION = 0.55;
+export const BALL_IMPACT_REFERENCE_NORMAL_SPEED = 8.5;
 export const BALL_ROLLING_FRICTION = 2.4;
 export const BALL_GROUND_CAPTURE_NORMAL_SPEED = 0.45;
 export const BALL_GROUND_CAPTURE_SPEED = 2.4;

@@ -5,10 +5,13 @@ import {
   BALL_COLLISION_SKIN,
   BALL_FIXED_STEP_SECONDS,
   BALL_GROUND_CAPTURE_NORMAL_SPEED,
+  BALL_GROUND_CAPTURE_SPEED,
   BALL_GROUND_SNAP_DISTANCE,
   BALL_GROUNDED_NORMAL_MIN_Y,
   BALL_GRAVITY_ACCELERATION,
   BALL_IMPACT_FRICTION,
+  BALL_IMPACT_MAX_FRICTION,
+  BALL_IMPACT_REFERENCE_NORMAL_SPEED,
   BALL_MAX_COLLISION_ITERATIONS,
   BALL_MAX_FIXED_STEPS_PER_FRAME,
   BALL_RADIUS,
@@ -461,7 +464,11 @@ function shouldEnterGroundMode(velocity, hitNormal) {
   }
 
   const reboundNormalSpeed = Math.max(velocity.dot(hitNormal), 0);
-  return reboundNormalSpeed <= BALL_GROUND_CAPTURE_NORMAL_SPEED;
+  if (reboundNormalSpeed <= BALL_GROUND_CAPTURE_NORMAL_SPEED) {
+    return true;
+  }
+
+  return velocity.lengthSq() <= BALL_GROUND_CAPTURE_SPEED * BALL_GROUND_CAPTURE_SPEED;
 }
 
 function buildVelocityFromLaunchData(launchData, viewerScene, referenceForward = null) {
@@ -505,18 +512,33 @@ function resolveImpactVelocity(velocity, hitNormal) {
 
   const incomingSpeed = velocity.length();
   const incomingNormalSpeed = Math.max(-normalSpeed, 0);
+  const incomingTangentSpeed = Math.sqrt(Math.max(
+    incomingSpeed * incomingSpeed - incomingNormalSpeed * incomingNormalSpeed,
+    0,
+  ));
 
   WORKING_NORMAL_COMPONENT.copy(hitNormal).multiplyScalar(normalSpeed);
   velocity.sub(WORKING_NORMAL_COMPONENT);
-  
-  // Scale tangential loss by impact severity so shallow landings keep their run-out.
+
+  // Ground contacts should absorb noticeably more forward speed on steeper, faster landings.
   const impactSeverity = incomingSpeed > 1e-6
-    ? THREE.MathUtils.clamp(incomingNormalSpeed / incomingSpeed, 0, 1)
+    ? THREE.MathUtils.clamp(
+      incomingNormalSpeed / Math.max(incomingNormalSpeed + incomingTangentSpeed, 1e-6),
+      0,
+      1,
+    )
     : 0;
+  const impactStrength = THREE.MathUtils.clamp(
+    incomingNormalSpeed / BALL_IMPACT_REFERENCE_NORMAL_SPEED,
+    0,
+    1,
+  );
+  const groundImpactBlend = impactSeverity * impactStrength;
   const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.05;
-  const friction = baseFriction * impactSeverity;
+  const maxFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_MAX_FRICTION : BALL_IMPACT_MAX_FRICTION * 0.1;
+  const friction = THREE.MathUtils.lerp(baseFriction, maxFriction, groundImpactBlend);
   velocity.multiplyScalar(1 - friction);
-  
+
   velocity.addScaledVector(hitNormal, -normalSpeed * BALL_BOUNCE_RESTITUTION);
 }
 
