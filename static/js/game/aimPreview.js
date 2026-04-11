@@ -105,8 +105,6 @@ function buildPreviewLaunchVelocity(launchData, viewerScene, referenceForward = 
     PREVIEW_HORIZONTAL_FORWARD.normalize();
   }
 
-  console.log('preview with ball speed', launchData.ballSpeed, 'vertical angle', launchData.verticalLaunchAngle);
-
   const verticalAngleRadians = THREE.MathUtils.degToRad(launchData.verticalLaunchAngle);
   const horizontalAngleRadians = THREE.MathUtils.degToRad(launchData.horizontalLaunchAngle);
   const forwardSpeed = launchData.ballSpeed * Math.cos(verticalAngleRadians);

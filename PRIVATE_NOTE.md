@@ -2,10 +2,6 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
-the aim logic now will be dynamic!!!
-when player press up or down key, this will adjust the head speed of the preview
-
-
 
 
 ---

@@ -619,6 +619,24 @@ function initializeLaunchDebugUi() {
   updateLaunchDebugUiState();
 }
 
+/**
+ * Mirrors launch data into the LaunchDebug widget so the debug shot can replay the current preview setup.
+ */
+function syncLaunchDebugInputs(launchData) {
+  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !launchData) {
+    return;
+  }
+
+  for (const { key, inputKey } of LAUNCH_DEBUG_INPUT_FIELDS) {
+    const nextFieldValue = Number.isFinite(launchData[key])
+      ? launchData[key]
+      : BALL_DEFAULT_LAUNCH_DATA[key];
+    dom[inputKey].value = String(nextFieldValue);
+  }
+
+  updateLaunchDebugUiState('LaunchDebug synced with the current aiming preview.');
+}
+
 function initializeClubDebugUi() {
   if (!dom.clubPrevButton || !dom.clubNextButton) {
     return;
@@ -696,14 +714,19 @@ function updateAimingPreviewIfNeeded(characterTelemetry) {
     return;
   }
 
+  const aimingPreviewLaunchData = {
+    ballSpeed: launchPreview.ballSpeed,
+    verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+    horizontalLaunchAngle: 0,
+    spinSpeed: BALL_DEFAULT_LAUNCH_DATA.spinSpeed,
+    spinAxis: BALL_DEFAULT_LAUNCH_DATA.spinAxis,
+  };
+  syncLaunchDebugInputs(aimingPreviewLaunchData);
+
   const firstContactPreview = predictFirstContactPoint(
     viewerScene,
     ballPhysics.getPosition(),
-    {
-      ballSpeed: launchPreview.ballSpeed,
-      verticalLaunchAngle: launchPreview.verticalLaunchAngle,
-      horizontalLaunchAngle: 0,
-    },
+    aimingPreviewLaunchData,
     null,
   );
   if (!firstContactPreview) {
