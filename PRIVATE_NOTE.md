@@ -1,7 +1,6 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
-club head speed is too random even i try to swing with the same speed, how many frame this use for calculate club head speed?
 
 ---
 

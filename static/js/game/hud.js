@@ -221,8 +221,8 @@ export function createViewerHud(dom) {
 
     updateSwingPreviewTarget(targetSpeedMetersPerSecond) {
       if (
-        !dom.swingPreviewMessage
-        || !dom.swingPreviewBar
+     
+       !dom.swingPreviewBar
         || !dom.swingPreviewTargetLine
         || !dom.swingPreviewTargetSpeedLabel
       ) {
@@ -240,18 +240,13 @@ export function createViewerHud(dom) {
         return;
       }
 
-      if (!Number.isFinite(targetSpeedMetersPerSecond) || targetSpeedMetersPerSecond <= 0) {
-        dom.swingPreviewMessage.textContent = 'Waiting for a target head speed from the aiming preview.';
-      } else if (!Number.isFinite(swingPreviewState.capturedSpeedMetersPerSecond)
-        || swingPreviewState.capturedSpeedMetersPerSecond < 0) {
-        dom.swingPreviewMessage.textContent = 'Aim first, then swing to compare against the target speed.';
-      }
+
     },
 
     updateSwingPreviewCapture(capturedSpeedMetersPerSecond, targetSpeedMetersPerSecond = null) {
       if (
-        !dom.swingPreviewMessage
-        || !dom.swingPreviewBar
+  
+       !dom.swingPreviewBar
         || !dom.swingPreviewFill
       ) {
         return;
@@ -264,10 +259,7 @@ export function createViewerHud(dom) {
       if (!Number.isFinite(capturedSpeedMetersPerSecond) || capturedSpeedMetersPerSecond < 0) {
         dom.swingPreviewFill.style.height = '0%';
         dom.swingPreviewBar.setAttribute('aria-label', 'Last swing speed compared to target speed');
-        if (Number.isFinite(targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond)
-          && (targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond) > 0) {
-          dom.swingPreviewMessage.textContent = 'Aim first, then swing to compare against the target speed.';
-        }
+
         return;
       }
 
@@ -280,7 +272,7 @@ export function createViewerHud(dom) {
         'aria-label',
         `Last swing speed ${formatMetersPerSecond(capturedSpeedMetersPerSecond)} against target ${formatMetersPerSecond(targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond)}`,
       );
-      dom.swingPreviewMessage.textContent = 'Last swing captured. Match the 80% target line.';
+    
     },
 
     updateLaunchPanelVisible(visible) {
