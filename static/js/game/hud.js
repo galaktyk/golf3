@@ -159,7 +159,12 @@ export function createViewerHud(dom) {
     },
 
     updateFps(value) {
-      dom.fpsLabel.textContent = `${value.toFixed(1)} fps`;
+      if (!dom.fpsLabel) {
+        return;
+      }
+
+      dom.fpsLabel.textContent = String(Math.max(0, Math.round(value)));
+      dom.fpsLabel.setAttribute('aria-label', `${value.toFixed(1)} frames per second`);
     },
 
     updateQuaternion(quaternion) {

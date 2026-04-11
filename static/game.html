@@ -7,8 +7,11 @@
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body class="viewer-body">
+  <div class="viewer-fps-overlay" aria-live="polite" aria-label="Viewer framerate">
+    <span id="viewer-fps" class="viewer-fps-value">0</span>
+  </div>
   <div class="hud hud-bottom-right">
-    <div class="panel panel-debug">
+    <div class="panel panel-debug" id="viewer-debug-panel">
       <div class="panel-heading">
         <p class="eyebrow">Viewer Debug</p>
         <p id="viewer-status" class="panel-status-text">Waiting for phone connection</p>
@@ -16,8 +19,6 @@
       <div class="debug-grid">
         <span class="debug-label">Socket</span>
         <span id="viewer-socket-state" class="debug-value">Connecting</span>
-        <span class="debug-label">FPS</span>
-        <span id="viewer-fps" class="debug-value">0.0</span>
         <span class="debug-label">Packet Rate</span>
         <span id="viewer-packet-rate" class="debug-value">0.0 pkt/s</span>
         <span class="debug-label">Quaternion</span>
@@ -42,7 +43,7 @@
     </div>
   </div>
   <div id="viewer-launch-panel" class="hud hud-right" hidden>
-    <div class="panel panel-debug">
+    <div class="panel panel-debug" id="viewer-launch-debug-panel">
       <div class="panel-heading">
         <p class="eyebrow">Launch Debug</p>
         <p id="viewer-launch-debug-message" class="panel-status-text">Edit the launch values, then click Launch or press L.</p>
@@ -85,9 +86,9 @@
     </div>
   </div>
   <div id="viewer-club-panel" class="hud hud-bottom-left">
-    <div class="panel panel-debug panel-club-debug">
+    <div class="panel panel-static panel-club">
       <div class="panel-heading">
-        <p class="eyebrow">Club Debug</p>
+        <p class="eyebrow">Club</p>
         <p id="viewer-club-set-line" class="panel-status-text">Air Lance Set</p>
       </div>
       <div class="club-selector-row" aria-label="Club selector">
@@ -112,7 +113,7 @@
     </div>
   </div>
   <div id="viewer-swing-preview-panel" class="hud hud-left-center">
-    <div class="panel panel-debug panel-swing-preview">
+    <div class="panel panel-static panel-swing-preview">
       <div class="panel-heading">
         <p class="eyebrow">Swing Preview</p>
       

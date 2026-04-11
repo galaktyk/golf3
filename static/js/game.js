@@ -56,7 +56,7 @@ const incomingSwingState = {
   receivedAtTimeMs: 0,
 };
 const DEBUG_PARAMS = new URLSearchParams(window.location.search);
-const LAUNCH_DEBUG_ENABLED = DEBUG_PARAMS.has('launchDebug');
+const DEBUG_UI_ENABLED = DEBUG_PARAMS.get('debug') === 'true';
 const LAUNCH_DEBUG_INPUT_FIELDS = [
   { key: 'ballSpeed', inputKey: 'launchBallSpeedInput' },
   { key: 'verticalLaunchAngle', inputKey: 'launchVerticalAngleInput' },
@@ -64,6 +64,7 @@ const LAUNCH_DEBUG_INPUT_FIELDS = [
   { key: 'spinSpeed', inputKey: 'launchSpinSpeedInput' },
   { key: 'spinAxis', inputKey: 'launchSpinAxisInput' },
 ];
+document.body.classList.toggle('viewer-debug-enabled', DEBUG_UI_ENABLED);
 const dom = getViewerDom();
 const viewerScene = createViewerScene(dom.canvas);
 const hud = createViewerHud(dom);
@@ -335,7 +336,7 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.code === 'KeyL') {
-    if (!LAUNCH_DEBUG_ENABLED || isTextEntryTarget(event.target)) {
+    if (!DEBUG_UI_ENABLED || isTextEntryTarget(event.target)) {
       return;
     }
 
@@ -1215,9 +1216,9 @@ function resetShotFlow() {
 }
 
 function initializeLaunchDebugUi() {
-  hud.updateLaunchPanelVisible(LAUNCH_DEBUG_ENABLED);
+  hud.updateLaunchPanelVisible(DEBUG_UI_ENABLED);
 
-  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
     return;
   }
 
@@ -1238,7 +1239,7 @@ function initializeLaunchDebugUi() {
  * Mirrors launch data into the LaunchDebug widget so the debug shot can replay the current preview setup.
  */
 function syncLaunchDebugInputs(launchData) {
-  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !launchData) {
+  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !launchData) {
     return;
   }
 
@@ -1403,7 +1404,7 @@ function updateAimingMarker(ballTelemetry) {
 }
 
 function launchDebugBallFromInput() {
-  if (!LAUNCH_DEBUG_ENABLED || !canLaunchDebugShot()) {
+  if (!DEBUG_UI_ENABLED || !canLaunchDebugShot()) {
     updateLaunchDebugUiState();
     return;
   }
@@ -1419,7 +1420,7 @@ function launchDebugBallFromInput() {
 }
 
 function updateLaunchDebugUiState(statusMessage = null) {
-  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
     return;
   }
 
@@ -1454,7 +1455,7 @@ function canLaunchDebugShot() {
 }
 
 function getLaunchDebugInputState() {
-  if (!LAUNCH_DEBUG_ENABLED || !hasLaunchDebugInputs()) {
+  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs()) {
     return { launchData: null, errorMessage: '' };
   }
 

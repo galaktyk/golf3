@@ -58,8 +58,32 @@ body::before {
   overflow: hidden;
 }
 
+.viewer-body:not(.viewer-debug-enabled) #viewer-debug-panel,
+.viewer-body:not(.viewer-debug-enabled) #viewer-launch-debug-panel {
+  display: none;
+}
+
 .viewer-body::before {
   display: none;
+}
+
+.viewer-fps-overlay {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: calc(env(safe-area-inset-left, 0px) + 10px);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.viewer-fps-value {
+  display: block;
+  color: rgba(244, 248, 255, 0.92);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
 }
 
 #scene {
@@ -160,12 +184,14 @@ body::before {
 .panel-title,
 .panel-status,
 .panel-debug,
+.panel-static,
 .hero-panel,
 .status-panel {
   max-width: 100%;
 }
 
-.panel-debug {
+.panel-debug,
+.panel-static {
   min-width: 0;
 }
 
@@ -523,7 +549,7 @@ p {
   font-size: 0.74rem;
 }
 
-.panel-club-debug {
+.panel-club {
   width: min(240px, calc(100vw - 20px));
 }
 
