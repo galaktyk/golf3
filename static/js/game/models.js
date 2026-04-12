@@ -612,9 +612,11 @@ function createHoleMarker() {
 function createAimingMarker() {
   const PUTT_GRID_MAX_CELLS = 180;
   const PUTT_GRID_MAX_LINE_SEGMENTS = 400;
-  const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.075;
+  const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.085;
   const PUTT_GRID_SURFACE_OFFSET_METERS = 0.012;
-  const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.32;
+  const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.38;
+  const PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE = 0.2;
+  const PUTT_GRID_CIRCLE_MAX_SCALE = 1.2;
   const PUTT_GRID_COLOR = '#173c25';
   const PUTT_GRID_OPACITY = 0.8;
   const markerCanvas = document.createElement('canvas');
@@ -637,7 +639,7 @@ function createAimingMarker() {
   const puttAimTarget = new THREE.Mesh(
     new THREE.SphereGeometry(Math.max(BALL_RADIUS * 1.05, 0.05), 16, 12),
     new THREE.MeshBasicMaterial({
-      color: '#2f84ff',
+      color: '#ff2d2d',
       wireframe: true,
       transparent: true,
       opacity: 0.92,
@@ -913,13 +915,28 @@ function createAimingMarker() {
 
         horizontalNormal.copy(cellPreview.normal);
         horizontalNormal.y = 0;
-        const rightOffset = THREE.MathUtils.clamp(horizontalNormal.dot(cellRight), -1, 1) * maxCircleOffsetMeters;
-        const forwardOffset = THREE.MathUtils.clamp(horizontalNormal.dot(puttGridBaseForward), -1, 1) * maxCircleOffsetMeters;
+        const horizontalSlopeStrength = horizontalNormal.length();
+        let circleOffsetScale = 0;
+        if (horizontalSlopeStrength > 1e-8) {
+          horizontalNormal.divideScalar(horizontalSlopeStrength);
+          const slopeAlpha = THREE.MathUtils.clamp(
+            horizontalSlopeStrength / PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE,
+            0,
+            1,
+          );
+          // Ease low slopes upward so the preview stays readable on gentle greens.
+          circleOffsetScale = Math.pow(slopeAlpha, 0.7);
+        }
+
+        const circleOffsetMeters = maxCircleOffsetMeters * circleOffsetScale;
+        const rightOffset = horizontalNormal.dot(cellRight) * circleOffsetMeters;
+        const forwardOffset = horizontalNormal.dot(cellForward) * circleOffsetMeters;
         circle.position.addScaledVector(cellRight, rightOffset);
         circle.position.addScaledVector(cellForward, forwardOffset);
         circle.position.addScaledVector(cellPreview.normal, 0.0015);
         circle.visible = true;
-        circle.scale.set(1, 1, 1);
+        const circleScale = THREE.MathUtils.lerp(1, PUTT_GRID_CIRCLE_MAX_SCALE, circleOffsetScale);
+        circle.scale.set(circleScale, circleScale, 1);
         circle.updateMatrixWorld();
       }
       puttGridRoot.visible = true;

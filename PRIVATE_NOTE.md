@@ -3,7 +3,9 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 --
 
-better adjust aim point
+better adjust starter aim point
+
+
 
 
 

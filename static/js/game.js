@@ -90,6 +90,8 @@ const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
 const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
 const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
 const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 6;
+const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
+const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -144,6 +146,7 @@ const aimingMarkerCameraSpace = new THREE.Vector3();
 const aimingPreviewLandingPoint = new THREE.Vector3();
 const aimingPreviewTargetProbePoint = new THREE.Vector3();
 const aimingPreviewTargetForward = new THREE.Vector3();
+const aimingPreviewTargetLateralOffset = new THREE.Vector3();
 const characterForwardForPreview = new THREE.Vector3();
 const puttHoleOffset = new THREE.Vector3();
 const aimingPreview = {
@@ -1645,8 +1648,27 @@ function resolvePuttAimTargetPoint(ballPosition = ballPhysics.getPosition(), tar
     aimingPreviewTargetForward.normalize();
   }
 
+  let resolvedAimDistanceMeters = puttAimDistanceMeters;
+  puttHoleOffset.subVectors(COURSE_HOLE_POSITION, ballPosition);
+  puttHoleOffset.y = 0;
+  const holeDistanceAlongAimMeters = puttHoleOffset.dot(aimingPreviewTargetForward);
+  if (holeDistanceAlongAimMeters > 0) {
+    aimingPreviewTargetLateralOffset.copy(puttHoleOffset).addScaledVector(
+      aimingPreviewTargetForward,
+      -holeDistanceAlongAimMeters,
+    );
+
+    // Only clamp when the aim line is effectively passing through the cup.
+    if (aimingPreviewTargetLateralOffset.length() <= PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS) {
+      resolvedAimDistanceMeters = Math.min(
+        resolvedAimDistanceMeters,
+        Math.max(holeDistanceAlongAimMeters - PUTT_AIM_HOLE_CLAMP_MARGIN_METERS, 0),
+      );
+    }
+  }
+
   target.copy(ballPosition)
-    .addScaledVector(aimingPreviewTargetForward, puttAimDistanceMeters);
+    .addScaledVector(aimingPreviewTargetForward, resolvedAimDistanceMeters);
 
   if (!viewerScene.courseCollision?.root) {
     return target;
@@ -1743,8 +1765,11 @@ function updateAimingPreviewIfNeeded() {
     aimingPreview.puttGrid = puttGridPreview;
     aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttAimDistanceMeters > 0);
     aimingPreview.hasTargetPoint = true;
-    aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(puttAimDistanceMeters);
     resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
+    aimingPreview.carryDistanceMeters = Math.hypot(
+      aimingPreviewLandingPoint.x - ballPhysics.getPosition().x,
+      aimingPreviewLandingPoint.z - ballPhysics.getPosition().z,
+    );
     aimingPreview.dirty = false;
     return;
   }
@@ -1800,14 +1825,27 @@ function updateAimingMarker(ballTelemetry) {
 
   if (aimingPreview.mode === 'putt-grid') {
     aimingMarker.setPuttGrid(aimingPreview.puttGrid);
+    aimingMarker.setPuttAimTarget(null);
     if (!aimingPreview.hasTargetPoint) {
       aimingMarker.setVisible(false);
-      aimingMarker.setPuttAimTarget(null);
       return;
     }
     aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
-    aimingMarker.setVisible(false);
-    aimingMarker.setPuttAimTarget(aimingMarkerCameraSpace.z >= 0 ? null : aimingPreviewLandingPoint);
+    if (aimingMarkerCameraSpace.z >= 0) {
+      aimingMarker.setVisible(false);
+      return;
+    }
+
+    const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+    const worldHeight = 2
+      * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
+      * Math.max(distanceToCamera, 0.01)
+      * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
+
+    aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
+    aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+    aimingMarker.setWorldHeight(worldHeight);
+    aimingMarker.setVisible(true);
     return;
   } else {
     aimingMarker.setPuttGrid(null);
