@@ -367,6 +367,24 @@ window.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (event.code === 'KeyQ') {
+    if (isTextEntryTarget(event.target)) {
+      return;
+    }
+    clubSelectionController.selectPreviousClub();
+    event.preventDefault();
+    return;
+  }
+
+  if (event.code === 'KeyE') {
+    if (isTextEntryTarget(event.target)) {
+      return;
+    }
+    clubSelectionController.selectNextClub();
+    event.preventDefault();
+    return;
+  }
+
   if (event.code === 'KeyP') {
     if (isTextEntryTarget(event.target)) {
       return;

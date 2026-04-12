@@ -2,19 +2,15 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
-make keyboard q change club left e change club right
---
-grid 2x2 y
-around hole 20y x 20 y
-
-
-
-
 
 
 ---
 
+for those ui with ?debug=true
+make it show all the time but with a small toggle (bug icon) on the top right 
 
+
+so we could remove the ?debug=true query param and just use the toggle to show/hide debug info
 
 ---
 
