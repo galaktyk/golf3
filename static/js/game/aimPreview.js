@@ -30,13 +30,13 @@ const PUTT_PREVIEW_GRID_MIN_ROWS = 8;
 const PUTT_PREVIEW_GRID_MAX_ROWS = 48;
 const PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS = 2;
 const PUTT_PREVIEW_GRID_COLUMNS = 9;
-const PUTT_PREVIEW_GRID_SIZE_YARDS = 10;
+const PREVIEW_GRID_CELL_SIZE_YARDS = 2;
 const PUTT_PREVIEW_YARDS_TO_METERS = 0.9144;
 const HOLE_SLOPE_GRID_ROWS = 9;
 const HOLE_SLOPE_GRID_COLUMNS = 9;
-const HOLE_SLOPE_GRID_CELL_SIZE_METERS = PUTT_PREVIEW_YARDS_TO_METERS;
-const PUTT_PREVIEW_GRID_DEPTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
-const PUTT_PREVIEW_GRID_WIDTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
+const HOLE_SLOPE_GRID_CELL_SIZE_METERS = PREVIEW_GRID_CELL_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
+const PUTT_PREVIEW_GRID_DEPTH_METERS = PREVIEW_GRID_CELL_SIZE_YARDS * PUTT_PREVIEW_GRID_BASE_ROWS * PUTT_PREVIEW_YARDS_TO_METERS;
+const PUTT_PREVIEW_GRID_WIDTH_METERS = PREVIEW_GRID_CELL_SIZE_YARDS * PUTT_PREVIEW_GRID_COLUMNS * PUTT_PREVIEW_YARDS_TO_METERS;
 const PUTT_PREVIEW_CELL_DEPTH_METERS = PUTT_PREVIEW_GRID_DEPTH_METERS / PUTT_PREVIEW_GRID_BASE_ROWS;
 const PUTT_PREVIEW_CELL_WIDTH_METERS = PUTT_PREVIEW_GRID_WIDTH_METERS / PUTT_PREVIEW_GRID_COLUMNS;
 const PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE = 3;
@@ -412,16 +412,21 @@ export function buildPuttGridPreview(
 }
 
 /**
- * Samples a fixed 9x9 slope grid centered on the hole for non-putter aiming mode.
+ * Samples a fixed 9x9 slope grid centered on a launch aiming point for non-putter aiming mode.
  */
-export function buildHoleSlopeGridPreview(viewerScene, holePosition, referenceForward = null) {
-  if (!viewerScene?.courseCollision?.root || !holePosition) {
+export function buildHoleSlopeGridPreview(
+  viewerScene,
+  gridCenterPosition,
+  referenceForward = null,
+  holePosition = null,
+) {
+  if (!viewerScene?.courseCollision?.root || !gridCenterPosition) {
     return null;
   }
 
   const previewSurfaceSampler = createPreviewSurfaceSampler(viewerScene, holePosition);
   const groundSample = previewSurfaceSampler(
-    PUTT_PREVIEW_SUPPORT_SAMPLE.copy(holePosition),
+    PUTT_PREVIEW_SUPPORT_SAMPLE.copy(gridCenterPosition),
     PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
     PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
   );

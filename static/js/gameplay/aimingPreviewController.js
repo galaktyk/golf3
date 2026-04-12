@@ -441,21 +441,25 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       aimingPreviewLaunchData,
       viewerScene.getCharacterForward(characterForwardForPreview),
     );
-    if (viewerScene.isAimingCameraEnabled()) {
-      aimingPreview.slopeGrid = buildHoleSlopeGridPreview(
-        viewerScene,
-        resolveHoleWorldPosition(),
-        characterForwardForPreview,
-      );
-    }
     aimingPreview.mode = 'landing';
     if (!firstContactPreview) {
+      aimingPreview.slopeGrid = null;
       aimingPreview.isVisible = Boolean(aimingPreview.slopeGrid?.cells?.length);
       aimingPreview.dirty = false;
       return;
     }
 
     aimingPreviewLandingPoint.copy(firstContactPreview.point);
+    if (viewerScene.isAimingCameraEnabled()) {
+      aimingPreview.slopeGrid = buildHoleSlopeGridPreview(
+        viewerScene,
+        aimingPreviewLandingPoint,
+        characterForwardForPreview,
+        resolveHoleWorldPosition(),
+      );
+    } else {
+      aimingPreview.slopeGrid = null;
+    }
     aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(firstContactPreview.carryDistanceMeters);
     aimingPreview.isVisible = true;
     aimingPreview.hasTargetPoint = true;
