@@ -2,6 +2,10 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
+
+--
+add spin rpm in swing preview
+
 invert horizontal axis
 
 

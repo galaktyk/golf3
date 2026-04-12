@@ -649,10 +649,27 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   // A solid sphere's moment of inertia means only 2/7ths of the contact point's speed
   // can be resolved entirely through a change in linear velocity before the slip stops.
   const MAX_LINEAR_DELTA_RATIO = 2 / 7;
-  const tangentDeltaSpeed = Math.min(incomingTangentSpeed * MAX_LINEAR_DELTA_RATIO, friction * incomingNormalSpeed);
+  let tangentDeltaSpeed = Math.min(incomingTangentSpeed * MAX_LINEAR_DELTA_RATIO, friction * incomingNormalSpeed);
   
   if (incomingTangentSpeed > 1e-6 && tangentDeltaSpeed > 0) {
     CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-tangentDeltaSpeed / incomingTangentSpeed);
+    
+    // Prevent the initial bounce from instantly ripping the ball entirely backward under extreme spin.
+    // Grass yields to spin initially; it only firmly grips once the ball settles into a continuous slide/contact.
+    const linearForward = TANGENT_VELOCITY.length();
+    if (linearForward > 0.5) {
+      const linearDir = TANGENT_VELOCITY.clone().normalize();
+      const dot = CONTACT_IMPULSE_DELTA.dot(linearDir);
+      
+      // If the impulse opposes our travel direction strongly enough to completely reverse us backward
+      const maxReversal = linearForward + (friction * incomingNormalSpeed * 0.2);
+      if (dot < -maxReversal) {
+         const scaling = maxReversal / -dot;
+         tangentDeltaSpeed *= scaling;
+         CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-tangentDeltaSpeed / incomingTangentSpeed);
+      }
+    }
+
     TANGENT_VELOCITY.add(CONTACT_IMPULSE_DELTA);
     applySurfaceImpulseToAngularVelocity(angularVelocity, hitNormal, CONTACT_IMPULSE_DELTA);
   }
