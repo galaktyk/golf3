@@ -74,6 +74,18 @@ function createGroundTransitionDebug() {
   };
 }
 
+/**
+ * Creates a discrete surface-hit event payload for one runtime ball contact.
+ */
+function createSurfaceImpactEvent(surfaceType, impactSpeedMetersPerSecond, source) {
+  return {
+    impactSpeedMetersPerSecond,
+    source,
+    surfaceType: surfaceType ?? SURFACE_TYPES.DEFAULT,
+    timestampMs: performance.now(),
+  };
+}
+
 export function createBallPhysics(viewerScene) {
   const position = BALL_START_POSITION.clone();
   const velocity = new THREE.Vector3();
@@ -94,6 +106,11 @@ export function createBallPhysics(viewerScene) {
   let shotSettled = false;
   let contactAgeSeconds = 0;
   let lastGroundTransitionDebug = createGroundTransitionDebug();
+  let pendingSurfaceImpactEvents = [];
+
+  const queueSurfaceImpactEvent = (surfaceType, impactSpeedMetersPerSecond, source) => {
+    pendingSurfaceImpactEvents.push(createSurfaceImpactEvent(surfaceType, impactSpeedMetersPerSecond, source));
+  };
 
   const snapToGround = (maxSnapDistance, groundedMovementState = movementState) => {
     const support = findGroundSupport(viewerScene.courseCollision, position, BALL_RADIUS, maxSnapDistance);
@@ -172,7 +189,20 @@ export function createBallPhysics(viewerScene) {
 
       if (sweep.surfaceType === SURFACE_TYPES.LEAF) {
         // Let canopy hits sap speed and bend the shot down instead of behaving like a rigid wall.
+        const preLeafSpeedMetersPerSecond = velocity.length();
         applyLeafCanopyResponse(velocity, angularVelocity, sweep.hitNormal);
+        queueSurfaceImpactEvent(sweep.surfaceType, preLeafSpeedMetersPerSecond, 'leaf-pass');
+        console.log('[BallLeafPassThrough]', {
+          position: {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+          },
+          preLeafSpeedMetersPerSecond,
+          postLeafSpeedMetersPerSecond: velocity.length(),
+          spinRpm: getSpinRpm(angularVelocity),
+          travelFraction: sweep.travelFraction,
+        });
         remainingFraction *= Math.max(1 - sweep.travelFraction, 0);
         ignoreLeafForStep = true;
 
@@ -200,6 +230,7 @@ export function createBallPhysics(viewerScene) {
         0,
       ));
       const preImpactSpinRpm = getSpinRpm(angularVelocity);
+      queueSurfaceImpactEvent(sweep.surfaceType, preImpactSpeedMetersPerSecond, 'bounce');
       resolveImpactVelocity(velocity, angularVelocity, sweep.hitNormal, sweep.surfaceType);
       console.log('[BallBounceSurface]', {
         surfaceType: sweep.surfaceType ?? 'default',
@@ -446,6 +477,7 @@ export function createBallPhysics(viewerScene) {
     movementState = 'air';
     contactAgeSeconds = 0;
     shotSettled = false;
+    pendingSurfaceImpactEvents = [];
   };
 
   const resetReadyState = () => {
@@ -512,6 +544,12 @@ export function createBallPhysics(viewerScene) {
 
       shotSettled = false;
       return true;
+    },
+
+    consumeSurfaceImpactEvents() {
+      const events = pendingSurfaceImpactEvents;
+      pendingSurfaceImpactEvents = [];
+      return events;
     },
 
     getDebugTelemetry() {

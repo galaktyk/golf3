@@ -8,7 +8,9 @@ leaf transparent check
 change to webrtc with qrcode for signaling
 use qr as set forward
 
-
+---
+change trail to red when ball hit surface that is not 
+fairway, green, rough, sand, road
 
 
 

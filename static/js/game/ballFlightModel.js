@@ -218,11 +218,16 @@ export function applyLeafCanopyResponse(velocity, angularVelocity, hitNormal) {
     return;
   }
 
-  velocity.multiplyScalar(BALL_LEAF_SPEED_MULTIPLIER);
-
   const canopyFactor = hitNormal
-    ? THREE.MathUtils.clamp(Math.abs(hitNormal.y), 0.35, 1)
-    : 0.75;
+    ? THREE.MathUtils.clamp(Math.abs(hitNormal.y), 0.55, 1)
+    : 0.85;
+  const canopySpeedMultiplier = THREE.MathUtils.lerp(
+    BALL_LEAF_SPEED_MULTIPLIER,
+    BALL_LEAF_SPEED_MULTIPLIER * 0.82,
+    canopyFactor,
+  );
+
+  velocity.multiplyScalar(canopySpeedMultiplier);
   velocity.y -= BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND * canopyFactor;
 
   LEAF_RESPONSE_DIRECTION.copy(velocity);
@@ -230,7 +235,7 @@ export function applyLeafCanopyResponse(velocity, angularVelocity, hitNormal) {
     LEAF_RESPONSE_DIRECTION.normalize();
     const upwardSpeed = Math.max(velocity.dot(WORLD_UP), 0);
     if (upwardSpeed > 0) {
-      velocity.addScaledVector(WORLD_UP, -Math.min(upwardSpeed, BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND * 0.5));
+      velocity.addScaledVector(WORLD_UP, -Math.min(upwardSpeed, BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND));
     }
   }
 

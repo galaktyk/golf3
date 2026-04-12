@@ -4,6 +4,7 @@ import {
   SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED,
   SHOT_AUDIO_VOLUME,
 } from '/static/js/game/constants.js';
+import { SURFACE_TYPES } from '/static/js/game/surfaceData.js';
 
 const SHOT_AUDIO_PATHS = {
   light: '/assets/audio_clip/shot/shot_light_normal.wav',
@@ -12,6 +13,21 @@ const SHOT_AUDIO_PATHS = {
   strong: '/assets/audio_clip/shot/shot_strong_normal.wav',
   pangya: '/assets/audio_clip/shot/pangya.wav',
   whoosh: '/assets/audio_clip/whoosh/whoosh_foley1.wav',
+};
+
+const SURFACE_HIT_AUDIO_PATHS = {
+  [SURFACE_TYPES.FAIRWAY]: '/assets/audio_clip/hit/ball_fairway.wav',
+  [SURFACE_TYPES.GREEN]: '/assets/audio_clip/hit/ball_green.wav',
+  [SURFACE_TYPES.ROUGH]: '/assets/audio_clip/hit/ball_rough.wav',
+  [SURFACE_TYPES.SAND]: '/assets/audio_clip/hit/ball_sand.wav',
+  [SURFACE_TYPES.WATER]: '/assets/audio_clip/hit/ball_water.wav',
+  [SURFACE_TYPES.WOOD]: '/assets/audio_clip/hit/ball_wood.wav',
+  [SURFACE_TYPES.ROCK]: '/assets/audio_clip/hit/ball_rock.wav',
+  [SURFACE_TYPES.LEAF]: '/assets/audio_clip/hit/ball_leaf.wav',
+  [SURFACE_TYPES.ROAD]: '/assets/audio_clip/hit/ball_road.wav',
+  [SURFACE_TYPES.OB]: '/assets/audio_clip/hit/ball_rock.wav',
+  [SURFACE_TYPES.DEFAULT]: '/assets/audio_clip/hit/ball_rock.wav',
+  ice: '/assets/audio_clip/hit/ball_ice.wav',
 };
 
 const AUDIO_UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'];
@@ -25,6 +41,9 @@ export function createShotImpactAudio() {
     pangya: createClipState(SHOT_AUDIO_PATHS.pangya),
     whoosh: createClipState(SHOT_AUDIO_PATHS.whoosh),
   };
+  const surfaceClips = Object.fromEntries(
+    Object.entries(SURFACE_HIT_AUDIO_PATHS).map(([surfaceType, src]) => [surfaceType, createClipState(src)]),
+  );
 
   const unlockAudio = () => {
     removeUnlockListeners(unlockAudio);
@@ -34,6 +53,9 @@ export function createShotImpactAudio() {
     primeClip(clips.strong.base);
     primeClip(clips.pangya.base);
     primeClip(clips.whoosh.base);
+    for (const clipState of Object.values(surfaceClips)) {
+      primeClip(clipState.base);
+    }
   };
 
   addUnlockListeners(unlockAudio);
@@ -45,13 +67,21 @@ export function createShotImpactAudio() {
       }
 
       const clip = selectClip(clips, impactSpeedMetersPerSecond);
-      playClip(clip);
+      playClip(clip, getLaunchImpactVolume(impactSpeedMetersPerSecond));
     },
     playPangya() {
       playClip(clips.pangya);
     },
     playPractice() {
       playClip(clips.practice);
+    },
+    playSurfaceImpact(surfaceType, impactSpeedMetersPerSecond = null) {
+      const clip = resolveSurfaceImpactClip(surfaceClips, surfaceType);
+      if (!clip) {
+        return;
+      }
+
+      playClip(clip, getSurfaceImpactVolume(impactSpeedMetersPerSecond));
     },
     playWhoosh(clubHeadSpeedMetersPerSecond) {
       const volume = getWhooshVolume(clubHeadSpeedMetersPerSecond);
@@ -94,6 +124,17 @@ function removeUnlockListeners(unlockAudio) {
   for (const eventName of AUDIO_UNLOCK_EVENTS) {
     window.removeEventListener(eventName, unlockAudio);
   }
+}
+
+/**
+ * Resolves the clip used for a surface hit, with a rocky fallback for unknown surfaces.
+ */
+function resolveSurfaceImpactClip(surfaceClips, surfaceType) {
+  if (surfaceType && surfaceClips[surfaceType]) {
+    return surfaceClips[surfaceType];
+  }
+
+  return surfaceClips[SURFACE_TYPES.DEFAULT] ?? null;
 }
 
 function playClip(clipState, volume = clipState.base.volume) {
@@ -142,6 +183,27 @@ function getWhooshVolume(clubHeadSpeedMetersPerSecond) {
   }
 
   return SHOT_AUDIO_VOLUME * Math.min(clubHeadSpeedMetersPerSecond, CLUB_SWING_WHOOSH_MAX_SPEED) / CLUB_SWING_WHOOSH_MAX_SPEED;
+}
+
+/**
+ * Scales launch-strike loudness with ball speed so soft shots no longer sound as rigid as full hits.
+ */
+function getLaunchImpactVolume(impactSpeedMetersPerSecond) {
+  const normalizedImpact = normalizeImpactSpeed(impactSpeedMetersPerSecond, SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED * 1.5);
+  return SHOT_AUDIO_VOLUME * (0.28 + Math.pow(normalizedImpact, 0.7) * 0.72);
+}
+
+function getSurfaceImpactVolume(impactSpeedMetersPerSecond) {
+  const normalizedImpact = normalizeImpactSpeed(impactSpeedMetersPerSecond, SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED);
+  return SHOT_AUDIO_VOLUME * (0.18 + Math.pow(normalizedImpact, 0.9) * 0.82);
+}
+
+function normalizeImpactSpeed(impactSpeedMetersPerSecond, referenceSpeedMetersPerSecond) {
+  if (!Number.isFinite(impactSpeedMetersPerSecond) || impactSpeedMetersPerSecond <= 0) {
+    return 0;
+  }
+
+  return Math.min(impactSpeedMetersPerSecond, referenceSpeedMetersPerSecond) / referenceSpeedMetersPerSecond;
 }
 
 function primeClip(clip) {

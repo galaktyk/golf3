@@ -575,6 +575,13 @@ function animate() {
   updateClubWhooshAudio();
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
+  const surfaceImpactEvents = ballPhysics.consumeSurfaceImpactEvents();
+  for (const surfaceImpactEvent of surfaceImpactEvents) {
+    shotImpactAudio.playSurfaceImpact(
+      surfaceImpactEvent.surfaceType,
+      surfaceImpactEvent.impactSpeedMetersPerSecond,
+    );
+  }
   let ballTelemetry = ballPhysics.getDebugTelemetry();
   const trailTelemetry = ballTelemetry;
 
