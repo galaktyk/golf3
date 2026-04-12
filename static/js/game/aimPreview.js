@@ -27,7 +27,7 @@ const PREVIEW_MIN_LANDING_TRAVEL_METERS = Math.max(BALL_RADIUS * 6, 0.24);
 const PREVIEW_FALLBACK_GROUND_SNAP_DISTANCE = 12;
 const PUTT_PREVIEW_GRID_BASE_ROWS = 10;
 const PUTT_PREVIEW_GRID_MIN_ROWS = 8;
-const PUTT_PREVIEW_GRID_MAX_ROWS = 20;
+const PUTT_PREVIEW_GRID_MAX_ROWS = 48;
 const PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS = 2;
 const PUTT_PREVIEW_GRID_COLUMNS = 9;
 const PUTT_PREVIEW_GRID_SIZE_YARDS = 10;
@@ -46,13 +46,24 @@ const PUTT_PREVIEW_FALLBACK_NORMAL = new THREE.Vector3(0, 1, 0);
 const PUTT_PREVIEW_SUPPORT_SAMPLE = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
-function resolvePuttPreviewRows(aimDistanceMeters) {
+/**
+ * Resolves the putt-grid row count while keeping the same cell depth at all distances.
+ */
+function resolvePuttPreviewLayout(aimDistanceMeters) {
   if (!Number.isFinite(aimDistanceMeters) || aimDistanceMeters <= 0) {
-    return PUTT_PREVIEW_GRID_MIN_ROWS;
+    return {
+      cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
+      rowCount: PUTT_PREVIEW_GRID_MIN_ROWS,
+    };
   }
 
   const aimedRows = Math.ceil(aimDistanceMeters / PUTT_PREVIEW_CELL_DEPTH_METERS) + PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS;
-  return THREE.MathUtils.clamp(aimedRows, PUTT_PREVIEW_GRID_MIN_ROWS, PUTT_PREVIEW_GRID_MAX_ROWS);
+  const rowCount = THREE.MathUtils.clamp(aimedRows, PUTT_PREVIEW_GRID_MIN_ROWS, PUTT_PREVIEW_GRID_MAX_ROWS);
+
+  return {
+    cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
+    rowCount,
+  };
 }
 
 export function predictFirstContactPoint(viewerScene, startPosition, launchData, referenceForward = null) {
@@ -147,7 +158,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
     return null;
   }
 
-  const rowCount = resolvePuttPreviewRows(aimDistanceMeters);
+  const { cellDepthMeters, rowCount } = resolvePuttPreviewLayout(aimDistanceMeters);
 
   const groundSample = sampleCourseSurface(
     viewerScene.courseCollision,
@@ -185,7 +196,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
 
   const vertices = [];
   for (let rowIndex = 0; rowIndex <= rowCount; rowIndex += 1) {
-    const forwardOffset = rowIndex * PUTT_PREVIEW_CELL_DEPTH_METERS;
+    const forwardOffset = rowIndex * cellDepthMeters;
     for (let columnIndex = 0; columnIndex <= PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
         columnIndex - (PUTT_PREVIEW_GRID_COLUMNS * 0.5)
@@ -216,7 +227,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
 
   const cells = [];
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    const forwardOffset = (rowIndex + 0.5) * PUTT_PREVIEW_CELL_DEPTH_METERS;
+    const forwardOffset = (rowIndex + 0.5) * cellDepthMeters;
     for (let columnIndex = 0; columnIndex < PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
         columnIndex - (PUTT_PREVIEW_GRID_COLUMNS * 0.5) + 0.5
@@ -250,7 +261,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
   }
 
   return {
-    cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
+    cellDepthMeters,
     cellWidthMeters: PUTT_PREVIEW_CELL_WIDTH_METERS,
     columns: PUTT_PREVIEW_GRID_COLUMNS,
     vertices,

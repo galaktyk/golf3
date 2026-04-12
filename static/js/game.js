@@ -80,8 +80,8 @@ const shotImpactAudio = createShotImpactAudio();
 const practiceSwingBallColor = new THREE.Color('#31e0ff');
 const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
-const PUTT_AIM_DISTANCE_MIN_METERS = 0.25;
-const PUTT_AIM_DISTANCE_MAX_METERS = 60;
+const AIMING_TARGET_DISTANCE_MIN_METERS = 0.25;
+const AIMING_TARGET_DISTANCE_MAX_METERS = 250;
 const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
 const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
 const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
@@ -1479,8 +1479,8 @@ function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
 function adjustPuttAimDistance(deltaMeters) {
   const nextPuttAimDistanceMeters = THREE.MathUtils.clamp(
     puttAimDistanceMeters + deltaMeters,
-    PUTT_AIM_DISTANCE_MIN_METERS,
-    PUTT_AIM_DISTANCE_MAX_METERS,
+    AIMING_TARGET_DISTANCE_MIN_METERS,
+    AIMING_TARGET_DISTANCE_MAX_METERS,
   );
   if (Math.abs(nextPuttAimDistanceMeters - puttAimDistanceMeters) <= 1e-8) {
     return;
@@ -1534,8 +1534,8 @@ function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
   puttHoleOffset.y = 0;
   setAimingTargetDistanceMeters(THREE.MathUtils.clamp(
     puttHoleOffset.length(),
-    PUTT_AIM_DISTANCE_MIN_METERS,
-    PUTT_AIM_DISTANCE_MAX_METERS,
+    AIMING_TARGET_DISTANCE_MIN_METERS,
+    AIMING_TARGET_DISTANCE_MAX_METERS,
   ));
 }
 
@@ -1545,8 +1545,8 @@ function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
 function setAimingTargetDistanceMeters(distanceMeters) {
   const clampedDistanceMeters = THREE.MathUtils.clamp(
     distanceMeters,
-    PUTT_AIM_DISTANCE_MIN_METERS,
-    PUTT_AIM_DISTANCE_MAX_METERS,
+    AIMING_TARGET_DISTANCE_MIN_METERS,
+    AIMING_TARGET_DISTANCE_MAX_METERS,
   );
   aimingTargetDistanceMeters = clampedDistanceMeters;
   puttAimDistanceMeters = clampedDistanceMeters;
@@ -1559,8 +1559,8 @@ function setAimingTargetDistanceMeters(distanceMeters) {
 function syncPuttAimDistanceToAimingTarget() {
   puttAimDistanceMeters = THREE.MathUtils.clamp(
     aimingTargetDistanceMeters,
-    PUTT_AIM_DISTANCE_MIN_METERS,
-    PUTT_AIM_DISTANCE_MAX_METERS,
+    AIMING_TARGET_DISTANCE_MIN_METERS,
+    AIMING_TARGET_DISTANCE_MAX_METERS,
   );
 }
 
@@ -1585,7 +1585,7 @@ function solveLaunchPreviewHeadSpeedForDistance(targetDistanceMeters, ballPositi
     return aimingPreviewHeadSpeedMetersPerSecond;
   }
 
-  const desiredDistanceMeters = Math.max(targetDistanceMeters, PUTT_AIM_DISTANCE_MIN_METERS);
+  const desiredDistanceMeters = Math.max(targetDistanceMeters, AIMING_TARGET_DISTANCE_MIN_METERS);
   const referenceForward = viewerScene.getCharacterForward(characterForwardForPreview);
   let lowHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND;
   let highHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND;
@@ -1690,8 +1690,8 @@ function resolvePuttAimTargetPoint(ballPosition = ballPhysics.getPosition(), tar
 function getPuttPreviewHeadSpeed(ballPosition = ballPhysics.getPosition()) {
   const aimedDistanceMeters = THREE.MathUtils.clamp(
     puttAimDistanceMeters,
-    PUTT_AIM_DISTANCE_MIN_METERS,
-    PUTT_AIM_DISTANCE_MAX_METERS,
+    AIMING_TARGET_DISTANCE_MIN_METERS,
+    AIMING_TARGET_DISTANCE_MAX_METERS,
   );
   const aimTargetPoint = resolvePuttAimTargetPoint(ballPosition, aimingPreviewTargetProbePoint);
   const heightDeltaMeters = Number.isFinite(ballPosition?.y)
