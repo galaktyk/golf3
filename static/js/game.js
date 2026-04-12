@@ -89,6 +89,7 @@ const PUTT_PREVIEW_UPHILL_SPEED_PER_METER = 1.8;
 const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
 const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
 const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
+const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 5;
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -1573,8 +1574,9 @@ function getPuttPreviewHeadSpeed(ballPosition = ballPhysics.getPosition()) {
   const heightDeltaMeters = Number.isFinite(ballPosition?.y)
     ? aimTargetPoint.y - ballPosition.y
     : 0;
+  const effectiveRollFriction = BALL_ROLLING_RESISTANCE * PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER;
   const stopDistanceBallSpeed = Math.sqrt(
-    Math.max(0, 2 * BALL_ROLLING_RESISTANCE * PUTT_PREVIEW_GRAVITY_ACCELERATION * aimedDistanceMeters),
+    Math.max(0, 2 * effectiveRollFriction * PUTT_PREVIEW_GRAVITY_ACCELERATION * aimedDistanceMeters),
   );
   const uphillSpeedAdjustment = Math.max(heightDeltaMeters, 0) * PUTT_PREVIEW_UPHILL_SPEED_PER_METER;
   const downhillSpeedAdjustment = Math.max(-heightDeltaMeters, 0) * PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER;
