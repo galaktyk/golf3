@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 
-const TRAIL_SAMPLE_LIFETIME_SECONDS = 200.5;
+const TRAIL_SAMPLE_LIFETIME_SECONDS = 10.5;
 const TRAIL_MIN_SAMPLE_DISTANCE = 0.018;
 const TRAIL_MAX_SAMPLE_INTERVAL_SECONDS = 1 / 120;
 const TRAIL_BASE_OPACITY = 0.68;
@@ -162,13 +162,13 @@ function createTailFadeTexture() {
   canvas.height = 1;
 
   const context = canvas.getContext('2d');
-  // const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
-  // gradient.addColorStop(0, 'rgb(0, 0, 0)');
-  // gradient.addColorStop(0.18, 'rgb(20, 20, 20)');
-  // gradient.addColorStop(0.45, 'rgb(115, 115, 115)');
-  // gradient.addColorStop(1, 'rgb(255, 255, 255)');
-  // context.fillStyle = gradient;
-  context.fillStyle = 'rgb(255, 255, 255)';
+  const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+  gradient.addColorStop(0, 'rgb(0, 0, 0)');
+  gradient.addColorStop(0.18, 'rgb(20, 20, 20)');
+  gradient.addColorStop(0.45, 'rgb(115, 115, 115)');
+  gradient.addColorStop(1, 'rgb(255, 255, 255)');
+  context.fillStyle = gradient;
+
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   const texture = new THREE.CanvasTexture(canvas);
