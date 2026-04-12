@@ -3,7 +3,7 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
-
+smooth grid dots
 ---
 
 for those ui with ?debug=true

@@ -31,6 +31,7 @@ import {
   REMOTE_CONTROL_INPUT_SMOOTHING,
   REMOTE_CONTROL_INPUT_SNAP_EPSILON,
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
+  LAUNCH_DEBUG_INPUT_FIELDS,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
@@ -55,16 +56,7 @@ const incomingSwingState = {
   sequence: 0,
   receivedAtTimeMs: 0,
 };
-const DEBUG_PARAMS = new URLSearchParams(window.location.search);
-const DEBUG_UI_ENABLED = DEBUG_PARAMS.get('debug') === 'true';
-console.log(`Debug UI enabled: ${DEBUG_UI_ENABLED}`);
-const LAUNCH_DEBUG_INPUT_FIELDS = [
-  { key: 'ballSpeed', inputKey: 'launchBallSpeedInput' },
-  { key: 'verticalLaunchAngle', inputKey: 'launchVerticalAngleInput' },
-  { key: 'horizontalLaunchAngle', inputKey: 'launchHorizontalAngleInput' },
-  { key: 'spinSpeed', inputKey: 'launchSpinSpeedInput' },
-  { key: 'spinAxis', inputKey: 'launchSpinAxisInput' },
-];
+let DEBUG_UI_ENABLED = false;
 document.body.classList.toggle('viewer-debug-enabled', DEBUG_UI_ENABLED);
 const dom = getViewerDom();
 const viewerScene = createViewerScene(dom.canvas);
@@ -353,7 +345,7 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.code === 'KeyL') {
-    if (!DEBUG_UI_ENABLED || isTextEntryTarget(event.target)) {
+    if (isTextEntryTarget(event.target)) {
       return;
     }
 
@@ -466,6 +458,18 @@ document.addEventListener('pointerlockchange', () => {
 
   endFreeCameraLook();
 });
+
+const debugToggleButton = document.getElementById('viewer-debug-toggle');
+if (debugToggleButton) {
+  debugToggleButton.addEventListener('click', () => {
+    DEBUG_UI_ENABLED = !DEBUG_UI_ENABLED;
+    document.body.classList.toggle('viewer-debug-enabled', DEBUG_UI_ENABLED);
+    hud.updateLaunchPanelVisible(DEBUG_UI_ENABLED);
+    if (DEBUG_UI_ENABLED) {
+      updateLaunchDebugUiState();
+    }
+  });
+}
 
 dom.canvas.addEventListener('contextmenu', (event) => {
   if (!viewerScene.isFreeCameraEnabled()) {
@@ -1404,7 +1408,7 @@ function resolveCursorWarpTarget() {
 function initializeLaunchDebugUi() {
   hud.updateLaunchPanelVisible(DEBUG_UI_ENABLED);
 
-  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+  if (!hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
     return;
   }
 
@@ -1425,7 +1429,7 @@ function initializeLaunchDebugUi() {
  * Mirrors launch data into the LaunchDebug widget so the debug shot can replay the current preview setup.
  */
 function syncLaunchDebugInputs(launchData) {
-  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !launchData) {
+  if (!hasLaunchDebugInputs() || !launchData) {
     return;
   }
 
@@ -1460,7 +1464,7 @@ function resolveHoleWorldPosition(target = holeWorldPosition) {
 }
 
 function launchDebugBallFromInput() {
-  if (!DEBUG_UI_ENABLED || !canLaunchDebugShot()) {
+  if (!canLaunchDebugShot()) {
     updateLaunchDebugUiState();
     return;
   }
@@ -1476,7 +1480,7 @@ function launchDebugBallFromInput() {
 }
 
 function updateLaunchDebugUiState(statusMessage = null) {
-  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
+  if (!hasLaunchDebugInputs() || !dom.launchDebugButton || !dom.launchDebugMessage) {
     return;
   }
 
@@ -1511,7 +1515,7 @@ function canLaunchDebugShot() {
 }
 
 function getLaunchDebugInputState() {
-  if (!DEBUG_UI_ENABLED || !hasLaunchDebugInputs()) {
+  if (!hasLaunchDebugInputs()) {
     return { launchData: null, errorMessage: '' };
   }
 

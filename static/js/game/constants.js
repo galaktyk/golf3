@@ -200,7 +200,13 @@ export const AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS = 1.5;
 export const AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT = 1.2;
 // Vertical tolerance for entering aiming camera mode.
 export const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_DEGREES = 10;
-// Minimum analog magnitude required to trigger aiming camera entry.
+export const LAUNCH_DEBUG_INPUT_FIELDS = [
+  { key: 'ballSpeed', inputKey: 'launchBallSpeedInput' },
+  { key: 'verticalLaunchAngle', inputKey: 'launchVerticalAngleInput' },
+  { key: 'horizontalLaunchAngle', inputKey: 'launchHorizontalAngleInput' },
+  { key: 'spinSpeed', inputKey: 'launchSpinSpeedInput' },
+  { key: 'spinAxis', inputKey: 'launchSpinAxisInput' },
+];// Minimum analog magnitude required to trigger aiming camera entry.
 export const AIMING_CAMERA_ENTRY_MIN_MAGNITUDE = 0.75;
 // Input smoothing factor for remote controls. Higher values smooth more aggressively.
 export const REMOTE_CONTROL_INPUT_SMOOTHING = 18;
