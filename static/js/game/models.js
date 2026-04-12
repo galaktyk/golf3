@@ -610,8 +610,8 @@ function createHoleMarker() {
 }
 
 function createAimingMarker() {
-  const PUTT_GRID_MAX_CELLS = 100;
-  const PUTT_GRID_MAX_LINE_SEGMENTS = 256;
+  const PUTT_GRID_MAX_CELLS = 180;
+  const PUTT_GRID_MAX_LINE_SEGMENTS = 400;
   const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.075;
   const PUTT_GRID_SURFACE_OFFSET_METERS = 0.012;
   const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.32;

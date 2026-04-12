@@ -25,13 +25,16 @@ const PREVIEW_START_POSITION = new THREE.Vector3();
 const PREVIEW_CLEARANCE_HEIGHT_METERS = BALL_RADIUS * 0.35;
 const PREVIEW_MIN_LANDING_TRAVEL_METERS = Math.max(BALL_RADIUS * 6, 0.24);
 const PREVIEW_FALLBACK_GROUND_SNAP_DISTANCE = 12;
-const PUTT_PREVIEW_GRID_ROWS = 10;
+const PUTT_PREVIEW_GRID_BASE_ROWS = 10;
+const PUTT_PREVIEW_GRID_MIN_ROWS = 8;
+const PUTT_PREVIEW_GRID_MAX_ROWS = 20;
+const PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS = 2;
 const PUTT_PREVIEW_GRID_COLUMNS = 9;
 const PUTT_PREVIEW_GRID_SIZE_YARDS = 10;
 const PUTT_PREVIEW_YARDS_TO_METERS = 0.9144;
 const PUTT_PREVIEW_GRID_DEPTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
 const PUTT_PREVIEW_GRID_WIDTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
-const PUTT_PREVIEW_CELL_DEPTH_METERS = PUTT_PREVIEW_GRID_DEPTH_METERS / PUTT_PREVIEW_GRID_ROWS;
+const PUTT_PREVIEW_CELL_DEPTH_METERS = PUTT_PREVIEW_GRID_DEPTH_METERS / PUTT_PREVIEW_GRID_BASE_ROWS;
 const PUTT_PREVIEW_CELL_WIDTH_METERS = PUTT_PREVIEW_GRID_WIDTH_METERS / PUTT_PREVIEW_GRID_COLUMNS;
 const PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE = 3;
 const PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE = 18;
@@ -42,6 +45,15 @@ const PUTT_PREVIEW_VERTEX_SAMPLE_POINT = new THREE.Vector3();
 const PUTT_PREVIEW_FALLBACK_NORMAL = new THREE.Vector3(0, 1, 0);
 const PUTT_PREVIEW_SUPPORT_SAMPLE = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+function resolvePuttPreviewRows(aimDistanceMeters) {
+  if (!Number.isFinite(aimDistanceMeters) || aimDistanceMeters <= 0) {
+    return PUTT_PREVIEW_GRID_MIN_ROWS;
+  }
+
+  const aimedRows = Math.ceil(aimDistanceMeters / PUTT_PREVIEW_CELL_DEPTH_METERS) + PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS;
+  return THREE.MathUtils.clamp(aimedRows, PUTT_PREVIEW_GRID_MIN_ROWS, PUTT_PREVIEW_GRID_MAX_ROWS);
+}
 
 export function predictFirstContactPoint(viewerScene, startPosition, launchData, referenceForward = null) {
   if (!viewerScene?.courseCollision?.root || !startPosition || !launchData) {
@@ -128,12 +140,14 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
 }
 
 /**
- * Samples a 10x10 yard slope grid in front of the ball for putt aiming.
+ * Samples a variable-depth slope grid in front of the ball for putt aiming.
  */
-export function buildPuttGridPreview(viewerScene, ballPosition, referenceForward = null) {
+export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeters = 0, referenceForward = null) {
   if (!viewerScene?.courseCollision?.root || !ballPosition) {
     return null;
   }
+
+  const rowCount = resolvePuttPreviewRows(aimDistanceMeters);
 
   const groundSample = sampleCourseSurface(
     viewerScene.courseCollision,
@@ -170,7 +184,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, referenceForward
   }
 
   const vertices = [];
-  for (let rowIndex = 0; rowIndex <= PUTT_PREVIEW_GRID_ROWS; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex <= rowCount; rowIndex += 1) {
     const forwardOffset = rowIndex * PUTT_PREVIEW_CELL_DEPTH_METERS;
     for (let columnIndex = 0; columnIndex <= PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
@@ -201,7 +215,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, referenceForward
   }
 
   const cells = [];
-  for (let rowIndex = 0; rowIndex < PUTT_PREVIEW_GRID_ROWS; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
     const forwardOffset = (rowIndex + 0.5) * PUTT_PREVIEW_CELL_DEPTH_METERS;
     for (let columnIndex = 0; columnIndex < PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
@@ -241,7 +255,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, referenceForward
     columns: PUTT_PREVIEW_GRID_COLUMNS,
     vertices,
     forward: PUTT_PREVIEW_FORWARD.clone(),
-    rows: PUTT_PREVIEW_GRID_ROWS,
+    rows: rowCount,
     cells,
   };
 }

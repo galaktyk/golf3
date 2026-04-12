@@ -89,7 +89,7 @@ const PUTT_PREVIEW_UPHILL_SPEED_PER_METER = 1.8;
 const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
 const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
 const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
-const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 5;
+const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 6;
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -122,6 +122,7 @@ let hasFreeCameraFallbackPointerPosition = false;
 let lastFreeCameraPointerClientX = 0;
 let lastFreeCameraPointerClientY = 0;
 let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
+let aimingTargetDistanceMeters = 5;
 let puttAimDistanceMeters = 5;
 let characterRotationHoldSeconds = 0;
 let characterRotationDirection = 0;
@@ -1428,9 +1429,15 @@ function setActiveClub(nextClub) {
     return;
   }
 
+  if (aimingPreview.hasTargetPoint) {
+    setAimingTargetDistanceMeters(aimingPreview.carryDistanceMeters);
+  }
+
   activeClub = nextClub;
   if (!usesLaunchAimingPreview()) {
-    syncPuttAimDistanceToHole();
+    syncPuttAimDistanceToAimingTarget();
+  } else {
+    syncLaunchPreviewHeadSpeedToAimingTarget();
   }
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
   syncSwingPreviewTarget();
@@ -1476,7 +1483,7 @@ function adjustPuttAimDistance(deltaMeters) {
     return;
   }
 
-  puttAimDistanceMeters = nextPuttAimDistanceMeters;
+  setAimingTargetDistanceMeters(nextPuttAimDistanceMeters);
   syncSwingPreviewTarget();
   invalidateAimingPreview();
   hud.setStatus(
@@ -1522,10 +1529,104 @@ function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
 
   puttHoleOffset.subVectors(COURSE_HOLE_POSITION, ballPosition);
   puttHoleOffset.y = 0;
-  puttAimDistanceMeters = THREE.MathUtils.clamp(
+  setAimingTargetDistanceMeters(THREE.MathUtils.clamp(
     puttHoleOffset.length(),
     PUTT_AIM_DISTANCE_MIN_METERS,
     PUTT_AIM_DISTANCE_MAX_METERS,
+  ));
+}
+
+/**
+ * Stores the shared gameplay aiming distance so putter and launch clubs can preserve the same target point.
+ */
+function setAimingTargetDistanceMeters(distanceMeters) {
+  const clampedDistanceMeters = THREE.MathUtils.clamp(
+    distanceMeters,
+    PUTT_AIM_DISTANCE_MIN_METERS,
+    PUTT_AIM_DISTANCE_MAX_METERS,
+  );
+  aimingTargetDistanceMeters = clampedDistanceMeters;
+  puttAimDistanceMeters = clampedDistanceMeters;
+  return clampedDistanceMeters;
+}
+
+/**
+ * Copies the shared target distance into putter mode so switching clubs keeps the same target point.
+ */
+function syncPuttAimDistanceToAimingTarget() {
+  puttAimDistanceMeters = THREE.MathUtils.clamp(
+    aimingTargetDistanceMeters,
+    PUTT_AIM_DISTANCE_MIN_METERS,
+    PUTT_AIM_DISTANCE_MAX_METERS,
+  );
+}
+
+/**
+ * Solves the neutral launch preview head speed that lands closest to the shared gameplay target distance.
+ */
+function syncLaunchPreviewHeadSpeedToAimingTarget(ballPosition = ballPhysics.getPosition()) {
+  const solvedHeadSpeedMetersPerSecond = solveLaunchPreviewHeadSpeedForDistance(
+    aimingTargetDistanceMeters,
+    ballPosition,
+  );
+  if (Number.isFinite(solvedHeadSpeedMetersPerSecond)) {
+    aimingPreviewHeadSpeedMetersPerSecond = solvedHeadSpeedMetersPerSecond;
+  }
+}
+
+/**
+ * Uses a binary search over the neutral launch preview so club switches preserve a consistent target distance.
+ */
+function solveLaunchPreviewHeadSpeedForDistance(targetDistanceMeters, ballPosition = ballPhysics.getPosition()) {
+  if (!ballPosition || !viewerScene.courseCollision?.root) {
+    return aimingPreviewHeadSpeedMetersPerSecond;
+  }
+
+  const desiredDistanceMeters = Math.max(targetDistanceMeters, PUTT_AIM_DISTANCE_MIN_METERS);
+  const referenceForward = viewerScene.getCharacterForward(characterForwardForPreview);
+  let lowHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND;
+  let highHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND;
+  let bestHeadSpeedMetersPerSecond = aimingPreviewHeadSpeedMetersPerSecond;
+  let bestDistanceErrorMeters = Infinity;
+
+  for (let iteration = 0; iteration < 14; iteration += 1) {
+    const candidateHeadSpeedMetersPerSecond = (lowHeadSpeedMetersPerSecond + highHeadSpeedMetersPerSecond) * 0.5;
+    const launchPreview = getNeutralClubLaunchPreview(candidateHeadSpeedMetersPerSecond, activeClub);
+    if (!launchPreview?.isReady) {
+      lowHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+      continue;
+    }
+
+    const firstContactPreview = predictFirstContactPoint(
+      viewerScene,
+      ballPosition,
+      {
+        ballSpeed: launchPreview.ballSpeed,
+        verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+        horizontalLaunchAngle: 0,
+        spinSpeed: launchPreview.spinSpeed,
+        spinAxis: launchPreview.spinAxis,
+      },
+      referenceForward,
+    );
+    const candidateDistanceMeters = firstContactPreview?.carryDistanceMeters ?? 0;
+    const distanceErrorMeters = Math.abs(candidateDistanceMeters - desiredDistanceMeters);
+    if (distanceErrorMeters < bestDistanceErrorMeters) {
+      bestDistanceErrorMeters = distanceErrorMeters;
+      bestHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+    }
+
+    if (candidateDistanceMeters < desiredDistanceMeters) {
+      lowHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+    } else {
+      highHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+    }
+  }
+
+  return THREE.MathUtils.clamp(
+    bestHeadSpeedMetersPerSecond,
+    AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   );
 }
 
@@ -1635,13 +1736,14 @@ function updateAimingPreviewIfNeeded() {
     const puttGridPreview = buildPuttGridPreview(
       viewerScene,
       ballPhysics.getPosition(),
+      puttAimDistanceMeters,
       puttAimForward,
     );
     aimingPreview.mode = 'putt-grid';
     aimingPreview.puttGrid = puttGridPreview;
     aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttAimDistanceMeters > 0);
     aimingPreview.hasTargetPoint = true;
-    aimingPreview.carryDistanceMeters = puttAimDistanceMeters;
+    aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(puttAimDistanceMeters);
     resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
     aimingPreview.dirty = false;
     return;
@@ -1677,7 +1779,7 @@ function updateAimingPreviewIfNeeded() {
   }
 
   aimingPreviewLandingPoint.copy(firstContactPreview.point);
-  aimingPreview.carryDistanceMeters = firstContactPreview.carryDistanceMeters;
+  aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(firstContactPreview.carryDistanceMeters);
   aimingPreview.isVisible = true;
   aimingPreview.hasTargetPoint = true;
   aimingPreview.dirty = false;
