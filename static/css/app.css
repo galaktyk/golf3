@@ -667,6 +667,16 @@ p {
   overflow: hidden;
 }
 
+@keyframes flash-fill {
+  0% { background: rgba(255, 255, 255, 0.92); box-shadow: 0 0 0 transparent; }
+  50% { background: #ff4b4b; box-shadow: 0 0 12px #ff4b4b; }
+  100% { background: rgba(255, 255, 255, 0.92); box-shadow: 0 0 0 transparent; }
+}
+
+.swing-preview-fill.is-flashing {
+  animation: flash-fill 350ms ease-out forwards;
+}
+
 .swing-preview-fill {
   position: absolute;
   inset: auto 0 0 0;

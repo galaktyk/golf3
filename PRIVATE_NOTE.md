@@ -1,18 +1,3 @@
-https://help.opengolfsim.com/desktop/apis/shot-data/
-
-
-
-
-smooth grid dots
----
-
-for those ui with ?debug=true
-make it show all the time but with a small toggle (bug icon) on the top right 
-
-
-so we could remove the ?debug=true query param and just use the toggle to show/hide debug info
-
----
 
 wind
 
@@ -20,50 +5,13 @@ wind
 
 course collision texture tag
 
-
-
-
-
+---
 change to webrtc with qrcode for signaling
 use qr as set forward
 
 
 
 
-
----
-add new widget for practice swing preview
-
-in the widget will have a vertical bar fill fill detected head speed 
-this bar will calibrated adjust to aiming preview head
-the bar top at 80% is the  aiming preview head speed m/s (show this number on the side of the bar)
-bottom is 0% , top is 120%
-
-so use  flow is like
-1. aim for the spot
-2. check the require head speed for that aiming spot
-3. practice swing and try to fill the bar to the required head speed level
-4. disable practice swing mode and do the real swing with the same head speed as the practice swing as possible
-
-
-any question?
-
-
-
-
-
-
----
-when fill the bar make it animate from bottom and fill up 
-
-
-
-
----
-add spin
-
-
----
 
 
 ---

@@ -306,6 +306,13 @@ export function createViewerHud(dom) {
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
       dom.previewLaunchAngleLabel.textContent = formatDegrees(preview.verticalLaunchAngle);
+
+      if (dom.swingPreviewFill) {
+        dom.swingPreviewFill.classList.remove('is-flashing');
+        // Trigger reflow
+        void dom.swingPreviewFill.offsetWidth;
+        dom.swingPreviewFill.classList.add('is-flashing');
+      }
     },
 
     updateSwingPreviewTarget(targetSpeedMetersPerSecond) {
