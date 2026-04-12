@@ -6,19 +6,84 @@ const AIR_LANCE_SET = {
   name: 'Air Lance Set',
   aliases: ['air_lance', 'air-lance', 'lance'],
   clubs: [
-    createClubDefinition('1W', 10.5, 'wood', 0.96, 0.35, 8, 1.03, 1.50),
-    createClubDefinition('2W', 15, 'wood', 0.94, 0.35, 9, 1.01, 1.48),
-    createClubDefinition('3W', 18, 'wood', 0.92, 0.35, 10, 0.99, 1.46),
-    createClubDefinition('2I', 20, 'iron', 0.8, 0.32, 8, 0.96, 1.40),
-    createClubDefinition('3I', 23, 'iron', 0.8, 0.32, 8, 0.94, 1.39),
-    createClubDefinition('4I', 26, 'iron', 0.8, 0.3, 8, 0.92, 1.38),
-    createClubDefinition('5I', 29, 'iron', 0.8, 0.3, 8, 0.90, 1.37),
-    createClubDefinition('6I', 32, 'iron', 0.82, 0.28, 8, 0.88, 1.36),
-    createClubDefinition('7I', 36, 'iron', 0.85, 0.28, 9, 0.86, 1.35),
-    createClubDefinition('8I', 40, 'iron', 0.84, 0.28, 9, 0.84, 1.33),
-    createClubDefinition('9I', 44, 'iron', 0.8, 0.26, 10, 0.82, 1.31),
-    createClubDefinition('PW', 48, 'wedge', 0.8, 0.24, 11, 0.80, 1.26),
-    createClubDefinition('SW', 56, 'wedge', 0.8, 0.22, 12, 0.78, 1.20),
+    createClubDefinition('1W', 10.5, 'wood', 0.96, 0.35, 8, 1.03, 1.50, {
+      referenceSpinRpm: 2800,
+      referenceSpeedMetersPerSecond: 44,
+      minSpinFraction: 0.18,
+      referenceSpinLoftDegrees: 8,
+    }),
+    createClubDefinition('2W', 15, 'wood', 0.94, 0.35, 9, 1.01, 1.48, {
+      referenceSpinRpm: 3200,
+      referenceSpeedMetersPerSecond: 42,
+      minSpinFraction: 0.2,
+      referenceSpinLoftDegrees: 9,
+    }),
+    createClubDefinition('3W', 18, 'wood', 0.92, 0.35, 10, 0.99, 1.46, {
+      referenceSpinRpm: 3600,
+      referenceSpeedMetersPerSecond: 40,
+      minSpinFraction: 0.22,
+      referenceSpinLoftDegrees: 10,
+    }),
+    createClubDefinition('2I', 20, 'iron', 0.8, 0.32, 8, 0.96, 1.40, {
+      referenceSpinRpm: 4300,
+      referenceSpeedMetersPerSecond: 38,
+      minSpinFraction: 0.22,
+      referenceSpinLoftDegrees: 10,
+    }),
+    createClubDefinition('3I', 23, 'iron', 0.8, 0.32, 8, 0.94, 1.39, {
+      referenceSpinRpm: 4700,
+      referenceSpeedMetersPerSecond: 36,
+      minSpinFraction: 0.23,
+      referenceSpinLoftDegrees: 10,
+    }),
+    createClubDefinition('4I', 26, 'iron', 0.8, 0.3, 8, 0.92, 1.38, {
+      referenceSpinRpm: 5200,
+      referenceSpeedMetersPerSecond: 34,
+      minSpinFraction: 0.24,
+      referenceSpinLoftDegrees: 10.5,
+    }),
+    createClubDefinition('5I', 29, 'iron', 0.8, 0.3, 8, 0.90, 1.37, {
+      referenceSpinRpm: 5600,
+      referenceSpeedMetersPerSecond: 32,
+      minSpinFraction: 0.25,
+      referenceSpinLoftDegrees: 10.5,
+    }),
+    createClubDefinition('6I', 32, 'iron', 0.82, 0.28, 8, 0.88, 1.36, {
+      referenceSpinRpm: 6000,
+      referenceSpeedMetersPerSecond: 30,
+      minSpinFraction: 0.26,
+      referenceSpinLoftDegrees: 11,
+    }),
+    createClubDefinition('7I', 36, 'iron', 0.85, 0.28, 9, 0.86, 1.35, {
+      referenceSpinRpm: 6500,
+      referenceSpeedMetersPerSecond: 29,
+      minSpinFraction: 0.28,
+      referenceSpinLoftDegrees: 11,
+    }),
+    createClubDefinition('8I', 40, 'iron', 0.84, 0.28, 9, 0.84, 1.33, {
+      referenceSpinRpm: 7200,
+      referenceSpeedMetersPerSecond: 28,
+      minSpinFraction: 0.3,
+      referenceSpinLoftDegrees: 11.5,
+    }),
+    createClubDefinition('9I', 44, 'iron', 0.8, 0.26, 10, 0.82, 1.31, {
+      referenceSpinRpm: 7900,
+      referenceSpeedMetersPerSecond: 27,
+      minSpinFraction: 0.32,
+      referenceSpinLoftDegrees: 12,
+    }),
+    createClubDefinition('PW', 48, 'wedge', 0.8, 0.24, 11, 0.80, 1.26, {
+      referenceSpinRpm: 8600,
+      referenceSpeedMetersPerSecond: 25,
+      minSpinFraction: 0.34,
+      referenceSpinLoftDegrees: 12.5,
+    }),
+    createClubDefinition('SW', 56, 'wedge', 0.8, 0.22, 12, 0.78, 1.20, {
+      referenceSpinRpm: 9800,
+      referenceSpeedMetersPerSecond: 22,
+      minSpinFraction: 0.38,
+      referenceSpinLoftDegrees: 14,
+    }),
     createClubDefinition('PT', 3, 'putter', 0.35, 0.15, 3, 0.74, 1.08),
   ],
 };
@@ -42,6 +107,7 @@ function createClubDefinition(
   maxDynamicLoftDeltaDegrees,
   effectiveLengthMeters,
   smashFactor,
+  spinProfile = null,
 ) {
   return {
     id,
@@ -53,6 +119,7 @@ function createClubDefinition(
     maxDynamicLoftDeltaDegrees,
     effectiveLengthMeters,
     smashFactor,
+    spinProfile: spinProfile ? { ...spinProfile } : null,
     aliases: [id.toLowerCase()],
   };
 }

@@ -25,11 +25,10 @@ const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_LAUNCH_DIRECTION = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const CLUB_CATEGORY_SPIN_MULTIPLIERS = {
+const CLUB_CATEGORY_DEFAULT_SPIN_PROFILE = {
   wood: 0.85,
-  iron: 1.15,
-  wedge: 1.25,
-  putter: 0.05,
+  iron: 1,
+  wedge: 1.08,
 };
 
 export function resolveClubBallImpact(
@@ -236,20 +235,98 @@ function getLaunchSpinMetrics(impactSample, activeClub, launchMetrics) {
   const loftDegrees = Number.isFinite(launchMetrics?.dynamicLoftDegrees)
     ? launchMetrics.dynamicLoftDegrees
     : launchMetrics?.baseLoftDegrees ?? BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  const baseLoftDegrees = Number.isFinite(launchMetrics?.baseLoftDegrees)
+    ? launchMetrics.baseLoftDegrees
+    : loftDegrees;
   const verticalLaunchAngleDegrees = Number.isFinite(launchMetrics?.verticalLaunchAngle)
     ? launchMetrics.verticalLaunchAngle
     : BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
-  
-  // Remove arbitrary min/max speed clamp so low speed outputs low spin
-  const speedFactor = Math.max(0, impactSample.clubHeadSpeedMetersPerSecond / 42); 
   const spinLoftDegrees = Math.max(loftDegrees - verticalLaunchAngleDegrees, 0);
-  const spinMultiplier = CLUB_CATEGORY_SPIN_MULTIPLIERS[category] ?? 1;
-  const baseSpinRpm = (1000 + (loftDegrees * 100) + (spinLoftDegrees * 130)) * spinMultiplier;
+  const spinProfile = getClubSpinProfile(activeClub, category, baseLoftDegrees);
+  const speedFactor = getSpinSpeedFactor(
+    impactSample.clubHeadSpeedMetersPerSecond,
+    spinProfile.referenceSpeedMetersPerSecond,
+    getImpactMinSpeedMetersPerSecond(activeClub),
+    spinProfile.minSpinFraction,
+  );
+  const spinLoftFactor = THREE.MathUtils.clamp(
+    0.55 + (0.45 * (spinLoftDegrees / spinProfile.referenceSpinLoftDegrees)),
+    0.45,
+    1.25,
+  );
+  const loftRetentionFactor = THREE.MathUtils.clamp(
+    0.8 + (0.2 * (loftDegrees / Math.max(baseLoftDegrees, 1e-6))),
+    0.72,
+    1.08,
+  );
 
   return {
-    spinSpeed: baseSpinRpm * speedFactor,
+    spinSpeed: spinProfile.referenceSpinRpm * speedFactor * spinLoftFactor * loftRetentionFactor,
     spinAxis: THREE.MathUtils.clamp(-(launchMetrics?.horizontalLaunchAngle ?? 0) * 0.55, -18, 18),
   };
+}
+
+/**
+ * Resolves the per-club spin baseline used for centered impacts at a representative speed.
+ */
+function getClubSpinProfile(activeClub, category, baseLoftDegrees) {
+  const defaultReferenceSpeedMetersPerSecond = category === 'wood'
+    ? 40
+    : category === 'wedge'
+      ? 24
+      : 32;
+  const defaultReferenceSpinRpm = Math.max(
+    1800,
+    (900 + (baseLoftDegrees * 120)) * (CLUB_CATEGORY_DEFAULT_SPIN_PROFILE[category] ?? 1),
+  );
+
+  return {
+    referenceSpinRpm: Number.isFinite(activeClub?.spinProfile?.referenceSpinRpm)
+      ? activeClub.spinProfile.referenceSpinRpm
+      : defaultReferenceSpinRpm,
+    referenceSpeedMetersPerSecond: Number.isFinite(activeClub?.spinProfile?.referenceSpeedMetersPerSecond)
+      ? activeClub.spinProfile.referenceSpeedMetersPerSecond
+      : defaultReferenceSpeedMetersPerSecond,
+    minSpinFraction: Number.isFinite(activeClub?.spinProfile?.minSpinFraction)
+      ? activeClub.spinProfile.minSpinFraction
+      : 0.24,
+    referenceSpinLoftDegrees: Number.isFinite(activeClub?.spinProfile?.referenceSpinLoftDegrees)
+      ? activeClub.spinProfile.referenceSpinLoftDegrees
+      : Math.max(4, baseLoftDegrees * 0.3),
+  };
+}
+
+/**
+ * Eases low-speed strikes toward a calibrated minimum spin instead of letting irons collapse unrealistically fast.
+ */
+function getSpinSpeedFactor(
+  clubHeadSpeedMetersPerSecond,
+  referenceSpeedMetersPerSecond,
+  impactMinSpeedMetersPerSecond,
+  minSpinFraction,
+) {
+  if (!Number.isFinite(clubHeadSpeedMetersPerSecond) || clubHeadSpeedMetersPerSecond <= 0) {
+    return 0;
+  }
+
+  const clampedMinSpinFraction = THREE.MathUtils.clamp(minSpinFraction, 0.05, 0.75);
+  const normalizedSpeedProgress = THREE.MathUtils.clamp(
+    (clubHeadSpeedMetersPerSecond - impactMinSpeedMetersPerSecond)
+      / Math.max(referenceSpeedMetersPerSecond - impactMinSpeedMetersPerSecond, 1e-6),
+    0,
+    1,
+  );
+  const easedSpeedProgress = Math.pow(normalizedSpeedProgress, 0.72);
+  const baseSpeedFactor = THREE.MathUtils.lerp(clampedMinSpinFraction, 1, easedSpeedProgress);
+
+  if (clubHeadSpeedMetersPerSecond <= referenceSpeedMetersPerSecond) {
+    return baseSpeedFactor;
+  }
+
+  // Let overspeed strikes add spin, but slower than a straight linear ramp.
+  const overspeedRatio = (clubHeadSpeedMetersPerSecond - referenceSpeedMetersPerSecond)
+    / Math.max(referenceSpeedMetersPerSecond, 1e-6);
+  return baseSpeedFactor * THREE.MathUtils.clamp(1 + (overspeedRatio * 0.55), 1, 1.35);
 }
 
 function getSignedHorizontalAngleDegrees(fromDirection, toDirection) {
