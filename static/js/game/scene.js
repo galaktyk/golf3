@@ -5,6 +5,7 @@ import {
   AIMING_CAMERA_DISTANCE,
   AIMING_CAMERA_FOLLOW_STIFFNESS,
   AIMING_CAMERA_HEIGHT,
+  AIMING_CAMERA_LOCAL_UP_OFFSET,
   BALL_START_POSITION,
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
@@ -557,6 +558,14 @@ export function createViewerScene(canvas) {
 
         aimingCameraFocusPoint.copy(aimingPreviewState.point);
         composeAimingCameraPose(aimingCameraFocusPoint, desiredCameraTarget);
+        
+        aimingCameraLookAtMatrix.lookAt(desiredCameraPosition, desiredCameraTarget, WORLD_UP);
+        const localUp = new THREE.Vector3().setFromMatrixColumn(aimingCameraLookAtMatrix, 1);
+        
+        // Translate both camera and its target along local Y, so the view rises without looking down at the ball
+        desiredCameraPosition.addScaledVector(localUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
+        desiredCameraTarget.addScaledVector(localUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
+
         const aimingFollowAlpha = aimingCameraNeedsSnap
           ? 1
           : 1 - Math.exp(-AIMING_CAMERA_FOLLOW_STIFFNESS * deltaSeconds);

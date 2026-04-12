@@ -219,6 +219,8 @@ export const REMOTE_CONTROL_INPUT_SNAP_EPSILON = 0.0015;
 export const AIMING_CAMERA_DISTANCE = 9;
 // Camera height while in aiming mode.
 export const AIMING_CAMERA_HEIGHT = 7;
+// Camera local Y (up) offset while in aiming mode.
+export const AIMING_CAMERA_LOCAL_UP_OFFSET = 2;
 // Follow stiffness in aiming mode. Higher values feel tighter and more immediate.
 export const AIMING_CAMERA_FOLLOW_STIFFNESS = 50;
 // Distance reference used when scaling aiming rotation behavior.
