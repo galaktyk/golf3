@@ -9,7 +9,6 @@ import {
 import {
   buildLaunchAngularVelocity,
   buildLaunchVelocity,
-  applyLeafCanopyResponse,
   integrateAirborneState,
 } from '/static/js/game/ballFlightModel.js';
 import { findGroundSupport, sampleCourseSurface, sweepSphereBVH } from '/static/js/game/collision.js';
@@ -53,7 +52,7 @@ const PREVIEW_CUP_PLANE_NORMAL = new THREE.Vector3();
 const PREVIEW_CUP_SURFACE_POINT = new THREE.Vector3();
 const PREVIEW_CUP_RING_SAMPLE_POINT = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
-const PREVIEW_LEAF_PASS_THROUGH_DIRECTION = new THREE.Vector3();
+const PREVIEW_IGNORED_SURFACE_TYPES = [SURFACE_TYPES.LEAF];
 
 // Avoid dropping the preview to the hole bottom 
 const PREVIEW_CUP_EXCLUSION_RADIUS_METERS = 0.25;
@@ -84,6 +83,7 @@ function estimatePreviewCupSurface(courseCollision, holePosition) {
       PREVIEW_CUP_RING_SAMPLE_POINT,
       PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
       PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
+      { ignoredSurfaceTypes: PREVIEW_IGNORED_SURFACE_TYPES },
     );
     if (!surfaceSample) {
       continue;
@@ -136,7 +136,13 @@ function projectPreviewSampleOntoCupSurface(point, cupSurface, target) {
  * Samples preview ground and suppresses cup-bottom hits near the hole.
  */
 function samplePreviewSurface(courseCollision, point, maxUpDistance, maxDownDistance, cupSurface = null) {
-  const surfaceSample = sampleCourseSurface(courseCollision, point, maxUpDistance, maxDownDistance);
+  const surfaceSample = sampleCourseSurface(
+    courseCollision,
+    point,
+    maxUpDistance,
+    maxDownDistance,
+    { ignoredSurfaceTypes: PREVIEW_IGNORED_SURFACE_TYPES },
+  );
   if (!surfaceSample || !cupSurface) {
     return surfaceSample;
   }
@@ -256,27 +262,11 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
     PREVIEW_DISPLACEMENT.copy(PREVIEW_VELOCITY).multiplyScalar(BALL_FIXED_STEP_SECONDS);
 
     const sweep = sweepSphereBVH(viewerScene.courseCollision, PREVIEW_POSITION, PREVIEW_DISPLACEMENT, BALL_RADIUS, {
+      ignoredSurfaceTypes: PREVIEW_IGNORED_SURFACE_TYPES,
       maxIterations: BALL_MAX_COLLISION_ITERATIONS,
       skin: BALL_COLLISION_SKIN,
     });
     PREVIEW_POSITION.copy(sweep.position);
-
-    if (sweep.collided && sweep.surfaceType === SURFACE_TYPES.LEAF) {
-      // Keep previews from treating foliage as a hard landing point.
-      applyLeafCanopyResponse(PREVIEW_VELOCITY, PREVIEW_ANGULAR_VELOCITY, sweep.hitNormal);
-      PREVIEW_LEAF_PASS_THROUGH_DIRECTION.copy(PREVIEW_DISPLACEMENT);
-      if (PREVIEW_LEAF_PASS_THROUGH_DIRECTION.lengthSq() <= 1e-10) {
-        PREVIEW_LEAF_PASS_THROUGH_DIRECTION.copy(PREVIEW_VELOCITY);
-      }
-      if (PREVIEW_LEAF_PASS_THROUGH_DIRECTION.lengthSq() > 1e-10) {
-        PREVIEW_LEAF_PASS_THROUGH_DIRECTION.normalize();
-        PREVIEW_POSITION.addScaledVector(
-          PREVIEW_LEAF_PASS_THROUGH_DIRECTION,
-          Math.max(BALL_RADIUS * 0.5, BALL_COLLISION_SKIN * 6),
-        );
-      }
-      continue;
-    }
 
     const isGroundLikeContact = sweep.collided && sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y;
     if (sweep.collided && !hasClearedLaunch && isGroundLikeContact) {
@@ -321,6 +311,7 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
     PREVIEW_POSITION,
     BALL_RADIUS,
     PREVIEW_FALLBACK_GROUND_SNAP_DISTANCE,
+    { ignoredSurfaceTypes: PREVIEW_IGNORED_SURFACE_TYPES },
   );
   if (!fallbackSupport || fallbackSupport.normal.y < BALL_GROUNDED_NORMAL_MIN_Y) {
     return null;

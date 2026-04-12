@@ -211,16 +211,17 @@ export function resolveSphereOverlapBVH(courseCollision, center, radius, options
   };
 }
 
-export function findGroundSupport(courseCollision, center, radius, maxSnapDistance) {
+export function findGroundSupport(courseCollision, center, radius, maxSnapDistance, options = {}) {
   const root = courseCollision?.root;
   if (!root) {
     return null;
   }
 
+  const ignoredSurfaceTypes = options.ignoredSurfaceTypes ?? null;
   const rayOrigin = center.clone().addScaledVector(WORLD_UP, maxSnapDistance);
   const maxDistance = radius + maxSnapDistance * 2;
   const ray = new THREE.Ray(rayOrigin, WORLD_DOWN);
-  const hit = raycastNode(root, ray, maxDistance, null);
+  const hit = raycastNode(root, ray, maxDistance, null, ignoredSurfaceTypes);
 
   if (!hit) {
     return null;
@@ -243,12 +244,13 @@ export function findGroundSupport(courseCollision, center, radius, maxSnapDistan
 /**
  * Samples the course directly beneath a world-space point by raycasting downward through the BVH.
  */
-export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, maxDownDistance = 20) {
+export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, maxDownDistance = 20, options = {}) {
   const root = courseCollision?.root;
   if (!root || !point) {
     return null;
   }
 
+  const ignoredSurfaceTypes = options.ignoredSurfaceTypes ?? null;
   const upwardDistance = Math.max(maxUpDistance, 0);
   const downwardDistance = Math.max(maxDownDistance, 0);
   const maxDistance = upwardDistance + downwardDistance;
@@ -258,7 +260,7 @@ export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, m
 
   SURFACE_SAMPLE_ORIGIN.copy(point).addScaledVector(WORLD_UP, upwardDistance);
   const ray = new THREE.Ray(SURFACE_SAMPLE_ORIGIN, SURFACE_SAMPLE_DIRECTION);
-  const hit = raycastNode(root, ray, maxDistance, null);
+  const hit = raycastNode(root, ray, maxDistance, null, ignoredSurfaceTypes);
   if (!hit) {
     return null;
   }
@@ -280,16 +282,17 @@ export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, m
 /**
  * Raycasts the course BVH with a world-space ray and returns the nearest surface hit.
  */
-export function raycastCourseSurface(courseCollision, ray, maxDistance = Infinity) {
+export function raycastCourseSurface(courseCollision, ray, maxDistance = Infinity, options = {}) {
   const root = courseCollision?.root;
   if (!root || !ray) {
     return null;
   }
 
+  const ignoredSurfaceTypes = options.ignoredSurfaceTypes ?? null;
   const resolvedMaxDistance = Number.isFinite(maxDistance) && maxDistance > 0
     ? maxDistance
     : Infinity;
-  const hit = raycastNode(root, ray, resolvedMaxDistance, null);
+  const hit = raycastNode(root, ray, resolvedMaxDistance, null, ignoredSurfaceTypes);
   if (!hit) {
     return null;
   }
@@ -724,13 +727,17 @@ function distanceSqToBox(point, bounds) {
   return distanceSq;
 }
 
-function raycastNode(node, ray, maxDistance, bestHit) {
+function raycastNode(node, ray, maxDistance, bestHit, ignoredSurfaceTypes = null) {
   if (!node || !ray.intersectsBox(node.bounds)) {
     return bestHit;
   }
 
   if (node.triangles) {
     for (const triangleRecord of node.triangles) {
+      if (shouldIgnoreSurfaceType(triangleRecord.surfaceType, ignoredSurfaceTypes)) {
+        continue;
+      }
+
       const hitPoint = ray.intersectTriangle(
         triangleRecord.triangle.a,
         triangleRecord.triangle.b,
@@ -775,8 +782,8 @@ function raycastNode(node, ray, maxDistance, bestHit) {
   const firstChild = leftDistance <= rightDistance ? node.left : node.right;
   const secondChild = firstChild === node.left ? node.right : node.left;
 
-  bestHit = raycastNode(firstChild, ray, maxDistance, bestHit);
-  bestHit = raycastNode(secondChild, ray, maxDistance, bestHit);
+  bestHit = raycastNode(firstChild, ray, maxDistance, bestHit, ignoredSurfaceTypes);
+  bestHit = raycastNode(secondChild, ray, maxDistance, bestHit, ignoredSurfaceTypes);
   return bestHit;
 }
 
