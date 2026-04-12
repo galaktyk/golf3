@@ -15,6 +15,7 @@ import {
   AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+  BALL_ROLLING_RESISTANCE,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
   CAMERA_LABEL_UPDATE_INTERVAL_MS,
@@ -27,6 +28,7 @@ import {
   CLUB_SWING_WHOOSH_COOLDOWN_MS,
   CLUB_SWING_WHOOSH_MIN_SPEED,
   CLUB_SWING_WHOOSH_REARM_SPEED,
+  COURSE_HOLE_POSITION,
   FPS_LABEL_UPDATE_INTERVAL_MS,
   HOLE_MARKER_LABEL_DEPTH,
   HOLE_MARKER_LABEL_EDGE_PADDING_PX,
@@ -37,7 +39,7 @@ import {
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
-import { buildPuttGridPreview, predictFinalRestPoint, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
+import { buildPuttGridPreview, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
 import { sampleCourseSurface } from '/static/js/game/collision.js';
@@ -78,6 +80,15 @@ const shotImpactAudio = createShotImpactAudio();
 const practiceSwingBallColor = new THREE.Color('#31e0ff');
 const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
+const PUTT_AIM_DISTANCE_MIN_METERS = 0.25;
+const PUTT_AIM_DISTANCE_MAX_METERS = 60;
+const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
+const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
+const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
+const PUTT_PREVIEW_UPHILL_SPEED_PER_METER = 1.8;
+const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
+const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
+const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -110,6 +121,7 @@ let hasFreeCameraFallbackPointerPosition = false;
 let lastFreeCameraPointerClientX = 0;
 let lastFreeCameraPointerClientY = 0;
 let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
+let puttAimDistanceMeters = 5;
 let characterRotationHoldSeconds = 0;
 let characterRotationDirection = 0;
 let aimingPreviewHeadSpeedHoldSeconds = 0;
@@ -131,6 +143,7 @@ const aimingPreviewLandingPoint = new THREE.Vector3();
 const aimingPreviewTargetProbePoint = new THREE.Vector3();
 const aimingPreviewTargetForward = new THREE.Vector3();
 const characterForwardForPreview = new THREE.Vector3();
+const puttHoleOffset = new THREE.Vector3();
 const aimingPreview = {
   dirty: true,
   isVisible: false,
@@ -143,6 +156,7 @@ const aimingPreview = {
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
 hud.initialize(viewerScene.camera.position, incomingQuaternion);
 hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+syncPuttAimDistanceToHole();
 syncSwingPreviewTarget();
 initializeLaunchDebugUi();
 initializeClubDebugUi();
@@ -538,7 +552,8 @@ function animate() {
     playerState = 'control';
     clubBallContactLatched = true;
     ballTelemetry = ballPhysics.getDebugTelemetry();
-    hud.updateSwingPreviewCapture(null, aimingPreviewHeadSpeedMetersPerSecond);
+    syncPuttAimDistanceToHole(ballTelemetry.position);
+    hud.updateSwingPreviewCapture(null, getCurrentAimingPreviewHeadSpeed(ballTelemetry.position));
     invalidateAimingPreview();
   }
 
@@ -628,7 +643,7 @@ function updateCharacterRotationInput(deltaSeconds) {
 }
 
 /**
- * Converts held up/down input into a smooth preview head-speed change so taps stay precise and holds ramp up.
+ * Converts held up/down input into either a head-speed change or a putt target-distance change.
  * Keyboard input may still enter aim mode directly, while phone joystick input only adjusts after a double-tap toggle.
  */
 function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
@@ -665,7 +680,10 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
     hud.setStatus(getGameplayCameraStatusMessage());
   }
 
-  let adjustmentRate = AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND;
+  const useLaunchPreview = usesLaunchAimingPreview();
+  let adjustmentRate = useLaunchPreview
+    ? AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND
+    : PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND;
   if (isKeyboardInputActive) {
     resetAimingPreviewHeadSpeedAnalogAcceleration();
     if (headSpeedDirection !== aimingPreviewHeadSpeedDirection) {
@@ -675,16 +693,23 @@ function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
       aimingPreviewHeadSpeedHoldSeconds += deltaSeconds;
     }
 
-    adjustmentRate = getAimingPreviewHeadSpeedAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds);
+    adjustmentRate = useLaunchPreview
+      ? getAimingPreviewHeadSpeedAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds)
+      : getPuttAimDistanceAdjustmentRate(aimingPreviewHeadSpeedHoldSeconds);
   } else {
     resetAimingPreviewHeadSpeedAcceleration();
-    adjustmentRate = getAnalogAimingPreviewHeadSpeedAdjustmentRate(
-      headSpeedDirection,
-      deltaSeconds,
-    );
+    adjustmentRate = useLaunchPreview
+      ? getAnalogAimingPreviewHeadSpeedAdjustmentRate(headSpeedDirection, deltaSeconds)
+      : getAnalogPuttAimDistanceAdjustmentRate(headSpeedDirection, deltaSeconds);
   }
 
-  adjustAimingPreviewHeadSpeed(headSpeedDirection * adjustmentRate * deltaSeconds);
+  const previewDelta = headSpeedDirection * adjustmentRate * deltaSeconds;
+  if (useLaunchPreview) {
+    adjustAimingPreviewHeadSpeed(previewDelta);
+    return;
+  }
+
+  adjustPuttAimDistance(previewDelta);
 }
 
 /**
@@ -756,6 +781,20 @@ function getAimingPreviewHeadSpeedAdjustmentRate(holdSeconds) {
 }
 
 /**
+ * Ramps putt target-distance changes from fine nudges into faster sweeps while the input stays held.
+ */
+function getPuttAimDistanceAdjustmentRate(holdSeconds) {
+  const holdAlpha = AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS > 1e-8
+    ? THREE.MathUtils.clamp(holdSeconds / AIMING_PREVIEW_HEAD_SPEED_ADJUST_RAMP_SECONDS, 0, 1)
+    : 1;
+  return THREE.MathUtils.lerp(
+    PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND,
+    holdAlpha,
+  );
+}
+
+/**
  * Applies a dedicated ramp for mobile analog input so small stick holds stay precise while sustained larger pulls can still speed up.
  */
 function getAnalogAimingPreviewHeadSpeedAdjustmentRate(headSpeedDirection, deltaSeconds) {
@@ -785,6 +824,41 @@ function getAnalogAimingPreviewHeadSpeedAdjustmentRate(headSpeedDirection, delta
 
   return THREE.MathUtils.lerp(
     AIMING_PREVIEW_HEAD_SPEED_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    targetRate,
+    rampAlpha,
+  );
+}
+
+/**
+ * Applies the same analog hold behavior to putt target distance so mobile aiming stays consistent across club types.
+ */
+function getAnalogPuttAimDistanceAdjustmentRate(headSpeedDirection, deltaSeconds) {
+  const analogDirection = Math.sign(headSpeedDirection);
+  if (analogDirection !== aimingPreviewHeadSpeedAnalogDirection) {
+    aimingPreviewHeadSpeedAnalogDirection = analogDirection;
+    aimingPreviewHeadSpeedAnalogHoldSeconds = 0;
+  } else {
+    aimingPreviewHeadSpeedAnalogHoldSeconds += deltaSeconds;
+  }
+
+  const targetRate = THREE.MathUtils.lerp(
+    PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND,
+    PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND,
+    getAnalogResponseMagnitude(
+      Math.abs(headSpeedDirection),
+      AIMING_PREVIEW_HEAD_SPEED_ANALOG_RESPONSE_EXPONENT,
+    ),
+  );
+  const rampAlpha = AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS > 1e-8
+    ? THREE.MathUtils.clamp(
+      aimingPreviewHeadSpeedAnalogHoldSeconds / AIMING_PREVIEW_HEAD_SPEED_ANALOG_RAMP_SECONDS,
+      0,
+      1,
+    )
+    : 1;
+
+  return THREE.MathUtils.lerp(
+    PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND,
     targetRate,
     rampAlpha,
   );
@@ -1230,8 +1304,9 @@ function resetShotFlow() {
   lastClubWhooshTimeMs = -Infinity;
   playerState = 'control';
   clubBallContactLatched = true;
+  syncPuttAimDistanceToHole(ballPhysics.getPosition());
   syncSwingPreviewTarget();
-  hud.updateSwingPreviewCapture(null, aimingPreviewHeadSpeedMetersPerSecond);
+  hud.updateSwingPreviewCapture(null, getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition()));
   updateLaunchDebugUiState();
   invalidateAimingPreview();
 }
@@ -1353,6 +1428,9 @@ function setActiveClub(nextClub) {
   }
 
   activeClub = nextClub;
+  if (!usesLaunchAimingPreview()) {
+    syncPuttAimDistanceToHole();
+  }
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
   syncSwingPreviewTarget();
   invalidateAimingPreview();
@@ -1360,6 +1438,9 @@ function setActiveClub(nextClub) {
 
 function invalidateAimingPreview() {
   aimingPreview.dirty = true;
+  if (!usesLaunchAimingPreview()) {
+    syncSwingPreviewTarget();
+  }
 }
 
 /**
@@ -1381,8 +1462,29 @@ function adjustAimingPreviewHeadSpeed(deltaMetersPerSecond) {
   hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
 }
 
+/**
+ * Adjusts the fake putt target distance, then derives the preview swing target from that landing spot.
+ */
+function adjustPuttAimDistance(deltaMeters) {
+  const nextPuttAimDistanceMeters = THREE.MathUtils.clamp(
+    puttAimDistanceMeters + deltaMeters,
+    PUTT_AIM_DISTANCE_MIN_METERS,
+    PUTT_AIM_DISTANCE_MAX_METERS,
+  );
+  if (Math.abs(nextPuttAimDistanceMeters - puttAimDistanceMeters) <= 1e-8) {
+    return;
+  }
+
+  puttAimDistanceMeters = nextPuttAimDistanceMeters;
+  syncSwingPreviewTarget();
+  invalidateAimingPreview();
+  hud.setStatus(
+    `Putt aim: ${formatDistanceYards(puttAimDistanceMeters)} (${formatMetersPerSecond(getCurrentAimingPreviewHeadSpeed())})`,
+  );
+}
+
 function syncSwingPreviewTarget() {
-  hud.updateSwingPreviewTarget(aimingPreviewHeadSpeedMetersPerSecond);
+  hud.updateSwingPreviewTarget(getCurrentAimingPreviewHeadSpeed());
 }
 
 /**
@@ -1394,7 +1496,100 @@ function updateSwingPreviewCaptureFromImpact(impact) {
     : impact?.impactSpeedMetersPerSecond;
   hud.updateSwingPreviewCapture(
     capturedHeadSpeedMetersPerSecond,
-    aimingPreviewHeadSpeedMetersPerSecond,
+    getCurrentAimingPreviewHeadSpeed(),
+  );
+}
+
+/**
+ * Returns the preview head-speed target, deriving it from the fake putt landing distance when a putter is active.
+ */
+function getCurrentAimingPreviewHeadSpeed(ballPosition = ballPhysics.getPosition()) {
+  if (usesLaunchAimingPreview()) {
+    return aimingPreviewHeadSpeedMetersPerSecond;
+  }
+
+  return getPuttPreviewHeadSpeed(ballPosition);
+}
+
+/**
+ * Resets the putt target distance to the current horizontal hole distance so putter mode starts from a sensible default.
+ */
+function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
+  if (!ballPosition) {
+    return;
+  }
+
+  puttHoleOffset.subVectors(COURSE_HOLE_POSITION, ballPosition);
+  puttHoleOffset.y = 0;
+  puttAimDistanceMeters = THREE.MathUtils.clamp(
+    puttHoleOffset.length(),
+    PUTT_AIM_DISTANCE_MIN_METERS,
+    PUTT_AIM_DISTANCE_MAX_METERS,
+  );
+}
+
+/**
+ * Resolves the current fake putt target point by moving along the aim direction and snapping that target to the green.
+ */
+function resolvePuttAimTargetPoint(ballPosition = ballPhysics.getPosition(), target = aimingPreviewTargetProbePoint) {
+  if (!ballPosition) {
+    return target.set(0, 0, 0);
+  }
+
+  aimingPreviewTargetForward.copy(viewerScene.getCharacterForward(characterForwardForPreview));
+  if (aimingPreviewTargetForward.lengthSq() <= 1e-8) {
+    aimingPreviewTargetForward.set(0, 0, -1);
+  } else {
+    aimingPreviewTargetForward.normalize();
+  }
+
+  target.copy(ballPosition)
+    .addScaledVector(aimingPreviewTargetForward, puttAimDistanceMeters);
+
+  if (!viewerScene.courseCollision?.root) {
+    return target;
+  }
+
+  const surfaceSample = sampleCourseSurface(
+    viewerScene.courseCollision,
+    target,
+    3,
+    18,
+  );
+
+  return target.copy(surfaceSample?.point ?? target);
+}
+
+/**
+ * Converts the fake putt landing distance into a preview head speed using the current aimed target height.
+ */
+function getPuttPreviewHeadSpeed(ballPosition = ballPhysics.getPosition()) {
+  const aimedDistanceMeters = THREE.MathUtils.clamp(
+    puttAimDistanceMeters,
+    PUTT_AIM_DISTANCE_MIN_METERS,
+    PUTT_AIM_DISTANCE_MAX_METERS,
+  );
+  const aimTargetPoint = resolvePuttAimTargetPoint(ballPosition, aimingPreviewTargetProbePoint);
+  const heightDeltaMeters = Number.isFinite(ballPosition?.y)
+    ? aimTargetPoint.y - ballPosition.y
+    : 0;
+  const stopDistanceBallSpeed = Math.sqrt(
+    Math.max(0, 2 * BALL_ROLLING_RESISTANCE * PUTT_PREVIEW_GRAVITY_ACCELERATION * aimedDistanceMeters),
+  );
+  const uphillSpeedAdjustment = Math.max(heightDeltaMeters, 0) * PUTT_PREVIEW_UPHILL_SPEED_PER_METER;
+  const downhillSpeedAdjustment = Math.max(-heightDeltaMeters, 0) * PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER;
+  const targetBallSpeedMetersPerSecond = Math.max(
+    PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND,
+    stopDistanceBallSpeed + uphillSpeedAdjustment - downhillSpeedAdjustment + PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND,
+  );
+  const smashFactor = Number.isFinite(activeClub?.smashFactor)
+    ? Math.max(activeClub.smashFactor, 1e-6)
+    : 1;
+
+  return THREE.MathUtils.clamp(
+    targetBallSpeedMetersPerSecond / smashFactor,
+    AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+    AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   );
 }
 
@@ -1418,8 +1613,9 @@ function updateAimingPreviewIfNeeded() {
 
   if (!usesLaunchAimingPreview()) {
     const puttAimForward = viewerScene.getCharacterForward(characterForwardForPreview);
+    const puttPreviewHeadSpeedMetersPerSecond = getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition());
     const launchPreview = getNeutralClubLaunchPreview(
-      aimingPreviewHeadSpeedMetersPerSecond,
+      puttPreviewHeadSpeedMetersPerSecond,
       activeClub,
     );
     if (!launchPreview?.isReady) {
@@ -1434,48 +1630,23 @@ function updateAimingPreviewIfNeeded() {
       spinAxis: launchPreview.spinAxis,
     };
     syncLaunchDebugInputs(aimingPreviewLaunchData);
-
     const puttGridPreview = buildPuttGridPreview(
       viewerScene,
       ballPhysics.getPosition(),
       puttAimForward,
     );
-    const puttFinalPointPreview = predictFinalRestPoint(
-      viewerScene,
-      ballPhysics.getPosition(),
-      aimingPreviewLaunchData,
-      puttAimForward,
-    );
     aimingPreview.mode = 'putt-grid';
     aimingPreview.puttGrid = puttGridPreview;
-    aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttFinalPointPreview);
-    aimingPreview.hasTargetPoint = Boolean(puttFinalPointPreview);
-    if (puttFinalPointPreview) {
-      aimingPreview.carryDistanceMeters = puttFinalPointPreview.carryDistanceMeters;
-
-      aimingPreviewTargetForward.copy(puttAimForward);
-      if (aimingPreviewTargetForward.lengthSq() <= 1e-8) {
-        aimingPreviewTargetForward.set(0, 0, -1);
-      } else {
-        aimingPreviewTargetForward.normalize();
-      }
-
-      aimingPreviewTargetProbePoint.copy(ballPhysics.getPosition())
-        .addScaledVector(aimingPreviewTargetForward, puttFinalPointPreview.carryDistanceMeters);
-      const fakeTargetSurface = sampleCourseSurface(
-        viewerScene.courseCollision,
-        aimingPreviewTargetProbePoint,
-        3,
-        18,
-      );
-      aimingPreviewLandingPoint.copy(fakeTargetSurface?.point ?? aimingPreviewTargetProbePoint);
-    }
+    aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttAimDistanceMeters > 0);
+    aimingPreview.hasTargetPoint = true;
+    aimingPreview.carryDistanceMeters = puttAimDistanceMeters;
+    resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
     aimingPreview.dirty = false;
     return;
   }
 
   const launchPreview = getNeutralClubLaunchPreview(
-    aimingPreviewHeadSpeedMetersPerSecond,
+    getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition()),
     activeClub,
   );
   if (!launchPreview?.isReady) {
