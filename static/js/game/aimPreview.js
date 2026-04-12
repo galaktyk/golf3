@@ -9,9 +9,11 @@ import {
 import {
   buildLaunchAngularVelocity,
   buildLaunchVelocity,
+  applyLeafCanopyResponse,
   integrateAirborneState,
 } from '/static/js/game/ballFlightModel.js';
 import { findGroundSupport, sampleCourseSurface, sweepSphereBVH } from '/static/js/game/collision.js';
+import { SURFACE_TYPES } from '/static/js/game/surfaceData.js';
 
 const PREVIEW_MAX_SIMULATION_SECONDS = 22;
 const PREVIEW_MAX_STEPS = Math.ceil(PREVIEW_MAX_SIMULATION_SECONDS / BALL_FIXED_STEP_SECONDS);
@@ -51,6 +53,7 @@ const PREVIEW_CUP_PLANE_NORMAL = new THREE.Vector3();
 const PREVIEW_CUP_SURFACE_POINT = new THREE.Vector3();
 const PREVIEW_CUP_RING_SAMPLE_POINT = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const PREVIEW_LEAF_PASS_THROUGH_DIRECTION = new THREE.Vector3();
 
 // Avoid dropping the preview to the hole bottom 
 const PREVIEW_CUP_EXCLUSION_RADIUS_METERS = 0.25;
@@ -257,6 +260,23 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
       skin: BALL_COLLISION_SKIN,
     });
     PREVIEW_POSITION.copy(sweep.position);
+
+    if (sweep.collided && sweep.surfaceType === SURFACE_TYPES.LEAF) {
+      // Keep previews from treating foliage as a hard landing point.
+      applyLeafCanopyResponse(PREVIEW_VELOCITY, PREVIEW_ANGULAR_VELOCITY, sweep.hitNormal);
+      PREVIEW_LEAF_PASS_THROUGH_DIRECTION.copy(PREVIEW_DISPLACEMENT);
+      if (PREVIEW_LEAF_PASS_THROUGH_DIRECTION.lengthSq() <= 1e-10) {
+        PREVIEW_LEAF_PASS_THROUGH_DIRECTION.copy(PREVIEW_VELOCITY);
+      }
+      if (PREVIEW_LEAF_PASS_THROUGH_DIRECTION.lengthSq() > 1e-10) {
+        PREVIEW_LEAF_PASS_THROUGH_DIRECTION.normalize();
+        PREVIEW_POSITION.addScaledVector(
+          PREVIEW_LEAF_PASS_THROUGH_DIRECTION,
+          Math.max(BALL_RADIUS * 0.5, BALL_COLLISION_SKIN * 6),
+        );
+      }
+      continue;
+    }
 
     const isGroundLikeContact = sweep.collided && sweep.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y;
     if (sweep.collided && !hasClearedLaunch && isGroundLikeContact) {

@@ -2,8 +2,7 @@
 wind
 
 ---
-
-course collision texture tag
+leaf transparent check
 
 ---
 change to webrtc with qrcode for signaling

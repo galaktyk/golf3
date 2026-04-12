@@ -24,9 +24,11 @@ import { getSurfaceProperties } from '/static/js/game/surfacePhysics.js';
 import {
   buildLaunchAngularVelocity,
   buildLaunchVelocity,
+  applyLeafCanopyResponse,
   getSpinRpm,
   integrateAirborneState,
 } from '/static/js/game/ballFlightModel.js';
+import { SURFACE_TYPES } from '/static/js/game/surfaceData.js';
 import { findGroundSupport, resolveSphereOverlapBVH, sweepSphereBVH } from '/static/js/game/collision.js';
 
 const DEBUG_PARAMS = new URLSearchParams(window.location.search);
@@ -48,6 +50,7 @@ const ANGULAR_STEP_AXIS = new THREE.Vector3();
 const ANGULAR_NORMAL_COMPONENT = new THREE.Vector3();
 const TANGENT_VELOCITY = new THREE.Vector3();
 const TELEPORT_SURFACE_NORMAL = new THREE.Vector3(0, 1, 0);
+const LEAF_PASS_THROUGH_DIRECTION = new THREE.Vector3();
 
 function createGroundTransitionDebug() {
   return {
@@ -148,11 +151,13 @@ export function createBallPhysics(viewerScene) {
   const stepAir = (deltaSeconds) => {
     integrateAirborneState(velocity, angularVelocity, deltaSeconds);
     let remainingFraction = 1;
+    let ignoreLeafForStep = false;
 
     for (let impactIndex = 0; impactIndex < 3 && remainingFraction > 1e-4; impactIndex += 1) {
       DISPLACEMENT.copy(velocity).multiplyScalar(deltaSeconds * remainingFraction);
 
       const sweep = sweepSphereBVH(viewerScene.courseCollision, position, DISPLACEMENT, BALL_RADIUS, {
+        ignoredSurfaceTypes: ignoreLeafForStep ? [SURFACE_TYPES.LEAF] : undefined,
         maxIterations: BALL_MAX_COLLISION_ITERATIONS,
         skin: BALL_COLLISION_SKIN,
       });
@@ -163,6 +168,28 @@ export function createBallPhysics(viewerScene) {
         movementState = 'air';
         integrateOrientationFromAngularVelocity(orientation, angularVelocity, deltaSeconds);
         return;
+      }
+
+      if (sweep.surfaceType === SURFACE_TYPES.LEAF) {
+        // Let canopy hits sap speed and bend the shot down instead of behaving like a rigid wall.
+        applyLeafCanopyResponse(velocity, angularVelocity, sweep.hitNormal);
+        remainingFraction *= Math.max(1 - sweep.travelFraction, 0);
+        ignoreLeafForStep = true;
+
+        LEAF_PASS_THROUGH_DIRECTION.copy(DISPLACEMENT);
+        if (LEAF_PASS_THROUGH_DIRECTION.lengthSq() <= 1e-10) {
+          LEAF_PASS_THROUGH_DIRECTION.copy(velocity);
+        }
+        if (LEAF_PASS_THROUGH_DIRECTION.lengthSq() > 1e-10) {
+          LEAF_PASS_THROUGH_DIRECTION.normalize();
+          position.addScaledVector(
+            LEAF_PASS_THROUGH_DIRECTION,
+            Math.max(BALL_RADIUS * 0.5, BALL_COLLISION_SKIN * 6),
+          );
+        }
+
+        movementState = 'air';
+        continue;
       }
 
       const preImpactSpeedMetersPerSecond = velocity.length();

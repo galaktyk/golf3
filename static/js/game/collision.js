@@ -100,6 +100,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
   const root = courseCollision?.root;
   const skin = options.skin ?? 0.001;
   const maxIterations = options.maxIterations ?? 4;
+  const ignoredSurfaceTypes = options.ignoredSurfaceTypes ?? null;
 
   if (!root) {
     nextPosition.add(displacement);
@@ -112,7 +113,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
     };
   }
 
-  resolveSpherePenetration(root, nextPosition, radius, skin, maxIterations);
+  resolveSpherePenetration(root, nextPosition, radius, skin, maxIterations, ignoredSurfaceTypes);
 
   if (displacement.lengthSq() === 0) {
     return {
@@ -127,7 +128,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
   const sweepRadius = radius + skin;
   const sweepEnd = nextPosition.clone().add(displacement);
   const sweptBounds = new THREE.Box3().setFromPoints([nextPosition, sweepEnd]).expandByScalar(sweepRadius);
-  const hit = sweepSphereNode(root, nextPosition, displacement, sweepRadius, sweptBounds, null);
+  const hit = sweepSphereNode(root, nextPosition, displacement, sweepRadius, sweptBounds, null, ignoredSurfaceTypes);
 
   if (!hit) {
     nextPosition.copy(sweepEnd);
@@ -327,7 +328,7 @@ function longestAxisIndex(vector) {
   return 2;
 }
 
-function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
+function resolveSpherePenetration(root, center, radius, skin, maxIterations, ignoredSurfaceTypes = null) {
   const hitNormal = new THREE.Vector3();
   let collided = false;
   let lastSurfaceType = null;
@@ -338,7 +339,7 @@ function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
       normal: null,
       point: null,
       surfaceType: null,
-    });
+    }, ignoredSurfaceTypes);
 
     if (!nearestHit || nearestHit.point === null) {
       break;
@@ -375,13 +376,17 @@ function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
   return { collided: true, hitNormal, surfaceType: lastSurfaceType };
 }
 
-function sweepSphereNode(node, start, displacement, radius, sweptBounds, bestHit) {
+function sweepSphereNode(node, start, displacement, radius, sweptBounds, bestHit, ignoredSurfaceTypes = null) {
   if (!node || !node.bounds.intersectsBox(sweptBounds)) {
     return bestHit;
   }
 
   if (node.triangles) {
     for (const triangleRecord of node.triangles) {
+      if (shouldIgnoreSurfaceType(triangleRecord.surfaceType, ignoredSurfaceTypes)) {
+        continue;
+      }
+
       if (!triangleRecord.bounds.intersectsBox(sweptBounds)) {
         continue;
       }
@@ -402,8 +407,8 @@ function sweepSphereNode(node, start, displacement, radius, sweptBounds, bestHit
   const firstChild = leftDistanceSq <= rightDistanceSq ? node.left : node.right;
   const secondChild = firstChild === node.left ? node.right : node.left;
 
-  bestHit = sweepSphereNode(firstChild, start, displacement, radius, sweptBounds, bestHit);
-  bestHit = sweepSphereNode(secondChild, start, displacement, radius, sweptBounds, bestHit);
+  bestHit = sweepSphereNode(firstChild, start, displacement, radius, sweptBounds, bestHit, ignoredSurfaceTypes);
+  bestHit = sweepSphereNode(secondChild, start, displacement, radius, sweptBounds, bestHit, ignoredSurfaceTypes);
   return bestHit;
 }
 
@@ -589,7 +594,7 @@ function orientNormalAgainstMotion(normal, motion) {
   return orientedNormal;
 }
 
-function findNearestTrianglePoint(node, point, maxDistance, bestHit) {
+function findNearestTrianglePoint(node, point, maxDistance, bestHit, ignoredSurfaceTypes = null) {
   if (!node) {
     return bestHit;
   }
@@ -602,6 +607,10 @@ function findNearestTrianglePoint(node, point, maxDistance, bestHit) {
 
   if (node.triangles) {
     for (const triangleRecord of node.triangles) {
+      if (shouldIgnoreSurfaceType(triangleRecord.surfaceType, ignoredSurfaceTypes)) {
+        continue;
+      }
+
       triangleRecord.triangle.closestPointToPoint(point, WORKING_CLOSEST_POINT);
       const distanceSq = point.distanceToSquared(WORKING_CLOSEST_POINT);
 
@@ -623,9 +632,17 @@ function findNearestTrianglePoint(node, point, maxDistance, bestHit) {
   const firstChild = leftDistanceSq <= rightDistanceSq ? node.left : node.right;
   const secondChild = firstChild === node.left ? node.right : node.left;
 
-  findNearestTrianglePoint(firstChild, point, maxDistance, bestHit);
-  findNearestTrianglePoint(secondChild, point, maxDistance, bestHit);
+  findNearestTrianglePoint(firstChild, point, maxDistance, bestHit, ignoredSurfaceTypes);
+  findNearestTrianglePoint(secondChild, point, maxDistance, bestHit, ignoredSurfaceTypes);
   return bestHit;
+}
+
+function shouldIgnoreSurfaceType(surfaceType, ignoredSurfaceTypes) {
+  if (!ignoredSurfaceTypes || ignoredSurfaceTypes.length === 0) {
+    return false;
+  }
+
+  return ignoredSurfaceTypes.includes(surfaceType);
 }
 
 function distanceSqToBox(point, bounds) {

@@ -6,6 +6,9 @@ import {
   BALL_AIR_LIFT_MAX_ACCELERATION,
   BALL_AIR_LIFT_MAX_UPWARD_ACCELERATION,
   BALL_GRAVITY_ACCELERATION,
+  BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND,
+  BALL_LEAF_SPEED_MULTIPLIER,
+  BALL_LEAF_SPIN_MULTIPLIER,
   BALL_RADIUS,
   BALL_SPIN_AIR_DAMPING,
 } from '/static/js/game/constants.js';
@@ -25,6 +28,7 @@ const AIR_TOTAL_ACCELERATION = new THREE.Vector3();
 const AIR_VELOCITY_DIRECTION = new THREE.Vector3();
 const AIR_RIGHT_AXIS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const LEAF_RESPONSE_DIRECTION = new THREE.Vector3();
 const MAX_AIR_SPIN_RATIO = 1.2;
 const SIDE_SPIN_CURVE_RATIO = 0.35;
 const MIN_AIR_LIFT_REFERENCE_SPEED = 14;
@@ -203,6 +207,34 @@ export function integrateAirborneState(velocity, angularVelocity, deltaSeconds) 
 
   velocity.addScaledVector(AIR_TOTAL_ACCELERATION, deltaSeconds);
   angularVelocity.multiplyScalar(Math.exp(-BALL_SPIN_AIR_DAMPING * deltaSeconds));
+}
+
+/**
+ * Treats leaf hits as canopy drag instead of a rigid bounce.
+ */
+export function applyLeafCanopyResponse(velocity, angularVelocity, hitNormal) {
+  const speedMetersPerSecond = velocity.length();
+  if (speedMetersPerSecond <= 1e-6) {
+    return;
+  }
+
+  velocity.multiplyScalar(BALL_LEAF_SPEED_MULTIPLIER);
+
+  const canopyFactor = hitNormal
+    ? THREE.MathUtils.clamp(Math.abs(hitNormal.y), 0.35, 1)
+    : 0.75;
+  velocity.y -= BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND * canopyFactor;
+
+  LEAF_RESPONSE_DIRECTION.copy(velocity);
+  if (LEAF_RESPONSE_DIRECTION.lengthSq() > 1e-8) {
+    LEAF_RESPONSE_DIRECTION.normalize();
+    const upwardSpeed = Math.max(velocity.dot(WORLD_UP), 0);
+    if (upwardSpeed > 0) {
+      velocity.addScaledVector(WORLD_UP, -Math.min(upwardSpeed, BALL_LEAF_DOWNWARD_BEND_METERS_PER_SECOND * 0.5));
+    }
+  }
+
+  angularVelocity.multiplyScalar(BALL_LEAF_SPIN_MULTIPLIER);
 }
 
 export function getSpinRpm(angularVelocity) {
