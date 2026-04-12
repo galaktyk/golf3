@@ -1,8 +1,6 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
-
-in club info widget , add button in a row for click to switch club
 --
 add spin rpm in swing preview
 

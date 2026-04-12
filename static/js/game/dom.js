@@ -38,6 +38,7 @@ export function getViewerDom() {
     launchPreviewPanel: document.querySelector('#viewer-launch-preview-panel'),
     previewClubSpeedLabel: document.querySelector('#viewer-preview-club-speed'),
     previewBallSpeedLabel: document.querySelector('#viewer-preview-ball-speed'),
+    previewSpinRpmLabel: document.querySelector('#viewer-preview-spin-rpm'),
     previewHorizontalLaunchAngleLabel: document.querySelector('#viewer-preview-horizontal-launch-angle'),
     previewFacePitchLabel: document.querySelector('#viewer-preview-face-pitch'),
     previewDynamicLoftLabel: document.querySelector('#viewer-preview-dynamic-loft'),

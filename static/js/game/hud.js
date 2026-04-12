@@ -274,6 +274,7 @@ export function createViewerHud(dom) {
 
          !dom.previewClubSpeedLabel
         || !dom.previewBallSpeedLabel
+        || !dom.previewSpinRpmLabel
         || !dom.previewHorizontalLaunchAngleLabel
         || !dom.previewFacePitchLabel
         || !dom.previewDynamicLoftLabel
@@ -286,6 +287,7 @@ export function createViewerHud(dom) {
 
         dom.previewClubSpeedLabel.textContent = '-';
         dom.previewBallSpeedLabel.textContent = '-';
+  dom.previewSpinRpmLabel.textContent = '-';
         dom.previewHorizontalLaunchAngleLabel.textContent = '-';
         dom.previewFacePitchLabel.textContent = '-';
         dom.previewDynamicLoftLabel.textContent = '-';
@@ -296,6 +298,9 @@ export function createViewerHud(dom) {
     
       dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
       dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
+          dom.previewSpinRpmLabel.textContent = Number.isFinite(preview.spinSpeed)
+            ? `${formatScalar(preview.spinSpeed, 0)} rpm`
+            : '-';
       dom.previewHorizontalLaunchAngleLabel.textContent = formatDegrees(preview.horizontalLaunchAngle);
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
