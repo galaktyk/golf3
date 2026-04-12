@@ -223,7 +223,7 @@ function resolvePreviewGridAxes(referenceForward, supportNormal, forwardTarget, 
   }
 
   forwardTarget.normalize();
-  rightTarget.crossVectors(forwardTarget, WORLD_UP);
+  rightTarget.crossVectors(forwardTarget, supportNormal);
   if (rightTarget.lengthSq() <= 1e-8) {
     rightTarget.set(1, 0, 0);
   } else {

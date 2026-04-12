@@ -277,6 +277,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     let highHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND;
     let bestHeadSpeedMetersPerSecond = aimingPreviewHeadSpeedMetersPerSecond;
     let bestDistanceErrorMeters = Infinity;
+    let foundValidCandidate = false;
 
     for (let iteration = 0; iteration < 14; iteration += 1) {
       const candidateHeadSpeedMetersPerSecond = (lowHeadSpeedMetersPerSecond + highHeadSpeedMetersPerSecond) * 0.5;
@@ -298,11 +299,19 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
         },
         referenceForward,
       );
+      if (!firstContactPreview || !Number.isFinite(firstContactPreview.carryDistanceMeters)) {
+        // Missing ground contact usually means this candidate flew beyond reliable preview bounds,
+        // so search lower speeds instead of incorrectly treating it as too short.
+        highHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+        continue;
+      }
+
       const candidateDistanceMeters = firstContactPreview?.carryDistanceMeters ?? 0;
       const distanceErrorMeters = Math.abs(candidateDistanceMeters - desiredDistanceMeters);
       if (distanceErrorMeters < bestDistanceErrorMeters) {
         bestDistanceErrorMeters = distanceErrorMeters;
         bestHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+        foundValidCandidate = true;
       }
 
       if (candidateDistanceMeters < desiredDistanceMeters) {
@@ -310,6 +319,14 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       } else {
         highHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
       }
+    }
+
+    if (!foundValidCandidate) {
+      return THREE.MathUtils.clamp(
+        aimingPreviewHeadSpeedMetersPerSecond,
+        AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+        AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+      );
     }
 
     return THREE.MathUtils.clamp(
@@ -374,7 +391,12 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
   };
 
   const preserveCurrentTargetDistance = () => {
-    if (aimingPreview.hasTargetPoint) {
+    if (Number.isFinite(aimingTargetDistanceMeters) && aimingTargetDistanceMeters > 0) {
+      setAimingTargetDistanceMeters(aimingTargetDistanceMeters);
+      return;
+    }
+
+    if (aimingPreview.hasTargetPoint && Number.isFinite(aimingPreview.carryDistanceMeters)) {
       setAimingTargetDistanceMeters(aimingPreview.carryDistanceMeters);
     }
   };
