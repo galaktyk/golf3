@@ -10,6 +10,8 @@ const WORKING_LEFT_CENTER = new THREE.Vector3();
 const WORKING_RIGHT_CENTER = new THREE.Vector3();
 const WORKING_RAY_POINT = new THREE.Vector3();
 const RAYCAST_NORMAL = new THREE.Vector3();
+const SURFACE_SAMPLE_ORIGIN = new THREE.Vector3();
+const SURFACE_SAMPLE_DIRECTION = new THREE.Vector3(0, -1, 0);
 
 export function buildCourseCollision(mapRoot) {
   mapRoot.updateWorldMatrix(true, true);
@@ -175,6 +177,42 @@ export function findGroundSupport(courseCollision, center, radius, maxSnapDistan
     normal,
     point: hit.point.clone(),
     separation: hit.distance - maxSnapDistance - radius,
+  };
+}
+
+/**
+ * Samples the course directly beneath a world-space point by raycasting downward through the BVH.
+ */
+export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, maxDownDistance = 20) {
+  const root = courseCollision?.root;
+  if (!root || !point) {
+    return null;
+  }
+
+  const upwardDistance = Math.max(maxUpDistance, 0);
+  const downwardDistance = Math.max(maxDownDistance, 0);
+  const maxDistance = upwardDistance + downwardDistance;
+  if (maxDistance <= 1e-6) {
+    return null;
+  }
+
+  SURFACE_SAMPLE_ORIGIN.copy(point).addScaledVector(WORLD_UP, upwardDistance);
+  const ray = new THREE.Ray(SURFACE_SAMPLE_ORIGIN, SURFACE_SAMPLE_DIRECTION);
+  const hit = raycastNode(root, ray, maxDistance, null);
+  if (!hit) {
+    return null;
+  }
+
+  const normal = hit.normal.clone();
+  if (normal.y < 0) {
+    normal.negate();
+  }
+
+  return {
+    distance: hit.distance,
+    normal,
+    point: hit.point.clone(),
+    verticalOffset: upwardDistance - hit.distance,
   };
 }
 

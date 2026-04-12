@@ -71,6 +71,7 @@ function clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees) {
 
 /**
  * Converts the clamped horizontal launch angle to a left offset across the 90-unit bar.
+ * Positive angles should render on the right side of the preview.
  */
 function getSwingPreviewHorizontalMarkerPercent(horizontalLaunchAngleDegrees) {
   if (!Number.isFinite(horizontalLaunchAngleDegrees)) {
@@ -78,7 +79,7 @@ function getSwingPreviewHorizontalMarkerPercent(horizontalLaunchAngleDegrees) {
   }
 
   const clampedAngleDegrees = clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees);
-  return ((SWING_PREVIEW_HORIZONTAL_MAX_ANGLE_DEGREES - clampedAngleDegrees)
+  return ((clampedAngleDegrees - SWING_PREVIEW_HORIZONTAL_MIN_ANGLE_DEGREES)
     / SWING_PREVIEW_HORIZONTAL_ANGLE_RANGE_DEGREES) * 100;
 }
 
@@ -129,7 +130,7 @@ export function createViewerHud(dom) {
 
     if (!Number.isFinite(horizontalLaunchAngleDegrees)) {
       dom.swingPreviewHorizontalMarker.hidden = true;
-      dom.swingPreviewHorizontalBar.setAttribute('aria-label', 'Horizontal launch angle preview');
+      dom.swingPreviewHorizontalBar.setAttribute('aria-label', 'Horizontal launch angle preview, positive values shown to the right');
       return;
     }
 
@@ -140,7 +141,7 @@ export function createViewerHud(dom) {
     const clampedAngleDegrees = clampSwingPreviewHorizontalAngleDegrees(horizontalLaunchAngleDegrees);
     dom.swingPreviewHorizontalBar.setAttribute(
       'aria-label',
-      `Horizontal launch angle ${formatDegrees(horizontalLaunchAngleDegrees)} shown on a ${SWING_PREVIEW_HORIZONTAL_BAR_WIDTH_UNITS}-unit bar and clamped to ${formatDegrees(clampedAngleDegrees)} for display`,
+      `Horizontal launch angle ${formatDegrees(horizontalLaunchAngleDegrees)} shown on a ${SWING_PREVIEW_HORIZONTAL_BAR_WIDTH_UNITS}-unit bar with positive values to the right and clamped to ${formatDegrees(clampedAngleDegrees)} for display`,
     );
   }
 

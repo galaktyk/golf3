@@ -2,25 +2,12 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 --
-add spin rpm in swing preview
 
-invert horizontal axis
-
-
----
+better adjust aim point
 
 
 
----
 
-putt and green line why physics break
-
-
----
-
-
-
-add aim line preview
 ---
 
 

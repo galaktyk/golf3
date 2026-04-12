@@ -262,7 +262,7 @@ function getLaunchSpinMetrics(impactSample, activeClub, launchMetrics) {
 
   return {
     spinSpeed: spinProfile.referenceSpinRpm * speedFactor * spinLoftFactor * loftRetentionFactor,
-    spinAxis: THREE.MathUtils.clamp(-(launchMetrics?.horizontalLaunchAngle ?? 0) * 0.55, -18, 18),
+    spinAxis: THREE.MathUtils.clamp((launchMetrics?.horizontalLaunchAngle ?? 0) * 0.55, -18, 18),
   };
 }
 
@@ -433,7 +433,7 @@ function getHorizontalLaunchAngleDegrees(impactSample) {
   }
 
   return THREE.MathUtils.clamp(
-    getSignedHorizontalAngleDegrees(
+    -getSignedHorizontalAngleDegrees(
       HORIZONTAL_FACING_FORWARD,
       HORIZONTAL_LAUNCH_DIRECTION,
     ),

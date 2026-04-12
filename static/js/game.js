@@ -37,9 +37,10 @@ import {
   SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES,
 } from '/static/js/game/constants.js';
 import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
-import { predictFirstContactPoint } from '/static/js/game/aimPreview.js';
+import { buildPuttGridPreview, predictFinalRestPoint, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
+import { sampleCourseSurface } from '/static/js/game/collision.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters, formatMetersPerSecond } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
@@ -127,11 +128,16 @@ const holeCameraSpace = new THREE.Vector3();
 const holeWorldPosition = new THREE.Vector3();
 const aimingMarkerCameraSpace = new THREE.Vector3();
 const aimingPreviewLandingPoint = new THREE.Vector3();
+const aimingPreviewTargetProbePoint = new THREE.Vector3();
+const aimingPreviewTargetForward = new THREE.Vector3();
 const characterForwardForPreview = new THREE.Vector3();
 const aimingPreview = {
   dirty: true,
   isVisible: false,
   carryDistanceMeters: 0,
+  hasTargetPoint: false,
+  mode: 'landing',
+  puttGrid: null,
 };
 
 loadViewerModels(viewerScene, (message) => hud.setStatus(message));
@@ -545,7 +551,7 @@ function animate() {
     right: Number(freeCameraMoveRight) - Number(freeCameraMoveLeft),
   });
   viewerScene.updateBallFollowCamera(deltaSeconds, aimingPreview.isVisible
-    ? { isVisible: true, point: aimingPreviewLandingPoint }
+    ? { isVisible: aimingPreview.hasTargetPoint, point: aimingPreview.hasTargetPoint ? aimingPreviewLandingPoint : null }
     : { isVisible: false, point: null });
   updateCharacterDebugTelemetry(characterTelemetry);
   updateBallDebugTelemetry(ballTelemetry);
@@ -622,17 +628,11 @@ function updateCharacterRotationInput(deltaSeconds) {
 }
 
 /**
- * Converts held up/down input into a smooth head-speed change so taps stay precise and holds ramp up.
+ * Converts held up/down input into a smooth preview head-speed change so taps stay precise and holds ramp up.
  * Keyboard input may still enter aim mode directly, while phone joystick input only adjusts after a double-tap toggle.
  */
 function updateAimingPreviewHeadSpeedInput(deltaSeconds) {
   if (viewerScene.isFreeCameraEnabled()) {
-    resetAimingPreviewHeadSpeedAcceleration();
-    resetAimingPreviewHeadSpeedAnalogAcceleration();
-    return;
-  }
-
-  if (!isAimingPreviewEnabled()) {
     resetAimingPreviewHeadSpeedAcceleration();
     resetAimingPreviewHeadSpeedAnalogAcceleration();
     return;
@@ -798,9 +798,9 @@ function canUseAimingControls() {
 }
 
 /**
- * Keeps the landing preview feature off for putts, where the ballistic marker is not useful.
+ * Returns whether the current club uses the neutral launch preview instead of the putt slope grid.
  */
-function isAimingPreviewEnabled() {
+function usesLaunchAimingPreview() {
   return activeClub?.category !== 'putter';
 }
 
@@ -1403,18 +1403,74 @@ function updateAimingPreviewIfNeeded() {
     return;
   }
   aimingPreview.isVisible = false;
-
-  if (!isAimingPreviewEnabled()) {
-    aimingPreview.dirty = false;
-    return;
-  }
+  aimingPreview.hasTargetPoint = false;
+  aimingPreview.puttGrid = null;
 
   if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+    aimingPreview.mode = usesLaunchAimingPreview() ? 'landing' : 'putt-grid';
     aimingPreview.dirty = false;
     return;
   }
 
   if (!viewerScene.courseCollision?.root) {
+    return;
+  }
+
+  if (!usesLaunchAimingPreview()) {
+    const puttAimForward = viewerScene.getCharacterForward(characterForwardForPreview);
+    const launchPreview = getNeutralClubLaunchPreview(
+      aimingPreviewHeadSpeedMetersPerSecond,
+      activeClub,
+    );
+    if (!launchPreview?.isReady) {
+      return;
+    }
+
+    const aimingPreviewLaunchData = {
+      ballSpeed: launchPreview.ballSpeed,
+      verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+      horizontalLaunchAngle: 0,
+      spinSpeed: launchPreview.spinSpeed,
+      spinAxis: launchPreview.spinAxis,
+    };
+    syncLaunchDebugInputs(aimingPreviewLaunchData);
+
+    const puttGridPreview = buildPuttGridPreview(
+      viewerScene,
+      ballPhysics.getPosition(),
+      puttAimForward,
+    );
+    const puttFinalPointPreview = predictFinalRestPoint(
+      viewerScene,
+      ballPhysics.getPosition(),
+      aimingPreviewLaunchData,
+      puttAimForward,
+    );
+    aimingPreview.mode = 'putt-grid';
+    aimingPreview.puttGrid = puttGridPreview;
+    aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttFinalPointPreview);
+    aimingPreview.hasTargetPoint = Boolean(puttFinalPointPreview);
+    if (puttFinalPointPreview) {
+      aimingPreview.carryDistanceMeters = puttFinalPointPreview.carryDistanceMeters;
+
+      aimingPreviewTargetForward.copy(puttAimForward);
+      if (aimingPreviewTargetForward.lengthSq() <= 1e-8) {
+        aimingPreviewTargetForward.set(0, 0, -1);
+      } else {
+        aimingPreviewTargetForward.normalize();
+      }
+
+      aimingPreviewTargetProbePoint.copy(ballPhysics.getPosition())
+        .addScaledVector(aimingPreviewTargetForward, puttFinalPointPreview.carryDistanceMeters);
+      const fakeTargetSurface = sampleCourseSurface(
+        viewerScene.courseCollision,
+        aimingPreviewTargetProbePoint,
+        3,
+        18,
+      );
+      aimingPreviewLandingPoint.copy(fakeTargetSurface?.point ?? aimingPreviewTargetProbePoint);
+    }
+    aimingPreview.dirty = false;
     return;
   }
 
@@ -1441,6 +1497,7 @@ function updateAimingPreviewIfNeeded() {
     aimingPreviewLaunchData,
     viewerScene.getCharacterForward(characterForwardForPreview),
   );
+  aimingPreview.mode = 'landing';
   if (!firstContactPreview) {
     aimingPreview.dirty = false;
     return;
@@ -1449,6 +1506,7 @@ function updateAimingPreviewIfNeeded() {
   aimingPreviewLandingPoint.copy(firstContactPreview.point);
   aimingPreview.carryDistanceMeters = firstContactPreview.carryDistanceMeters;
   aimingPreview.isVisible = true;
+  aimingPreview.hasTargetPoint = true;
   aimingPreview.dirty = false;
 }
 
@@ -1460,7 +1518,25 @@ function updateAimingMarker(ballTelemetry) {
 
   if (ballTelemetry.phase === 'moving' || !aimingPreview.isVisible) {
     aimingMarker.setVisible(false);
+    aimingMarker.setPuttGrid(null);
+    aimingMarker.setPuttAimTarget(null);
     return;
+  }
+
+  if (aimingPreview.mode === 'putt-grid') {
+    aimingMarker.setPuttGrid(aimingPreview.puttGrid);
+    if (!aimingPreview.hasTargetPoint) {
+      aimingMarker.setVisible(false);
+      aimingMarker.setPuttAimTarget(null);
+      return;
+    }
+    aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+    aimingMarker.setVisible(false);
+    aimingMarker.setPuttAimTarget(aimingMarkerCameraSpace.z >= 0 ? null : aimingPreviewLandingPoint);
+    return;
+  } else {
+    aimingMarker.setPuttGrid(null);
+    aimingMarker.setPuttAimTarget(null);
   }
 
   aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);

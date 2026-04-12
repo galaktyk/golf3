@@ -54,6 +54,7 @@ function resolveHorizontalForward(viewerScene, referenceForward = null) {
 
 /**
  * Builds the launch velocity from the shared launch-data contract.
+ * Positive horizontal launch values move the ball to the golfer's right.
  */
 export function buildLaunchVelocity(launchData, viewerScene, referenceForward = null, target = new THREE.Vector3()) {
   const horizontalForward = resolveHorizontalForward(viewerScene, referenceForward);
@@ -61,7 +62,7 @@ export function buildLaunchVelocity(launchData, viewerScene, referenceForward = 
     ? Math.max(launchData.ballSpeed, 0)
     : 0;
   const verticalAngleRadians = THREE.MathUtils.degToRad(launchData?.verticalLaunchAngle ?? 0);
-  const horizontalAngleRadians = THREE.MathUtils.degToRad(launchData?.horizontalLaunchAngle ?? 0);
+  const horizontalAngleRadians = THREE.MathUtils.degToRad(-(launchData?.horizontalLaunchAngle ?? 0));
   const forwardSpeed = speedMetersPerSecond * Math.cos(verticalAngleRadians);
   const upwardSpeed = speedMetersPerSecond * Math.sin(verticalAngleRadians);
 
