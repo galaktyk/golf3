@@ -149,7 +149,7 @@ export const SHOT_AUDIO_PANGYA_MAX_HORIZONTAL_ANGLE_DEGREES = 2;
 export const SHOT_AUDIO_VOLUME = 0.85;
 
 // Default preview swing speed used by the aiming simulator.
-export const AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND = 20;
+export const AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND = 30;
 // Increment size when manually adjusting preview swing speed.
 export const AIMING_PREVIEW_HEAD_SPEED_STEP_METERS_PER_SECOND = 0.01;
 // Minimum allowed preview swing speed.

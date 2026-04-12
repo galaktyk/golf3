@@ -81,7 +81,7 @@ const practiceSwingBallColor = new THREE.Color('#31e0ff');
 const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
 const AIMING_TARGET_DISTANCE_MIN_METERS = 0.25;
-const AIMING_TARGET_DISTANCE_MAX_METERS = 250;
+const AIMING_TARGET_DISTANCE_MAX_METERS = 999;
 const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
 const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
 const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
@@ -1755,6 +1755,7 @@ function updateAimingPreviewIfNeeded() {
       spinAxis: launchPreview.spinAxis,
     };
     syncLaunchDebugInputs(aimingPreviewLaunchData);
+    resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
     const puttGridPreview = buildPuttGridPreview(
       viewerScene,
       ballPhysics.getPosition(),
@@ -1765,7 +1766,6 @@ function updateAimingPreviewIfNeeded() {
     aimingPreview.puttGrid = puttGridPreview;
     aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttAimDistanceMeters > 0);
     aimingPreview.hasTargetPoint = true;
-    resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
     aimingPreview.carryDistanceMeters = Math.hypot(
       aimingPreviewLandingPoint.x - ballPhysics.getPosition().x,
       aimingPreviewLandingPoint.z - ballPhysics.getPosition().z,

@@ -615,11 +615,11 @@ function createAimingMarker() {
   const PUTT_GRID_MAX_CELLS = PUTT_GRID_MAX_ROWS * PUTT_GRID_COLUMNS;
   const PUTT_GRID_MAX_LINE_SEGMENTS = ((PUTT_GRID_MAX_ROWS + 1) * PUTT_GRID_COLUMNS)
     + ((PUTT_GRID_COLUMNS + 1) * PUTT_GRID_MAX_ROWS);
-  const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.085;
+  const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.08;
   const PUTT_GRID_SURFACE_OFFSET_METERS = 0.012;
-  const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.38;
-  const PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE = 0.2;
-  const PUTT_GRID_CIRCLE_MAX_SCALE = 1.2;
+  const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.8;
+  const PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE = 0.14;
+  const PUTT_GRID_CIRCLE_MAX_SCALE = 1;
   const PUTT_GRID_COLOR = '#173c25';
   const PUTT_GRID_OPACITY = 0.8;
   const markerCanvas = document.createElement('canvas');
@@ -927,8 +927,8 @@ function createAimingMarker() {
             0,
             1,
           );
-          // Ease low slopes upward so the preview stays readable on gentle greens.
-          circleOffsetScale = Math.pow(slopeAlpha, 0.7);
+          // Strongly bias gentle slopes upward so even subtle break stays legible.
+          circleOffsetScale = Math.pow(slopeAlpha, 0.4);
         }
 
         const circleOffsetMeters = maxCircleOffsetMeters * circleOffsetScale;
