@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { findGroundSupport } from '/static/js/game/collision.js';
+import { findGroundSupport, sampleCourseSurface } from '/static/js/game/collision.js';
 import {
   AIMING_CAMERA_DISTANCE,
   AIMING_CAMERA_FOLLOW_STIFFNESS,
   AIMING_CAMERA_HEIGHT,
   AIMING_CAMERA_LOCAL_UP_OFFSET,
+  BALL_RADIUS,
   BALL_START_POSITION,
   CAMERA_FOLLOW_STIFFNESS,
   CAMERA_LOOK_AHEAD_DISTANCE,
@@ -29,7 +30,38 @@ const CHARACTER_GROUND_PROBE_RADIUS = 0;
 const CAMERA_MODE_NORMAL = 'normal';
 const CAMERA_MODE_AIMING = 'aiming';
 const CAMERA_MODE_FREE = 'free';
+let sharedShadowTexture = null;
 
+function getSharedShadowTexture() {
+  if (sharedShadowTexture) return sharedShadowTexture;
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = 128;
+  shadowCanvas.height = 128;
+  const context = shadowCanvas.getContext('2d');
+  const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0.8)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 128, 128);
+  sharedShadowTexture = new THREE.CanvasTexture(shadowCanvas);
+  return sharedShadowTexture;
+}
+
+function createFakeShadow(radius) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(radius * 2, radius * 2),
+    new THREE.MeshBasicMaterial({
+      map: getSharedShadowTexture(),
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+  );
+  mesh.visible = false;
+  return mesh;
+}
 export function createViewerScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, canvas, powerPreference: 'high-performance' });
   const scene = new THREE.Scene();
@@ -67,6 +99,8 @@ export function createViewerScene(canvas) {
   const characterRoot = new THREE.Group();
   const characterVisualRoot = new THREE.Group();
   const overlayRoot = new THREE.Group();
+  const ballShadow = createFakeShadow(BALL_RADIUS * 1.5);
+  const characterShadow = createFakeShadow(0.4);
   const rotatedCharacterSetupOffset = new THREE.Vector3();
   const characterGroundProbePosition = new THREE.Vector3();
   const characterGroundNormal = new THREE.Vector3(0, 1, 0);
@@ -89,8 +123,10 @@ export function createViewerScene(canvas) {
 
   scene.add(mapRoot);
   scene.add(ballRoot);
+  scene.add(ballShadow);
   scene.add(clubRoot);
   scene.add(characterRoot);
+  scene.add(characterShadow);
   characterRoot.add(characterVisualRoot);
   camera.add(overlayRoot);
 
@@ -278,7 +314,41 @@ export function createViewerScene(canvas) {
   });
 
   updateRendererSize(renderer);
+  const updateEntityShadow = (entityRoot, shadowMesh, raycastOffset = 0.5) => {
+    if (!courseCollision) {
+      shadowMesh.visible = false;
+      return;
+    }
+    
+    // Cast from slightly above the entity to support grounded models properly
+    characterGroundProbePosition.copy(entityRoot.position);
+    characterGroundProbePosition.y += raycastOffset;
+    const support = sampleCourseSurface(
+      courseCollision,
+      characterGroundProbePosition,
+      raycastOffset + 0.1, // look up
+      200.0 // look down
+    );
 
+    if (support && support.point) {
+      const dist = entityRoot.position.y - support.point.y;
+      if (dist < 1.0 && dist > -0.5) {
+        shadowMesh.visible = true;
+        // Fade out as it reaches 1.0 distance
+        const opacity = THREE.MathUtils.lerp(0.8, 0, Math.max(0, dist));
+        shadowMesh.material.opacity = opacity;
+        
+        shadowMesh.position.copy(support.point);
+        
+        // Orient to ground normal (plane geometry normal is +Z)
+        shadowMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), support.normal);
+      } else {
+        shadowMesh.visible = false;
+      }
+    } else {
+      shadowMesh.visible = false;
+    }
+  };
   return {
     renderer,
     scene,
@@ -602,6 +672,11 @@ export function createViewerScene(canvas) {
         applyFreeCameraRotation();
       }
       updateRendererSize(renderer);
+    },
+
+    updateShadows() {
+      updateEntityShadow(ballRoot, ballShadow, 0.05);
+      updateEntityShadow(characterRoot, characterShadow, 0.5);
     },
   };
 }

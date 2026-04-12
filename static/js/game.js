@@ -611,6 +611,7 @@ function animate() {
   viewHudController.updateHoleMarker(ballTelemetry);
   aimingPreviewController.updateMarker(ballTelemetry);
   viewHudController.updateCameraPositionLabelIfNeeded();
+  viewerScene.updateShadows();
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
 
