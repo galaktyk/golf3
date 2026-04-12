@@ -700,6 +700,43 @@ p {
   margin-bottom: 2px;
 }
 
+.club-button-row {
+  --club-button-columns: 7;
+  display: grid;
+  grid-template-columns: repeat(var(--club-button-columns), minmax(0, 1fr));
+  margin-top: 4px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.club-direct-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 9px 4px;
+  border-radius: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.club-button-row .club-direct-button:nth-child(7n) {
+  border-right: none;
+}
+
+.club-button-row .club-direct-button:nth-last-child(-n + 7) {
+  border-bottom: none;
+}
+
+.club-direct-button.is-active {
+  border-color: rgba(154, 211, 255, 0.88);
+  background: linear-gradient(135deg, rgba(154, 211, 255, 0.22), rgba(98, 179, 235, 0.3));
+  color: var(--text);
+}
+
 .club-selector-row {
   display: flex;
   align-items: center;

@@ -1279,12 +1279,41 @@ function initializeClubDebugUi() {
     return;
   }
 
+  renderClubDebugButtons();
+
   dom.clubPrevButton.addEventListener('click', () => {
     selectPreviousClub();
   });
   dom.clubNextButton.addEventListener('click', () => {
     selectNextClub();
   });
+
+  hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+}
+
+/**
+ * Builds the direct-select row in reverse order so woods stay at the right edge.
+ */
+function renderClubDebugButtons() {
+  if (!dom.clubButtonRow) {
+    return;
+  }
+
+  dom.clubButtonRow.replaceChildren();
+
+  for (const club of [...ACTIVE_CLUB_SET.clubs].reverse()) {
+    const clubButton = document.createElement('button');
+    clubButton.type = 'button';
+    clubButton.className = 'action-button secondary club-direct-button';
+    clubButton.textContent = club.id;
+    clubButton.dataset.clubId = club.id;
+    clubButton.setAttribute('aria-label', `Select ${club.id}`);
+    clubButton.setAttribute('aria-pressed', String(club.id === activeClub.id));
+    clubButton.addEventListener('click', () => {
+      selectClubById(club.id);
+    });
+    dom.clubButtonRow.append(clubButton);
+  }
 }
 
 function selectPreviousClub() {
@@ -1295,12 +1324,35 @@ function selectNextClub() {
   moveActiveClub(-1);
 }
 
+/**
+ * Selects a specific club from the active club set when the direct button row is used.
+ */
+function selectClubById(clubId) {
+  const nextClub = ACTIVE_CLUB_SET.clubs.find((club) => club.id === clubId);
+  if (!nextClub) {
+    return;
+  }
+
+  setActiveClub(nextClub);
+}
+
 function moveActiveClub(delta) {
   const clubIndex = ACTIVE_CLUB_SET.clubs.findIndex((club) => club.id === activeClub.id);
   const nextClubIndex = clubIndex >= 0
     ? Math.min(Math.max(clubIndex + delta, 0), ACTIVE_CLUB_SET.clubs.length - 1)
     : 0;
-  activeClub = ACTIVE_CLUB_SET.clubs[nextClubIndex];
+  setActiveClub(ACTIVE_CLUB_SET.clubs[nextClubIndex]);
+}
+
+/**
+ * Centralizes active-club updates so all selectors keep the widget and preview state in sync.
+ */
+function setActiveClub(nextClub) {
+  if (!nextClub) {
+    return;
+  }
+
+  activeClub = nextClub;
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
   syncSwingPreviewTarget();
   invalidateAimingPreview();

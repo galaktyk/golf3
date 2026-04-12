@@ -16,6 +16,7 @@ export function getViewerDom() {
     ballLandingNormalsLabel: document.querySelector('#viewer-ball-landing-normals'),
     clubPanel: document.querySelector('#viewer-club-panel'),
     clubSetLineLabel: document.querySelector('#viewer-club-set-line'),
+    clubButtonRow: document.querySelector('#viewer-club-button-row'),
     clubIdLabel: document.querySelector('#viewer-club-id'),
     clubLoftLabel: document.querySelector('#viewer-club-loft'),
     clubLaunchFactorLabel: document.querySelector('#viewer-club-launch-factor'),

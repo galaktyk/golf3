@@ -94,6 +94,22 @@ function getSwingPreviewFillPercent(capturedSpeedMetersPerSecond, targetSpeedMet
   return clampSwingPreviewPercent((capturedSpeedMetersPerSecond / targetSpeedMetersPerSecond) * SWING_PREVIEW_TARGET_PERCENT);
 }
 
+/**
+ * Syncs the direct-select club row with the currently active club.
+ */
+function updateClubButtonState(dom, clubSet, club) {
+  if (!dom.clubButtonRow) {
+    return;
+  }
+
+  const clubButtons = dom.clubButtonRow.querySelectorAll('[data-club-id]');
+  for (const clubButton of clubButtons) {
+    const isActive = Boolean(clubSet && club && clubButton.dataset.clubId === club.id);
+    clubButton.classList.toggle('is-active', isActive);
+    clubButton.setAttribute('aria-pressed', String(isActive));
+  }
+}
+
 export function createViewerHud(dom) {
   const swingPreviewState = {
     targetSpeedMetersPerSecond: null,
@@ -236,6 +252,7 @@ export function createViewerHud(dom) {
         dom.clubMaxDynamicLoftDeltaLabel.textContent = '-';
         dom.clubEffectiveLengthLabel.textContent = '-';
         dom.clubSmashFactorLabel.textContent = '-';
+        updateClubButtonState(dom, null, null);
         return;
       }
 
@@ -247,6 +264,7 @@ export function createViewerHud(dom) {
       dom.clubMaxDynamicLoftDeltaLabel.textContent = formatDegrees(club.maxDynamicLoftDeltaDegrees);
       dom.clubEffectiveLengthLabel.textContent = formatMeters(club.effectiveLengthMeters);
       dom.clubSmashFactorLabel.textContent = formatScalar(club.smashFactor);
+      updateClubButtonState(dom, clubSet, club);
     },
 
     updateLaunchPreview(preview) {
