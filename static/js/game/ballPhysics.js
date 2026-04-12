@@ -669,13 +669,6 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   );
 
   velocity.copy(TANGENT_VELOCITY).addScaledVector(hitNormal, incomingNormalSpeed * restitution);
-  
-  // Apply the same impulse logic to the velocity but scale down backspin
-  if (angularVelocity.lengthSq() > 1e-6) {
-    // If spin is very high on impact, rapidly damp it here
-    const spinImpactLoss = THREE.MathUtils.clamp(incomingNormalSpeed / BALL_IMPACT_REFERENCE_NORMAL_SPEED, 0.1, 0.8);
-    angularVelocity.multiplyScalar(1 - spinImpactLoss);
-  }
 }
 
 function applySurfaceImpulseToAngularVelocity(angularVelocity, surfaceNormal, linearVelocityDelta) {
