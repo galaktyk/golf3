@@ -9,3 +9,4 @@ Provide project context and coding guidelines that AI should follow when generat
 
 - when writing function please provide a docstring and comments for any non-obvious code sections
 - encourage to re-arrange file or folder structure since this app is still in early stage and there is no established structure yet.
+- dont run python or try to start the server, it already start by me, ask me if you want to test the code you generate

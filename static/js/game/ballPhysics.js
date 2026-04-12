@@ -645,7 +645,12 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.2;
   const maxFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_MAX_FRICTION : BALL_IMPACT_MAX_FRICTION * 0.25;
   const friction = THREE.MathUtils.lerp(baseFriction, maxFriction, impactSeverity * impactStrength);
-  const tangentDeltaSpeed = Math.min(incomingTangentSpeed, friction * incomingNormalSpeed);
+  
+  // A solid sphere's moment of inertia means only 2/7ths of the contact point's speed
+  // can be resolved entirely through a change in linear velocity before the slip stops.
+  const MAX_LINEAR_DELTA_RATIO = 2 / 7;
+  const tangentDeltaSpeed = Math.min(incomingTangentSpeed * MAX_LINEAR_DELTA_RATIO, friction * incomingNormalSpeed);
+  
   if (incomingTangentSpeed > 1e-6 && tangentDeltaSpeed > 0) {
     CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-tangentDeltaSpeed / incomingTangentSpeed);
     TANGENT_VELOCITY.add(CONTACT_IMPULSE_DELTA);
@@ -664,6 +669,13 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   );
 
   velocity.copy(TANGENT_VELOCITY).addScaledVector(hitNormal, incomingNormalSpeed * restitution);
+  
+  // Apply the same impulse logic to the velocity but scale down backspin
+  if (angularVelocity.lengthSq() > 1e-6) {
+    // If spin is very high on impact, rapidly damp it here
+    const spinImpactLoss = THREE.MathUtils.clamp(incomingNormalSpeed / BALL_IMPACT_REFERENCE_NORMAL_SPEED, 0.1, 0.8);
+    angularVelocity.multiplyScalar(1 - spinImpactLoss);
+  }
 }
 
 function applySurfaceImpulseToAngularVelocity(angularVelocity, surfaceNormal, linearVelocityDelta) {

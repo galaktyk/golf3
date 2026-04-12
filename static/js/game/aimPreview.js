@@ -13,7 +13,7 @@ import {
 } from '/static/js/game/ballFlightModel.js';
 import { findGroundSupport, sweepSphereBVH } from '/static/js/game/collision.js';
 
-const PREVIEW_MAX_SIMULATION_SECONDS = 12;
+const PREVIEW_MAX_SIMULATION_SECONDS = 22;
 const PREVIEW_MAX_STEPS = Math.ceil(PREVIEW_MAX_SIMULATION_SECONDS / BALL_FIXED_STEP_SECONDS);
 const PREVIEW_VELOCITY = new THREE.Vector3();
 const PREVIEW_ANGULAR_VELOCITY = new THREE.Vector3();
