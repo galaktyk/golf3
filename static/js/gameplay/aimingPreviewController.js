@@ -4,6 +4,10 @@ import {
   AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+  BALL_FIXED_STEP_SECONDS,
+  BALL_LANDING_SLIDING_FRICTION,
+  BALL_LANDING_BRAKE_FRICTION,
+  BALL_CONTACT_MAX_ROLLING_SPEED,
   BALL_RADIUS,
   BALL_ROLLING_RESISTANCE,
   COURSE_HOLE_POSITION,
@@ -24,11 +28,9 @@ const AIMING_TARGET_RESET_HOLE_DISTANCE_SCALE = 0.95;
 const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
 const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
 const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
-const PUTT_PREVIEW_UPHILL_SPEED_PER_METER = 1.8;
-const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
 const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
 const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
-const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 6;
+
 const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
 const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
 const PUTT_PREVIEW_HOLE_LENGTH_SCALE = 1.25;
@@ -152,6 +154,61 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     return target.copy(surfaceSample?.point ?? target);
   };
 
+  const simulatePuttDistanceMeters = (initialBallSpeed, targetDistanceMeters, heightDeltaMeters) => {
+    let velocity = initialBallSpeed;
+    let spinVelocity = 0;
+    let distance = 0;
+    let contactAge = 0;
+    const dt = BALL_FIXED_STEP_SECONDS;
+    const g = PUTT_PREVIEW_GRAVITY_ACCELERATION;
+    const slopeGravity = -(heightDeltaMeters / Math.max(targetDistanceMeters, 0.01)) * g;
+
+    for (let i = 0; i < 900; i++) {
+      if (velocity <= 1e-6 && slopeGravity <= 0) break;
+
+      let movementState = 'ground';
+      if (initialBallSpeed > BALL_CONTACT_MAX_ROLLING_SPEED) {
+        if (contactAge < 0.04 || velocity > BALL_CONTACT_MAX_ROLLING_SPEED || Math.abs(velocity - spinVelocity) > 0.6) {
+          movementState = 'contact';
+        }
+      }
+
+      velocity += slopeGravity * dt;
+
+      if (movementState === 'contact') {
+        contactAge += dt;
+        let slipSpeed = velocity - spinVelocity;
+        let sign = Math.sign(slipSpeed);
+        let absSlip = Math.abs(slipSpeed);
+        if (absSlip > 1e-6) {
+          let slidingDelta = Math.min(absSlip, BALL_LANDING_SLIDING_FRICTION * g * dt);
+          velocity -= sign * slidingDelta;
+          spinVelocity += sign * slidingDelta * 2.5;
+        }
+
+        if (velocity > BALL_CONTACT_MAX_ROLLING_SPEED) {
+          let brakeDelta = Math.min(velocity - BALL_CONTACT_MAX_ROLLING_SPEED, BALL_LANDING_BRAKE_FRICTION * g * dt);
+          velocity -= brakeDelta;
+        }
+        let rollDelta = Math.min(velocity, BALL_ROLLING_RESISTANCE * g * dt);
+        velocity -= rollDelta;
+      } else {
+        spinVelocity = velocity;
+        let rollDelta = Math.min(velocity, BALL_ROLLING_RESISTANCE * g * dt);
+        velocity -= rollDelta;
+      }
+
+      if (velocity < 1e-6) {
+        if (slopeGravity < Math.min(BALL_ROLLING_RESISTANCE, 0.28) * g) {
+           break;
+        }
+      }
+
+      distance += Math.max(velocity, 0) * dt;
+    }
+    return distance;
+  };
+
   const getPuttPreviewHeadSpeed = (ballPosition = ballPhysics.getPosition()) => {
     const aimedDistanceMeters = THREE.MathUtils.clamp(
       puttAimDistanceMeters,
@@ -162,15 +219,24 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     const heightDeltaMeters = Number.isFinite(ballPosition?.y)
       ? aimTargetPoint.y - ballPosition.y
       : 0;
-    const effectiveRollFriction = BALL_ROLLING_RESISTANCE * PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER;
-    const stopDistanceBallSpeed = Math.sqrt(
-      Math.max(0, 2 * effectiveRollFriction * PUTT_PREVIEW_GRAVITY_ACCELERATION * aimedDistanceMeters),
-    );
-    const uphillSpeedAdjustment = Math.max(heightDeltaMeters, 0) * PUTT_PREVIEW_UPHILL_SPEED_PER_METER;
-    const downhillSpeedAdjustment = Math.max(-heightDeltaMeters, 0) * PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER;
+
+    let lowSpeed = PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND;
+    let highSpeed = AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND * 2;
+    let bestBallSpeed = (lowSpeed + highSpeed) * 0.5;
+
+    for (let iter = 0; iter < 18; iter++) {
+      bestBallSpeed = (lowSpeed + highSpeed) * 0.5;
+      let d = simulatePuttDistanceMeters(bestBallSpeed, aimedDistanceMeters, heightDeltaMeters);
+      if (d < aimedDistanceMeters) {
+        lowSpeed = bestBallSpeed;
+      } else {
+        highSpeed = bestBallSpeed;
+      }
+    }
+
     const targetBallSpeedMetersPerSecond = Math.max(
       PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND,
-      stopDistanceBallSpeed + uphillSpeedAdjustment - downhillSpeedAdjustment + PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND,
+      bestBallSpeed + PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND,
     );
     const smashFactor = Number.isFinite(getActiveClub()?.smashFactor)
       ? Math.max(getActiveClub().smashFactor, 1e-6)
