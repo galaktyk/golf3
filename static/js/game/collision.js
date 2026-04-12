@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getSurfaceTypeFromTextureName } from '/static/js/game/surfacePhysics.js';
 
 const LEAF_TRIANGLE_COUNT = 12;
 const MAX_BUILD_DEPTH = 32;
@@ -39,6 +40,29 @@ export function buildCourseCollision(mapRoot) {
     meshCount += 1;
 
     for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
+      // Find material and texture info
+      let materialIndex = 0;
+      if (node.geometry.groups && node.geometry.groups.length > 0) {
+        const elementIndex = triangleIndex * 3;
+        for (const group of node.geometry.groups) {
+          if (elementIndex >= group.start && elementIndex < group.start + group.count) {
+            materialIndex = group.materialIndex ?? 0;
+            break;
+          }
+        }
+      }
+
+      let textureName = null;
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      const triangleMaterial = materials[materialIndex];
+      if (triangleMaterial) {
+        textureName = triangleMaterial.map?.name
+          || triangleMaterial.map?.image?.currentSrc
+          || triangleMaterial.map?.image?.src
+          || triangleMaterial.name;
+      }
+      const surfaceType = getSurfaceTypeFromTextureName(textureName);
+
       const aIndex = index ? index.getX(triangleIndex * 3) : triangleIndex * 3;
       const bIndex = index ? index.getX(triangleIndex * 3 + 1) : triangleIndex * 3 + 1;
       const cIndex = index ? index.getX(triangleIndex * 3 + 2) : triangleIndex * 3 + 2;
@@ -56,7 +80,7 @@ export function buildCourseCollision(mapRoot) {
       const bounds = new THREE.Box3().setFromPoints([a, b, c]);
       const centroid = a.clone().add(b).add(c).multiplyScalar(1 / 3);
 
-      triangles.push({ triangle, normal, bounds, centroid });
+      triangles.push({ triangle, normal, bounds, centroid, surfaceType });
     }
   });
 
@@ -83,6 +107,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
       collided: false,
       hitNormal,
       position: nextPosition,
+      surfaceType: null,
       travelFraction: 1,
     };
   }
@@ -94,6 +119,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
       collided: false,
       hitNormal,
       position: nextPosition,
+      surfaceType: null,
       travelFraction: 1,
     };
   }
@@ -109,6 +135,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
       collided: false,
       hitNormal,
       position: nextPosition,
+      surfaceType: null,
       travelFraction: 1,
     };
   }
@@ -120,6 +147,7 @@ export function sweepSphereBVH(courseCollision, start, displacement, radius, opt
     collided: true,
     hitNormal,
     position: nextPosition,
+    surfaceType: hit.surfaceType,
     travelFraction: hit.time,
   };
 }
@@ -149,6 +177,7 @@ export function resolveSphereOverlapBVH(courseCollision, center, radius, options
     collided: resolution.collided,
     hitNormal,
     position,
+    surfaceType: resolution.surfaceType ?? null,
   };
 }
 
@@ -177,6 +206,7 @@ export function findGroundSupport(courseCollision, center, radius, maxSnapDistan
     normal,
     point: hit.point.clone(),
     separation: hit.distance - maxSnapDistance - radius,
+    surfaceType: hit.surfaceType,
   };
 }
 
@@ -213,6 +243,7 @@ export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, m
     normal,
     point: hit.point.clone(),
     verticalOffset: upwardDistance - hit.distance,
+    surfaceType: hit.surfaceType,
   };
 }
 
@@ -242,6 +273,7 @@ export function raycastCourseSurface(courseCollision, ray, maxDistance = Infinit
     distance: hit.distance,
     normal,
     point: hit.point.clone(),
+    surfaceType: hit.surfaceType,
   };
 }
 
@@ -298,12 +330,14 @@ function longestAxisIndex(vector) {
 function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
   const hitNormal = new THREE.Vector3();
   let collided = false;
+  let lastSurfaceType = null;
 
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const nearestHit = findNearestTrianglePoint(root, center, radius + skin, {
       distanceSq: Infinity,
       normal: null,
       point: null,
+      surfaceType: null,
     });
 
     if (!nearestHit || nearestHit.point === null) {
@@ -325,10 +359,11 @@ function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
     center.addScaledVector(separationNormal, radius - distance + skin);
     hitNormal.add(separationNormal);
     collided = true;
+    lastSurfaceType = nearestHit.surfaceType;
   }
 
   if (!collided) {
-    return { collided: false, hitNormal };
+    return { collided: false, hitNormal, surfaceType: null };
   }
 
   if (hitNormal.lengthSq() === 0) {
@@ -337,7 +372,7 @@ function resolveSpherePenetration(root, center, radius, skin, maxIterations) {
     hitNormal.normalize();
   }
 
-  return { collided: true, hitNormal };
+  return { collided: true, hitNormal, surfaceType: lastSurfaceType };
 }
 
 function sweepSphereNode(node, start, displacement, radius, sweptBounds, bestHit) {
@@ -431,6 +466,7 @@ function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTim
   return {
     normal: bestNormal,
     time: bestDistance / directionLength,
+    surfaceType: triangleRecord.surfaceType,
   };
 }
 
@@ -576,6 +612,7 @@ function findNearestTrianglePoint(node, point, maxDistance, bestHit) {
       bestHit.distanceSq = distanceSq;
       bestHit.normal = triangleRecord.normal;
       bestHit.point = WORKING_CLOSEST_POINT.clone();
+      bestHit.surfaceType = triangleRecord.surfaceType;
     }
 
     return bestHit;
@@ -654,6 +691,7 @@ function raycastNode(node, ray, maxDistance, bestHit) {
         distance: hitDistance,
         normal: RAYCAST_NORMAL.clone(),
         point: hitPoint.clone(),
+        surfaceType: triangleRecord.surfaceType,
       };
     }
 

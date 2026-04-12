@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import {
-  BALL_BOUNCE_RESTITUTION,
   BALL_COLLISION_SKIN,
   BALL_CONTACT_MAX_ROLLING_SPEED,
   BALL_CONTACT_MIN_DURATION_SECONDS,
@@ -9,24 +8,19 @@ import {
   BALL_GROUND_SNAP_DISTANCE,
   BALL_GROUNDED_NORMAL_MIN_Y,
   BALL_GRAVITY_ACCELERATION,
-  BALL_IMPACT_FRICTION,
-  BALL_IMPACT_MAX_FRICTION,
   BALL_IMPACT_REFERENCE_NORMAL_SPEED,
-  BALL_LANDING_BRAKE_FRICTION,
   BALL_LANDING_CAPTURE_NORMAL_SPEED,
   BALL_LANDING_CAPTURE_SPEED,
   BALL_LANDING_CONTACT_ENTRY_NORMAL_SPEED,
-  BALL_LANDING_SLIDING_FRICTION,
   BALL_MAX_COLLISION_ITERATIONS,
   BALL_MAX_FIXED_STEPS_PER_FRAME,
   BALL_RADIUS,
-  BALL_ROLLING_RESISTANCE,
   BALL_SPIN_GROUND_DAMPING,
-  BALL_STATIC_FRICTION,
   BALL_START_POSITION,
   BALL_STOP_SPEED,
   BALL_DEFAULT_LAUNCH_DATA,
 } from '/static/js/game/constants.js';
+import { getSurfaceProperties } from '/static/js/game/surfacePhysics.js';
 import {
   buildLaunchAngularVelocity,
   buildLaunchVelocity,
@@ -88,6 +82,7 @@ export function createBallPhysics(viewerScene) {
   const renderOrientation = orientation.clone();
   const shotStartPosition = position.clone();
   const supportNormal = new THREE.Vector3(0, 1, 0);
+  let supportSurfaceType = 'default';
   let accumulatorSeconds = 0;
   let phase = 'ready';
   let movementState = 'waiting';
@@ -104,6 +99,7 @@ export function createBallPhysics(viewerScene) {
     }
 
     supportNormal.copy(support.normal);
+    supportSurfaceType = support.surfaceType ?? 'default';
     position.copy(support.point).addScaledVector(support.normal, BALL_RADIUS + BALL_COLLISION_SKIN);
     const overlapResolution = resolveSphereOverlapBVH(viewerScene.courseCollision, position, BALL_RADIUS, {
       maxIterations: BALL_MAX_COLLISION_ITERATIONS,
@@ -112,6 +108,9 @@ export function createBallPhysics(viewerScene) {
     position.copy(overlapResolution.position);
     if (overlapResolution.collided && overlapResolution.hitNormal.y >= BALL_GROUNDED_NORMAL_MIN_Y) {
       supportNormal.copy(overlapResolution.hitNormal);
+      if (overlapResolution.surfaceType) {
+        supportSurfaceType = overlapResolution.surfaceType;
+      }
     }
     projectOntoPlane(velocity, support.normal);
 
@@ -122,7 +121,7 @@ export function createBallPhysics(viewerScene) {
 
     SUPPORT_PROJECTED_GRAVITY.copy(GRAVITY);
     SUPPORT_PROJECTED_GRAVITY.addScaledVector(supportNormal, -SUPPORT_PROJECTED_GRAVITY.dot(supportNormal));
-    movementState = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY) ? 'rest' : groundedMovementState;
+    movementState = shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY, supportSurfaceType) ? 'rest' : groundedMovementState;
     if (phase === 'moving' && movementState === 'rest') {
       shotSettled = true;
     }
@@ -174,7 +173,12 @@ export function createBallPhysics(viewerScene) {
         0,
       ));
       const preImpactSpinRpm = getSpinRpm(angularVelocity);
-      resolveImpactVelocity(velocity, angularVelocity, sweep.hitNormal);
+      resolveImpactVelocity(velocity, angularVelocity, sweep.hitNormal, sweep.surfaceType);
+      console.log('[BallBounceSurface]', {
+        surfaceType: sweep.surfaceType ?? 'default',
+        preImpactSpeedMetersPerSecond,
+        preImpactNormalSpeedMetersPerSecond,
+      });
       const postImpactSpeedMetersPerSecond = velocity.length();
       const postImpactNormalSpeedMetersPerSecond = Math.max(velocity.dot(sweep.hitNormal), 0);
       const postImpactTangentSpeedMetersPerSecond = Math.sqrt(Math.max(
@@ -268,7 +272,7 @@ export function createBallPhysics(viewerScene) {
       return;
     }
 
-    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
+    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY, supportSurfaceType)) {
       velocity.set(0, 0, 0);
       angularVelocity.set(0, 0, 0);
       movementState = 'rest';
@@ -288,7 +292,7 @@ export function createBallPhysics(viewerScene) {
     PROJECTED_GRAVITY.addScaledVector(supportNormal, -PROJECTED_GRAVITY.dot(supportNormal));
 
     velocity.addScaledVector(PROJECTED_GRAVITY, deltaSeconds);
-    applyGroundContactForces(velocity, angularVelocity, supportNormal, deltaSeconds);
+    applyGroundContactForces(velocity, angularVelocity, supportNormal, deltaSeconds, supportSurfaceType);
     DISPLACEMENT.copy(velocity).multiplyScalar(deltaSeconds);
 
     const contactSweepRadius = Math.max(BALL_RADIUS - BALL_COLLISION_SKIN, BALL_RADIUS * 0.5);
@@ -312,7 +316,7 @@ export function createBallPhysics(viewerScene) {
       return;
     }
 
-    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY)) {
+    if (shouldHoldAgainstSlope(velocity, PROJECTED_GRAVITY, supportSurfaceType)) {
       velocity.set(0, 0, 0);
       angularVelocity.set(0, 0, 0);
       movementState = 'rest';
@@ -343,10 +347,11 @@ export function createBallPhysics(viewerScene) {
     }
 
     supportNormal.copy(support.normal);
+    supportSurfaceType = support.surfaceType ?? supportSurfaceType;
     SUPPORT_PROJECTED_GRAVITY.copy(GRAVITY);
     SUPPORT_PROJECTED_GRAVITY.addScaledVector(supportNormal, -SUPPORT_PROJECTED_GRAVITY.dot(supportNormal));
 
-    if (!shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY)) {
+    if (!shouldHoldAgainstSlope(velocity, SUPPORT_PROJECTED_GRAVITY, supportSurfaceType)) {
       movementState = 'ground';
       contactAgeSeconds = 0;
       return;
@@ -359,6 +364,9 @@ export function createBallPhysics(viewerScene) {
         skin: BALL_COLLISION_SKIN,
       });
       position.copy(overlapResolution.position);
+      if (overlapResolution.surfaceType) {
+        supportSurfaceType = overlapResolution.surfaceType;
+      }
     }
 
     velocity.set(0, 0, 0);
@@ -550,18 +558,20 @@ export function createBallPhysics(viewerScene) {
   };
 }
 
-function applyGroundContactForces(velocity, angularVelocity, surfaceNormal, deltaSeconds) {
+function applyGroundContactForces(velocity, angularVelocity, surfaceNormal, deltaSeconds, surfaceType) {
   CONTACT_OFFSET.copy(surfaceNormal).multiplyScalar(-BALL_RADIUS);
   CONTACT_SPIN_VELOCITY.copy(angularVelocity).cross(CONTACT_OFFSET);
   CONTACT_POINT_VELOCITY.copy(velocity).add(CONTACT_SPIN_VELOCITY);
   CONTACT_TANGENT_VELOCITY.copy(CONTACT_POINT_VELOCITY);
   CONTACT_TANGENT_VELOCITY.addScaledVector(surfaceNormal, -CONTACT_TANGENT_VELOCITY.dot(surfaceNormal));
 
+  const properties = getSurfaceProperties(surfaceType);
+
   const slipSpeed = CONTACT_TANGENT_VELOCITY.length();
   if (slipSpeed > 1e-6) {
     const slidingDeltaSpeed = Math.min(
       slipSpeed,
-      BALL_LANDING_SLIDING_FRICTION * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+      properties.landingSlidingFriction * BALL_GRAVITY_ACCELERATION * deltaSeconds,
     );
     CONTACT_IMPULSE_DELTA.copy(CONTACT_TANGENT_VELOCITY).multiplyScalar(-slidingDeltaSpeed / slipSpeed);
     velocity.add(CONTACT_IMPULSE_DELTA);
@@ -573,26 +583,28 @@ function applyGroundContactForces(velocity, angularVelocity, surfaceNormal, delt
   if (speed > BALL_CONTACT_MAX_ROLLING_SPEED) {
     const contactBrakeSpeed = Math.min(
       speed - BALL_CONTACT_MAX_ROLLING_SPEED,
-      BALL_LANDING_BRAKE_FRICTION * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+      properties.landingBrakeFriction * BALL_GRAVITY_ACCELERATION * deltaSeconds,
     );
     if (contactBrakeSpeed > 0) {
       velocity.addScaledVector(velocity, -contactBrakeSpeed / speed);
     }
   }
 
-  applyRollingResistance(velocity, deltaSeconds);
+  applyRollingResistance(velocity, deltaSeconds, surfaceType);
 }
 
-function applyRollingResistance(velocity, deltaSeconds) {
+function applyRollingResistance(velocity, deltaSeconds, surfaceType) {
   const speed = velocity.length();
   if (speed <= 1e-6) {
     velocity.set(0, 0, 0);
     return;
   }
 
+  const rollingResistance = getSurfaceProperties(surfaceType).rollingResistance;
+
   const rollingDeltaSpeed = Math.min(
     speed,
-    BALL_ROLLING_RESISTANCE * BALL_GRAVITY_ACCELERATION * deltaSeconds,
+    rollingResistance * BALL_GRAVITY_ACCELERATION * deltaSeconds,
   );
   velocity.addScaledVector(velocity, -rollingDeltaSpeed / speed);
 }
@@ -618,12 +630,13 @@ function getContactSlipSpeed(velocity, angularVelocity, surfaceNormal) {
   return CONTACT_TANGENT_VELOCITY.length();
 }
 
-function shouldHoldAgainstSlope(velocity, projectedGravity) {
+function shouldHoldAgainstSlope(velocity, projectedGravity, surfaceType) {
   if (velocity.lengthSq() > BALL_STOP_SPEED * BALL_STOP_SPEED) {
     return false;
   }
 
-  return projectedGravity.lengthSq() <= (BALL_STATIC_FRICTION * BALL_GRAVITY_ACCELERATION) ** 2;
+  const staticFriction = getSurfaceProperties(surfaceType).staticFriction;
+  return projectedGravity.lengthSq() <= (staticFriction * BALL_GRAVITY_ACCELERATION) ** 2;
 }
 
 function shouldEnterGroundMode(velocity, hitNormal) {
@@ -639,7 +652,7 @@ function shouldEnterGroundMode(velocity, hitNormal) {
   return velocity.lengthSq() <= BALL_LANDING_CAPTURE_SPEED * BALL_LANDING_CAPTURE_SPEED;
 }
 
-function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
+function resolveImpactVelocity(velocity, angularVelocity, hitNormal, surfaceType) {
   const normalSpeed = velocity.dot(hitNormal);
   if (normalSpeed >= 0) {
     return;
@@ -657,6 +670,8 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
   CONTACT_TANGENT_VELOCITY.addScaledVector(hitNormal, -CONTACT_TANGENT_VELOCITY.dot(hitNormal));
   const incomingTangentSpeed = CONTACT_TANGENT_VELOCITY.length();
 
+  const properties = getSurfaceProperties(surfaceType);
+
   const impactSeverity = incomingSpeed > 1e-6
     ? THREE.MathUtils.clamp(
       incomingNormalSpeed / Math.max(incomingNormalSpeed + incomingTangentSpeed, 1e-6),
@@ -669,8 +684,12 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
     0,
     1,
   );
-  const baseFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_FRICTION : BALL_IMPACT_FRICTION * 0.2;
-  const maxFriction = hitNormal.y >= 0.5 ? BALL_IMPACT_MAX_FRICTION : BALL_IMPACT_MAX_FRICTION * 0.25;
+  
+  // Calculate max friction based on base impact friction config
+  const impactMaxFriction = properties.impactFriction * 2.0;
+
+  const baseFriction = hitNormal.y >= 0.5 ? properties.impactFriction : properties.impactFriction * 0.2;
+  const maxFriction = hitNormal.y >= 0.5 ? impactMaxFriction : impactMaxFriction * 0.25;
   const friction = THREE.MathUtils.lerp(baseFriction, maxFriction, impactSeverity * impactStrength);
   
   // A solid sphere's moment of inertia means only 2/7ths of the contact point's speed
@@ -704,7 +723,7 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
 
   const restitution = THREE.MathUtils.lerp(
     0,
-    BALL_BOUNCE_RESTITUTION,
+    properties.bounceRestitution,
     THREE.MathUtils.clamp(
       (incomingNormalSpeed - BALL_LANDING_CAPTURE_NORMAL_SPEED)
         / Math.max(BALL_IMPACT_REFERENCE_NORMAL_SPEED - BALL_LANDING_CAPTURE_NORMAL_SPEED, 1e-6),
