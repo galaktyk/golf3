@@ -1,0 +1,558 @@
+import * as THREE from 'three';
+import {
+  AIMING_MARKER_PIXEL_HEIGHT,
+  AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+  AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+  BALL_RADIUS,
+  BALL_ROLLING_RESISTANCE,
+  COURSE_HOLE_POSITION,
+} from '/static/js/game/constants.js';
+import { buildHoleSlopeGridPreview, buildPuttGridPreview, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
+import { sampleCourseSurface } from '/static/js/game/collision.js';
+import { formatDistanceYards, formatMetersPerSecond } from '/static/js/game/formatting.js';
+import { getNeutralClubLaunchPreview } from '/static/js/game/impact/clubImpact.js';
+
+const AIMING_TARGET_DISTANCE_MIN_METERS = 0.25;
+const AIMING_TARGET_DISTANCE_MAX_METERS = 999;
+const AIMING_TARGET_RESET_HOLE_DISTANCE_SCALE = 0.95;
+const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
+const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
+const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
+const PUTT_PREVIEW_UPHILL_SPEED_PER_METER = 1.8;
+const PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER = 0.8;
+const PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND = 0.05;
+const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
+const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 6;
+const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
+const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
+
+/**
+ * Owns aiming-preview state, hole-relative target solving, and aiming-marker presentation.
+ */
+export function createAimingPreviewController({ viewerScene, hud, ballPhysics, getActiveClub, syncLaunchDebugInputs }) {
+  const aimingMarkerCameraSpace = new THREE.Vector3();
+  const aimingPreviewLandingPoint = new THREE.Vector3();
+  const aimingPreviewTargetProbePoint = new THREE.Vector3();
+  const aimingPreviewTargetForward = new THREE.Vector3();
+  const aimingPreviewTargetLateralOffset = new THREE.Vector3();
+  const characterForwardForPreview = new THREE.Vector3();
+  const holeWorldPosition = new THREE.Vector3();
+  const puttHoleOffset = new THREE.Vector3();
+
+  const aimingPreview = {
+    dirty: true,
+    isVisible: false,
+    carryDistanceMeters: 0,
+    hasTargetPoint: false,
+    mode: 'landing',
+    puttGrid: null,
+    slopeGrid: null,
+  };
+
+  let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
+  let aimingTargetDistanceMeters = 5;
+  let puttAimDistanceMeters = 5;
+
+  const usesLaunchAimingPreview = () => getActiveClub()?.category !== 'putter';
+
+  /**
+   * Resolves the cup position in world space so gameplay code does not depend on scene-graph transforms directly.
+   */
+  const resolveHoleWorldPosition = (target = holeWorldPosition) => {
+    const holeMarker = viewerScene.getHoleMarker();
+    if (holeMarker?.holePosition) {
+      return target.copy(holeMarker.holePosition);
+    }
+
+    return target.copy(COURSE_HOLE_POSITION);
+  };
+
+  const setAimingTargetDistanceMeters = (distanceMeters) => {
+    const clampedDistanceMeters = THREE.MathUtils.clamp(
+      distanceMeters,
+      AIMING_TARGET_DISTANCE_MIN_METERS,
+      AIMING_TARGET_DISTANCE_MAX_METERS,
+    );
+    aimingTargetDistanceMeters = clampedDistanceMeters;
+    puttAimDistanceMeters = clampedDistanceMeters;
+    return clampedDistanceMeters;
+  };
+
+  /**
+   * Returns the hole distance along the current putt line when the cup is effectively on that line.
+   */
+  const resolveAlignedHoleClampDistance = (ballPosition = ballPhysics.getPosition()) => {
+    if (!ballPosition) {
+      return null;
+    }
+
+    aimingPreviewTargetForward.copy(viewerScene.getCharacterForward(characterForwardForPreview));
+    if (aimingPreviewTargetForward.lengthSq() <= 1e-8) {
+      aimingPreviewTargetForward.set(0, 0, -1);
+    } else {
+      aimingPreviewTargetForward.normalize();
+    }
+
+    puttHoleOffset.subVectors(resolveHoleWorldPosition(), ballPosition);
+    puttHoleOffset.y = 0;
+    const holeDistanceAlongAimMeters = puttHoleOffset.dot(aimingPreviewTargetForward);
+    if (holeDistanceAlongAimMeters <= 0) {
+      return null;
+    }
+
+    aimingPreviewTargetLateralOffset.copy(puttHoleOffset).addScaledVector(
+      aimingPreviewTargetForward,
+      -holeDistanceAlongAimMeters,
+    );
+    if (aimingPreviewTargetLateralOffset.length() > PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS) {
+      return null;
+    }
+
+    return Math.max(holeDistanceAlongAimMeters - PUTT_AIM_HOLE_CLAMP_MARGIN_METERS, 0);
+  };
+
+  const clampPuttDistanceToAlignedHole = (distanceMeters, ballPosition = ballPhysics.getPosition()) => {
+    const alignedHoleClampDistance = resolveAlignedHoleClampDistance(ballPosition);
+    if (!Number.isFinite(alignedHoleClampDistance)) {
+      return distanceMeters;
+    }
+
+    return Math.min(distanceMeters, alignedHoleClampDistance);
+  };
+
+  const resolvePuttAimTargetPoint = (ballPosition = ballPhysics.getPosition(), target = aimingPreviewTargetProbePoint) => {
+    if (!ballPosition) {
+      return target.set(0, 0, 0);
+    }
+
+    aimingPreviewTargetForward.copy(viewerScene.getCharacterForward(characterForwardForPreview));
+    if (aimingPreviewTargetForward.lengthSq() <= 1e-8) {
+      aimingPreviewTargetForward.set(0, 0, -1);
+    } else {
+      aimingPreviewTargetForward.normalize();
+    }
+
+    target.copy(ballPosition)
+      .addScaledVector(aimingPreviewTargetForward, puttAimDistanceMeters);
+
+    if (!viewerScene.courseCollision?.root) {
+      return target;
+    }
+
+    const surfaceSample = sampleCourseSurface(
+      viewerScene.courseCollision,
+      target,
+      3,
+      18,
+    );
+
+    return target.copy(surfaceSample?.point ?? target);
+  };
+
+  const getPuttPreviewHeadSpeed = (ballPosition = ballPhysics.getPosition()) => {
+    const aimedDistanceMeters = THREE.MathUtils.clamp(
+      puttAimDistanceMeters,
+      AIMING_TARGET_DISTANCE_MIN_METERS,
+      AIMING_TARGET_DISTANCE_MAX_METERS,
+    );
+    const aimTargetPoint = resolvePuttAimTargetPoint(ballPosition, aimingPreviewTargetProbePoint);
+    const heightDeltaMeters = Number.isFinite(ballPosition?.y)
+      ? aimTargetPoint.y - ballPosition.y
+      : 0;
+    const effectiveRollFriction = BALL_ROLLING_RESISTANCE * PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER;
+    const stopDistanceBallSpeed = Math.sqrt(
+      Math.max(0, 2 * effectiveRollFriction * PUTT_PREVIEW_GRAVITY_ACCELERATION * aimedDistanceMeters),
+    );
+    const uphillSpeedAdjustment = Math.max(heightDeltaMeters, 0) * PUTT_PREVIEW_UPHILL_SPEED_PER_METER;
+    const downhillSpeedAdjustment = Math.max(-heightDeltaMeters, 0) * PUTT_PREVIEW_DOWNHILL_SPEED_PER_METER;
+    const targetBallSpeedMetersPerSecond = Math.max(
+      PUTT_PREVIEW_MIN_BALL_SPEED_METERS_PER_SECOND,
+      stopDistanceBallSpeed + uphillSpeedAdjustment - downhillSpeedAdjustment + PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND,
+    );
+    const smashFactor = Number.isFinite(getActiveClub()?.smashFactor)
+      ? Math.max(getActiveClub().smashFactor, 1e-6)
+      : 1;
+
+    return THREE.MathUtils.clamp(
+      targetBallSpeedMetersPerSecond / smashFactor,
+      AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+      AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+    );
+  };
+
+  const getCurrentAimingPreviewHeadSpeed = (ballPosition = ballPhysics.getPosition()) => {
+    if (usesLaunchAimingPreview()) {
+      return aimingPreviewHeadSpeedMetersPerSecond;
+    }
+
+    return getPuttPreviewHeadSpeed(ballPosition);
+  };
+
+  const syncSwingPreviewTarget = () => {
+    hud.updateSwingPreviewTarget(getCurrentAimingPreviewHeadSpeed());
+  };
+
+  const invalidate = () => {
+    aimingPreview.dirty = true;
+    if (!usesLaunchAimingPreview()) {
+      syncSwingPreviewTarget();
+    }
+  };
+
+  const syncPuttAimDistanceToHole = (ballPosition = ballPhysics.getPosition()) => {
+    if (!ballPosition) {
+      return;
+    }
+
+    puttHoleOffset.subVectors(resolveHoleWorldPosition(), ballPosition);
+    puttHoleOffset.y = 0;
+    const holeDistanceMeters = puttHoleOffset.length();
+    const previousAimDistanceMeters = aimingTargetDistanceMeters;
+    let nextAimDistanceMeters = previousAimDistanceMeters;
+
+    if (!Number.isFinite(nextAimDistanceMeters) || nextAimDistanceMeters <= 0) {
+      nextAimDistanceMeters = holeDistanceMeters;
+    }
+
+    if (nextAimDistanceMeters > holeDistanceMeters) {
+      nextAimDistanceMeters = holeDistanceMeters * AIMING_TARGET_RESET_HOLE_DISTANCE_SCALE;
+    }
+
+    setAimingTargetDistanceMeters(nextAimDistanceMeters);
+
+    if (usesLaunchAimingPreview()) {
+      syncLaunchPreviewHeadSpeedToAimingTarget(ballPosition);
+      return;
+    }
+
+    syncPuttAimDistanceToAimingTarget();
+  };
+
+  const syncPuttAimDistanceToAimingTarget = () => {
+    puttAimDistanceMeters = THREE.MathUtils.clamp(
+      aimingTargetDistanceMeters,
+      AIMING_TARGET_DISTANCE_MIN_METERS,
+      AIMING_TARGET_DISTANCE_MAX_METERS,
+    );
+  };
+
+  const solveLaunchPreviewHeadSpeedForDistance = (targetDistanceMeters, ballPosition = ballPhysics.getPosition()) => {
+    if (!ballPosition || !viewerScene.courseCollision?.root) {
+      return aimingPreviewHeadSpeedMetersPerSecond;
+    }
+
+    const desiredDistanceMeters = Math.max(targetDistanceMeters, AIMING_TARGET_DISTANCE_MIN_METERS);
+    const referenceForward = viewerScene.getCharacterForward(characterForwardForPreview);
+    let lowHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND;
+    let highHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND;
+    let bestHeadSpeedMetersPerSecond = aimingPreviewHeadSpeedMetersPerSecond;
+    let bestDistanceErrorMeters = Infinity;
+
+    for (let iteration = 0; iteration < 14; iteration += 1) {
+      const candidateHeadSpeedMetersPerSecond = (lowHeadSpeedMetersPerSecond + highHeadSpeedMetersPerSecond) * 0.5;
+      const launchPreview = getNeutralClubLaunchPreview(candidateHeadSpeedMetersPerSecond, getActiveClub());
+      if (!launchPreview?.isReady) {
+        lowHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+        continue;
+      }
+
+      const firstContactPreview = predictFirstContactPoint(
+        viewerScene,
+        ballPosition,
+        {
+          ballSpeed: launchPreview.ballSpeed,
+          verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+          horizontalLaunchAngle: 0,
+          spinSpeed: launchPreview.spinSpeed,
+          spinAxis: launchPreview.spinAxis,
+        },
+        referenceForward,
+      );
+      const candidateDistanceMeters = firstContactPreview?.carryDistanceMeters ?? 0;
+      const distanceErrorMeters = Math.abs(candidateDistanceMeters - desiredDistanceMeters);
+      if (distanceErrorMeters < bestDistanceErrorMeters) {
+        bestDistanceErrorMeters = distanceErrorMeters;
+        bestHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+      }
+
+      if (candidateDistanceMeters < desiredDistanceMeters) {
+        lowHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+      } else {
+        highHeadSpeedMetersPerSecond = candidateHeadSpeedMetersPerSecond;
+      }
+    }
+
+    return THREE.MathUtils.clamp(
+      bestHeadSpeedMetersPerSecond,
+      AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+      AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+    );
+  };
+
+  const syncLaunchPreviewHeadSpeedToAimingTarget = (ballPosition = ballPhysics.getPosition()) => {
+    const solvedHeadSpeedMetersPerSecond = solveLaunchPreviewHeadSpeedForDistance(
+      aimingTargetDistanceMeters,
+      ballPosition,
+    );
+    if (Number.isFinite(solvedHeadSpeedMetersPerSecond)) {
+      aimingPreviewHeadSpeedMetersPerSecond = solvedHeadSpeedMetersPerSecond;
+    }
+  };
+
+  const adjustAimingPreviewHeadSpeed = (deltaMetersPerSecond) => {
+    const nextHeadSpeedMetersPerSecond = THREE.MathUtils.clamp(
+      aimingPreviewHeadSpeedMetersPerSecond + deltaMetersPerSecond,
+      AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
+      AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
+    );
+    if (Math.abs(nextHeadSpeedMetersPerSecond - aimingPreviewHeadSpeedMetersPerSecond) <= 1e-8) {
+      return;
+    }
+
+    aimingPreviewHeadSpeedMetersPerSecond = nextHeadSpeedMetersPerSecond;
+    syncSwingPreviewTarget();
+    invalidate();
+    hud.setStatus(`Aim preview head speed: ${formatMetersPerSecond(aimingPreviewHeadSpeedMetersPerSecond)}`);
+  };
+
+  const adjustPuttAimDistance = (deltaMeters) => {
+    const nextPuttAimDistanceMeters = THREE.MathUtils.clamp(
+      puttAimDistanceMeters + deltaMeters,
+      AIMING_TARGET_DISTANCE_MIN_METERS,
+      AIMING_TARGET_DISTANCE_MAX_METERS,
+    );
+    if (Math.abs(nextPuttAimDistanceMeters - puttAimDistanceMeters) <= 1e-8) {
+      return;
+    }
+
+    setAimingTargetDistanceMeters(nextPuttAimDistanceMeters);
+    syncSwingPreviewTarget();
+    invalidate();
+    hud.setStatus(
+      `Putt aim: ${formatDistanceYards(puttAimDistanceMeters)} (${formatMetersPerSecond(getCurrentAimingPreviewHeadSpeed())})`,
+    );
+  };
+
+  const updateSwingPreviewCaptureFromImpact = (impact) => {
+    const capturedHeadSpeedMetersPerSecond = Number.isFinite(impact?.launchPreview?.clubHeadSpeedMetersPerSecond)
+      ? impact.launchPreview.clubHeadSpeedMetersPerSecond
+      : impact?.impactSpeedMetersPerSecond;
+    hud.updateSwingPreviewCapture(
+      capturedHeadSpeedMetersPerSecond,
+      getCurrentAimingPreviewHeadSpeed(),
+    );
+  };
+
+  const preserveCurrentTargetDistance = () => {
+    if (aimingPreview.hasTargetPoint) {
+      setAimingTargetDistanceMeters(aimingPreview.carryDistanceMeters);
+    }
+  };
+
+  const onClubChanged = () => {
+    preserveCurrentTargetDistance();
+    if (!usesLaunchAimingPreview()) {
+      syncPuttAimDistanceToAimingTarget();
+    } else {
+      syncLaunchPreviewHeadSpeedToAimingTarget();
+    }
+    syncSwingPreviewTarget();
+    invalidate();
+  };
+
+  const updateIfNeeded = (playerState) => {
+    if (!aimingPreview.dirty) {
+      return;
+    }
+    aimingPreview.isVisible = false;
+    aimingPreview.hasTargetPoint = false;
+    aimingPreview.puttGrid = null;
+    aimingPreview.slopeGrid = null;
+
+    if (playerState !== 'control' || ballPhysics.getStateSnapshot().phase !== 'ready') {
+      aimingPreview.mode = usesLaunchAimingPreview() ? 'landing' : 'putt-grid';
+      aimingPreview.dirty = false;
+      return;
+    }
+
+    if (!viewerScene.courseCollision?.root) {
+      return;
+    }
+
+    if (!usesLaunchAimingPreview()) {
+      const puttAimForward = viewerScene.getCharacterForward(characterForwardForPreview);
+      const puttPreviewHeadSpeedMetersPerSecond = getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition());
+      const launchPreview = getNeutralClubLaunchPreview(
+        puttPreviewHeadSpeedMetersPerSecond,
+        getActiveClub(),
+      );
+      if (!launchPreview?.isReady) {
+        return;
+      }
+
+      const aimingPreviewLaunchData = {
+        ballSpeed: launchPreview.ballSpeed,
+        verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+        horizontalLaunchAngle: 0,
+        spinSpeed: launchPreview.spinSpeed,
+        spinAxis: launchPreview.spinAxis,
+      };
+      syncLaunchDebugInputs(aimingPreviewLaunchData);
+      resolvePuttAimTargetPoint(ballPhysics.getPosition(), aimingPreviewLandingPoint);
+      const puttGridPreview = buildPuttGridPreview(
+        viewerScene,
+        ballPhysics.getPosition(),
+        puttAimDistanceMeters,
+        puttAimForward,
+      );
+      aimingPreview.mode = 'putt-grid';
+      aimingPreview.puttGrid = puttGridPreview;
+      aimingPreview.isVisible = Boolean(puttGridPreview?.cells?.length || puttAimDistanceMeters > 0);
+      aimingPreview.hasTargetPoint = true;
+      aimingPreview.carryDistanceMeters = Math.hypot(
+        aimingPreviewLandingPoint.x - ballPhysics.getPosition().x,
+        aimingPreviewLandingPoint.z - ballPhysics.getPosition().z,
+      );
+      aimingPreview.dirty = false;
+      return;
+    }
+
+    const launchPreview = getNeutralClubLaunchPreview(
+      getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition()),
+      getActiveClub(),
+    );
+    if (!launchPreview?.isReady) {
+      return;
+    }
+
+    const aimingPreviewLaunchData = {
+      ballSpeed: launchPreview.ballSpeed,
+      verticalLaunchAngle: launchPreview.verticalLaunchAngle,
+      horizontalLaunchAngle: 0,
+      spinSpeed: launchPreview.spinSpeed,
+      spinAxis: launchPreview.spinAxis,
+    };
+    syncLaunchDebugInputs(aimingPreviewLaunchData);
+
+    const firstContactPreview = predictFirstContactPoint(
+      viewerScene,
+      ballPhysics.getPosition(),
+      aimingPreviewLaunchData,
+      viewerScene.getCharacterForward(characterForwardForPreview),
+    );
+    if (viewerScene.isAimingCameraEnabled()) {
+      aimingPreview.slopeGrid = buildHoleSlopeGridPreview(
+        viewerScene,
+        resolveHoleWorldPosition(),
+        characterForwardForPreview,
+      );
+    }
+    aimingPreview.mode = 'landing';
+    if (!firstContactPreview) {
+      aimingPreview.isVisible = Boolean(aimingPreview.slopeGrid?.cells?.length);
+      aimingPreview.dirty = false;
+      return;
+    }
+
+    aimingPreviewLandingPoint.copy(firstContactPreview.point);
+    aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(firstContactPreview.carryDistanceMeters);
+    aimingPreview.isVisible = true;
+    aimingPreview.hasTargetPoint = true;
+    aimingPreview.dirty = false;
+  };
+
+  const updateMarker = (ballTelemetry) => {
+    const aimingMarker = viewerScene.getAimingMarker();
+    if (!aimingMarker) {
+      return;
+    }
+
+    const hasSlopeGrid = Boolean(aimingPreview.slopeGrid?.cells?.length);
+
+    if (ballTelemetry.phase === 'moving' || (!aimingPreview.isVisible && !hasSlopeGrid)) {
+      aimingMarker.setVisible(false);
+      aimingMarker.setPuttGrid(null);
+      aimingMarker.setSlopeGrid(null);
+      aimingMarker.setPuttAimTarget(null);
+      return;
+    }
+
+    if (aimingPreview.mode === 'putt-grid') {
+      aimingMarker.setPuttGrid(aimingPreview.puttGrid);
+      aimingMarker.setSlopeGrid(null);
+      aimingMarker.setPuttAimTarget(null);
+      if (!aimingPreview.hasTargetPoint) {
+        aimingMarker.setVisible(false);
+        return;
+      }
+      aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+      if (aimingMarkerCameraSpace.z >= 0) {
+        aimingMarker.setVisible(false);
+        return;
+      }
+
+      const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+      const worldHeight = 2
+        * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
+        * Math.max(distanceToCamera, 0.01)
+        * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
+
+      aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
+      aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+      aimingMarker.setWorldHeight(worldHeight);
+      aimingMarker.setVisible(true);
+      return;
+    }
+
+    aimingMarker.setPuttGrid(null);
+    aimingMarker.setSlopeGrid(aimingPreview.slopeGrid);
+    aimingMarker.setPuttAimTarget(null);
+
+    if (!aimingPreview.hasTargetPoint) {
+      aimingMarker.setVisible(false);
+      return;
+    }
+
+    aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+    if (aimingMarkerCameraSpace.z >= 0) {
+      aimingMarker.setVisible(false);
+      return;
+    }
+
+    const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+    const worldHeight = 2
+      * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
+      * Math.max(distanceToCamera, 0.01)
+      * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
+
+    aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
+    aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+    aimingMarker.setWorldHeight(worldHeight);
+    aimingMarker.setVisible(true);
+  };
+
+  const getBallFollowPreviewState = () => ({
+    isVisible: aimingPreview.isVisible,
+    hasTargetPoint: aimingPreview.hasTargetPoint,
+    point: aimingPreview.hasTargetPoint ? aimingPreviewLandingPoint : null,
+  });
+
+  return {
+    adjustAimingPreviewHeadSpeed,
+    adjustPuttAimDistance,
+    getBallFollowPreviewState,
+    getCurrentAimingPreviewHeadSpeed,
+    getState: () => aimingPreview,
+    invalidate,
+    onClubChanged,
+    resolveHoleWorldPosition,
+    syncPuttAimDistanceToAimingTarget,
+    syncPuttAimDistanceToHole,
+    syncSwingPreviewTarget,
+    syncLaunchPreviewHeadSpeedToAimingTarget,
+    updateIfNeeded,
+    updateMarker,
+    updateSwingPreviewCaptureFromImpact,
+  };
+}

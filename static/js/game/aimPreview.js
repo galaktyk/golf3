@@ -32,6 +32,9 @@ const PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS = 2;
 const PUTT_PREVIEW_GRID_COLUMNS = 9;
 const PUTT_PREVIEW_GRID_SIZE_YARDS = 10;
 const PUTT_PREVIEW_YARDS_TO_METERS = 0.9144;
+const HOLE_SLOPE_GRID_ROWS = 9;
+const HOLE_SLOPE_GRID_COLUMNS = 9;
+const HOLE_SLOPE_GRID_CELL_SIZE_METERS = PUTT_PREVIEW_YARDS_TO_METERS;
 const PUTT_PREVIEW_GRID_DEPTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
 const PUTT_PREVIEW_GRID_WIDTH_METERS = PUTT_PREVIEW_GRID_SIZE_YARDS * PUTT_PREVIEW_YARDS_TO_METERS;
 const PUTT_PREVIEW_CELL_DEPTH_METERS = PUTT_PREVIEW_GRID_DEPTH_METERS / PUTT_PREVIEW_GRID_BASE_ROWS;
@@ -64,6 +67,38 @@ function resolvePuttPreviewLayout(aimDistanceMeters) {
     cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
     rowCount,
   };
+}
+
+/**
+ * Resolves orthogonal grid axes that preserve the gameplay aim direction while staying tangent to the surface.
+ */
+function resolvePreviewGridAxes(referenceForward, supportNormal, forwardTarget, rightTarget) {
+  if (referenceForward && referenceForward.lengthSq() > 1e-8) {
+    forwardTarget.copy(referenceForward);
+  } else {
+    forwardTarget.set(0, 0, -1);
+  }
+
+  forwardTarget.addScaledVector(supportNormal, -forwardTarget.dot(supportNormal));
+  if (forwardTarget.lengthSq() <= 1e-8) {
+    forwardTarget.set(0, 0, -1).addScaledVector(
+      supportNormal,
+      -new THREE.Vector3(0, 0, -1).dot(supportNormal),
+    );
+  }
+  if (forwardTarget.lengthSq() <= 1e-8) {
+    return false;
+  }
+
+  forwardTarget.normalize();
+  rightTarget.crossVectors(forwardTarget, WORLD_UP);
+  if (rightTarget.lengthSq() <= 1e-8) {
+    rightTarget.set(1, 0, 0);
+  } else {
+    rightTarget.normalize();
+  }
+
+  return true;
 }
 
 export function predictFirstContactPoint(viewerScene, startPosition, launchData, referenceForward = null) {
@@ -168,30 +203,9 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
   );
   const supportNormal = groundSample?.normal ?? PUTT_PREVIEW_FALLBACK_NORMAL;
 
-  if (referenceForward && referenceForward.lengthSq() > 1e-8) {
-    PUTT_PREVIEW_FORWARD.copy(referenceForward);
-  } else {
-    PUTT_PREVIEW_FORWARD.set(0, 0, -1);
-  }
-
   // Keep the grid aligned with gameplay aim while staying tangent to the sampled surface near the ball.
-  PUTT_PREVIEW_FORWARD.addScaledVector(supportNormal, -PUTT_PREVIEW_FORWARD.dot(supportNormal));
-  if (PUTT_PREVIEW_FORWARD.lengthSq() <= 1e-8) {
-    PUTT_PREVIEW_FORWARD.set(0, 0, -1).addScaledVector(
-      supportNormal,
-      -new THREE.Vector3(0, 0, -1).dot(supportNormal),
-    );
-  }
-  if (PUTT_PREVIEW_FORWARD.lengthSq() <= 1e-8) {
+  if (!resolvePreviewGridAxes(referenceForward, supportNormal, PUTT_PREVIEW_FORWARD, PUTT_PREVIEW_RIGHT)) {
     return null;
-  }
-
-  PUTT_PREVIEW_FORWARD.normalize();
-  PUTT_PREVIEW_RIGHT.crossVectors(PUTT_PREVIEW_FORWARD, WORLD_UP);
-  if (PUTT_PREVIEW_RIGHT.lengthSq() <= 1e-8) {
-    PUTT_PREVIEW_RIGHT.set(1, 0, 0);
-  } else {
-    PUTT_PREVIEW_RIGHT.normalize();
   }
 
   const vertices = [];
@@ -267,6 +281,102 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
     vertices,
     forward: PUTT_PREVIEW_FORWARD.clone(),
     rows: rowCount,
+    cells,
+  };
+}
+
+/**
+ * Samples a fixed 9x9 slope grid centered on the hole for non-putter aiming mode.
+ */
+export function buildHoleSlopeGridPreview(viewerScene, holePosition, referenceForward = null) {
+  if (!viewerScene?.courseCollision?.root || !holePosition) {
+    return null;
+  }
+
+  const groundSample = sampleCourseSurface(
+    viewerScene.courseCollision,
+    PUTT_PREVIEW_SUPPORT_SAMPLE.copy(holePosition),
+    PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
+    PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
+  );
+  if (!groundSample) {
+    return null;
+  }
+
+  const supportNormal = groundSample.normal ?? PUTT_PREVIEW_FALLBACK_NORMAL;
+  if (!resolvePreviewGridAxes(referenceForward, supportNormal, PUTT_PREVIEW_FORWARD, PUTT_PREVIEW_RIGHT)) {
+    return null;
+  }
+
+  const vertices = [];
+  for (let rowIndex = 0; rowIndex <= HOLE_SLOPE_GRID_ROWS; rowIndex += 1) {
+    const forwardOffset = (rowIndex - (HOLE_SLOPE_GRID_ROWS * 0.5)) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
+    for (let columnIndex = 0; columnIndex <= HOLE_SLOPE_GRID_COLUMNS; columnIndex += 1) {
+      const lateralOffset = (columnIndex - (HOLE_SLOPE_GRID_COLUMNS * 0.5)) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
+
+      PUTT_PREVIEW_VERTEX_SAMPLE_POINT.copy(groundSample.point)
+        .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
+        .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
+
+      const surfaceSample = sampleCourseSurface(
+        viewerScene.courseCollision,
+        PUTT_PREVIEW_VERTEX_SAMPLE_POINT,
+        PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
+        PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
+      );
+      if (!surfaceSample) {
+        return null;
+      }
+
+      vertices.push({
+        columnIndex,
+        rowIndex,
+        normal: surfaceSample.normal.clone(),
+        point: surfaceSample.point.clone(),
+      });
+    }
+  }
+
+  const cells = [];
+  for (let rowIndex = 0; rowIndex < HOLE_SLOPE_GRID_ROWS; rowIndex += 1) {
+    const forwardOffset = (rowIndex - (HOLE_SLOPE_GRID_ROWS * 0.5) + 0.5) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
+    for (let columnIndex = 0; columnIndex < HOLE_SLOPE_GRID_COLUMNS; columnIndex += 1) {
+      const lateralOffset = (columnIndex - (HOLE_SLOPE_GRID_COLUMNS * 0.5) + 0.5) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
+
+      PUTT_PREVIEW_SAMPLE_POINT.copy(groundSample.point)
+        .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
+        .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
+
+      const surfaceSample = sampleCourseSurface(
+        viewerScene.courseCollision,
+        PUTT_PREVIEW_SAMPLE_POINT,
+        PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
+        PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
+      );
+      if (!surfaceSample) {
+        continue;
+      }
+
+      cells.push({
+        columnIndex,
+        rowIndex,
+        normal: surfaceSample.normal.clone(),
+        point: surfaceSample.point.clone(),
+      });
+    }
+  }
+
+  if (cells.length === 0) {
+    return null;
+  }
+
+  return {
+    cellDepthMeters: HOLE_SLOPE_GRID_CELL_SIZE_METERS,
+    cellWidthMeters: HOLE_SLOPE_GRID_CELL_SIZE_METERS,
+    columns: HOLE_SLOPE_GRID_COLUMNS,
+    rows: HOLE_SLOPE_GRID_ROWS,
+    forward: PUTT_PREVIEW_FORWARD.clone(),
+    vertices,
     cells,
   };
 }

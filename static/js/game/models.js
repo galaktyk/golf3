@@ -53,6 +53,7 @@ export function loadViewerModels(viewerScene, onStatus) {
   viewerScene.scene.add(aimingMarker.debugSphere);
   viewerScene.scene.add(aimingMarker.puttAimTarget);
   viewerScene.scene.add(aimingMarker.puttGridRoot);
+  viewerScene.scene.add(aimingMarker.slopeGridRoot);
   viewerScene.setHoleMarker(holeMarker);
   viewerScene.setAimingMarker(aimingMarker);
 
@@ -61,7 +62,6 @@ export function loadViewerModels(viewerScene, onStatus) {
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
       viewerScene.mapRoot.add(gltf.scene);
-      viewerScene.placeMapOriginAtTee();
       viewerScene.setMapBounds(new THREE.Box3().setFromObject(viewerScene.mapRoot));
       viewerScene.setCourseCollision(buildCourseCollision(viewerScene.mapRoot));
       viewerScene.mapRoot.add(holeMarker.beamRoot);
@@ -615,6 +615,11 @@ function createAimingMarker() {
   const PUTT_GRID_MAX_CELLS = PUTT_GRID_MAX_ROWS * PUTT_GRID_COLUMNS;
   const PUTT_GRID_MAX_LINE_SEGMENTS = ((PUTT_GRID_MAX_ROWS + 1) * PUTT_GRID_COLUMNS)
     + ((PUTT_GRID_COLUMNS + 1) * PUTT_GRID_MAX_ROWS);
+  const SLOPE_GRID_ROWS = 9;
+  const SLOPE_GRID_COLUMNS = 9;
+  const SLOPE_GRID_MAX_CELLS = SLOPE_GRID_ROWS * SLOPE_GRID_COLUMNS;
+  const SLOPE_GRID_MAX_LINE_SEGMENTS = ((SLOPE_GRID_ROWS + 1) * SLOPE_GRID_COLUMNS)
+    + ((SLOPE_GRID_COLUMNS + 1) * SLOPE_GRID_ROWS);
   const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.08;
   const PUTT_GRID_SURFACE_OFFSET_METERS = 0.012;
   const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.8;
@@ -662,8 +667,11 @@ function createAimingMarker() {
   );
   const markerAspect = AIMING_MARKER_CANVAS_WIDTH / AIMING_MARKER_CANVAS_HEIGHT;
   const puttGridRoot = new THREE.Group();
+  const slopeGridRoot = new THREE.Group();
   const puttGridCircles = [];
+  const slopeGridCircles = [];
   const puttGridBaseForward = new THREE.Vector3();
+  const slopeGridBaseForward = new THREE.Vector3();
   const cellForward = new THREE.Vector3();
   const cellRight = new THREE.Vector3();
   const horizontalNormal = new THREE.Vector3();
@@ -672,7 +680,9 @@ function createAimingMarker() {
   const gridVertexA = new THREE.Vector3();
   const gridVertexB = new THREE.Vector3();
   const gridPositions = new Float32Array(PUTT_GRID_MAX_LINE_SEGMENTS * 2 * 3);
+  const slopeGridPositions = new Float32Array(SLOPE_GRID_MAX_LINE_SEGMENTS * 2 * 3);
   const puttGridLineGeometry = new THREE.BufferGeometry();
+  const slopeGridLineGeometry = new THREE.BufferGeometry();
   const WORLD_UP = new THREE.Vector3(0, 1, 0);
   let lastDistanceLabel = '';
 
@@ -695,9 +705,13 @@ function createAimingMarker() {
   markerSprite.scale.set(1 * markerAspect, 1, 1);
   puttGridRoot.name = 'aiming-putt-grid';
   puttGridRoot.visible = false;
+  slopeGridRoot.name = 'aiming-hole-slope-grid';
+  slopeGridRoot.visible = false;
 
   puttGridLineGeometry.setAttribute('position', new THREE.BufferAttribute(gridPositions, 3));
   puttGridLineGeometry.setDrawRange(0, 0);
+  slopeGridLineGeometry.setAttribute('position', new THREE.BufferAttribute(slopeGridPositions, 3));
+  slopeGridLineGeometry.setDrawRange(0, 0);
 
   const puttGridLines = new THREE.LineSegments(puttGridLineGeometry, new THREE.LineBasicMaterial({
     color: PUTT_GRID_COLOR,
@@ -708,6 +722,16 @@ function createAimingMarker() {
   }));
   puttGridLines.renderOrder = 991;
   puttGridRoot.add(puttGridLines);
+
+  const slopeGridLines = new THREE.LineSegments(slopeGridLineGeometry, new THREE.LineBasicMaterial({
+    color: PUTT_GRID_COLOR,
+    transparent: true,
+    opacity: PUTT_GRID_OPACITY,
+    depthWrite: false,
+    toneMapped: false,
+  }));
+  slopeGridLines.renderOrder = 991;
+  slopeGridRoot.add(slopeGridLines);
 
   const puttGridCircleGeometry = new THREE.CircleGeometry(PUTT_GRID_CIRCLE_RADIUS_METERS, 20);
   const puttGridCircleMaterial = new THREE.MeshBasicMaterial({
@@ -729,18 +753,26 @@ function createAimingMarker() {
     puttGridCircles.push(circle);
   }
 
-  const writeGridSegment = (segmentIndex, start, end) => {
-    if (segmentIndex >= PUTT_GRID_MAX_LINE_SEGMENTS) {
+  for (let cellIndex = 0; cellIndex < SLOPE_GRID_MAX_CELLS; cellIndex += 1) {
+    const circle = new THREE.Mesh(puttGridCircleGeometry, puttGridCircleMaterial);
+    circle.renderOrder = 992;
+    circle.visible = false;
+    slopeGridRoot.add(circle);
+    slopeGridCircles.push(circle);
+  }
+
+  const writeGridSegment = (positions, maxSegments, segmentIndex, start, end) => {
+    if (segmentIndex >= maxSegments) {
       return segmentIndex;
     }
 
     const baseIndex = segmentIndex * 6;
-    gridPositions[baseIndex] = start.x;
-    gridPositions[baseIndex + 1] = start.y;
-    gridPositions[baseIndex + 2] = start.z;
-    gridPositions[baseIndex + 3] = end.x;
-    gridPositions[baseIndex + 4] = end.y;
-    gridPositions[baseIndex + 5] = end.z;
+    positions[baseIndex] = start.x;
+    positions[baseIndex + 1] = start.y;
+    positions[baseIndex + 2] = start.z;
+    positions[baseIndex + 3] = end.x;
+    positions[baseIndex + 4] = end.y;
+    positions[baseIndex + 5] = end.z;
     return segmentIndex + 1;
   };
 
@@ -753,6 +785,117 @@ function createAimingMarker() {
       vertexRecord.normal,
       PUTT_GRID_SURFACE_OFFSET_METERS,
     );
+  };
+
+  const clearGridOverlay = (gridRoot, gridLineGeometry, gridCircles) => {
+    gridRoot.visible = false;
+    gridLineGeometry.setDrawRange(0, 0);
+    for (const circle of gridCircles) {
+      circle.visible = false;
+    }
+  };
+
+  const renderGridOverlay = (preview, gridRoot, gridLineGeometry, gridCircles, gridBaseForward, gridPositionsTarget, maxSegments) => {
+    if (!preview?.cells?.length || !preview?.vertices?.length) {
+      clearGridOverlay(gridRoot, gridLineGeometry, gridCircles);
+      return;
+    }
+
+    gridBaseForward.copy(preview.forward ?? WORLD_FORWARD);
+    gridBaseForward.y = 0;
+    if (gridBaseForward.lengthSq() <= 1e-8) {
+      gridBaseForward.copy(WORLD_FORWARD);
+    }
+    gridBaseForward.normalize();
+
+    let segmentCount = 0;
+    for (let rowIndex = 0; rowIndex <= preview.rows; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < preview.columns; columnIndex += 1) {
+        copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
+        copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex + 1), gridVertexB);
+        segmentCount = writeGridSegment(gridPositionsTarget, maxSegments, segmentCount, gridVertexA, gridVertexB);
+      }
+    }
+
+    for (let columnIndex = 0; columnIndex <= preview.columns; columnIndex += 1) {
+      for (let rowIndex = 0; rowIndex < preview.rows; rowIndex += 1) {
+        copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
+        copyLiftedVertex(getVertexRecord(preview, rowIndex + 1, columnIndex), gridVertexB);
+        segmentCount = writeGridSegment(gridPositionsTarget, maxSegments, segmentCount, gridVertexA, gridVertexB);
+      }
+    }
+
+    gridLineGeometry.attributes.position.needsUpdate = true;
+    gridLineGeometry.computeBoundingSphere();
+    gridLineGeometry.setDrawRange(0, segmentCount * 2);
+
+    const maxCircleOffsetMeters = Math.min(preview.cellWidthMeters, preview.cellDepthMeters) * PUTT_GRID_CIRCLE_OFFSET_LIMIT;
+    for (let cellIndex = 0; cellIndex < gridCircles.length; cellIndex += 1) {
+      const circle = gridCircles[cellIndex];
+      const cellPreview = preview.cells[cellIndex];
+      if (!cellPreview) {
+        circle.visible = false;
+        continue;
+      }
+
+      cellForward.copy(gridBaseForward).addScaledVector(
+        cellPreview.normal,
+        -gridBaseForward.dot(cellPreview.normal),
+      );
+      if (cellForward.lengthSq() <= 1e-8) {
+        cellForward.copy(WORLD_FORWARD).addScaledVector(
+          cellPreview.normal,
+          -WORLD_FORWARD.dot(cellPreview.normal),
+        );
+      }
+      if (cellForward.lengthSq() <= 1e-8) {
+        circle.visible = false;
+        continue;
+      }
+      cellForward.normalize();
+      cellRight.crossVectors(cellForward, cellPreview.normal);
+      if (cellRight.lengthSq() <= 1e-8) {
+        circle.visible = false;
+        continue;
+      }
+      cellRight.normalize();
+
+      liftedCellPosition.copy(cellPreview.point).addScaledVector(
+        cellPreview.normal,
+        PUTT_GRID_SURFACE_OFFSET_METERS,
+      );
+      cellMatrix.makeBasis(cellRight, cellForward, cellPreview.normal);
+      circle.position.copy(liftedCellPosition);
+      circle.quaternion.setFromRotationMatrix(cellMatrix).normalize();
+
+      horizontalNormal.copy(cellPreview.normal);
+      horizontalNormal.y = 0;
+      const horizontalSlopeStrength = horizontalNormal.length();
+      let circleOffsetScale = 0;
+      if (horizontalSlopeStrength > 1e-8) {
+        horizontalNormal.divideScalar(horizontalSlopeStrength);
+        const slopeAlpha = THREE.MathUtils.clamp(
+          horizontalSlopeStrength / PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE,
+          0,
+          1,
+        );
+        // Strongly bias gentle slopes upward so even subtle break stays legible.
+        circleOffsetScale = Math.pow(slopeAlpha, 0.4);
+      }
+
+      const circleOffsetMeters = maxCircleOffsetMeters * circleOffsetScale;
+      const rightOffset = horizontalNormal.dot(cellRight) * circleOffsetMeters;
+      const forwardOffset = horizontalNormal.dot(cellForward) * circleOffsetMeters;
+      circle.position.addScaledVector(cellRight, rightOffset);
+      circle.position.addScaledVector(cellForward, forwardOffset);
+      circle.position.addScaledVector(cellPreview.normal, 0.0015);
+      circle.visible = true;
+      const circleScale = THREE.MathUtils.lerp(1, PUTT_GRID_CIRCLE_MAX_SCALE, circleOffsetScale);
+      circle.scale.set(circleScale, circleScale, 1);
+      circle.updateMatrixWorld();
+    }
+
+    gridRoot.visible = true;
   };
 
   const redrawMarker = () => {
@@ -802,6 +945,7 @@ function createAimingMarker() {
     sprite: markerSprite,
     debugSphere,
     puttGridRoot,
+    slopeGridRoot,
     puttAimTarget,
 
     setDistanceLabel(distanceLabel) {
@@ -840,109 +984,27 @@ function createAimingMarker() {
     },
 
     setPuttGrid(preview) {
-      if (!preview?.cells?.length || !preview?.vertices?.length) {
-        puttGridRoot.visible = false;
-        puttGridLineGeometry.setDrawRange(0, 0);
-        for (const circle of puttGridCircles) {
-          circle.visible = false;
-        }
-        return;
-      }
+      renderGridOverlay(
+        preview,
+        puttGridRoot,
+        puttGridLineGeometry,
+        puttGridCircles,
+        puttGridBaseForward,
+        gridPositions,
+        PUTT_GRID_MAX_LINE_SEGMENTS,
+      );
+    },
 
-      puttGridBaseForward.copy(preview.forward ?? WORLD_FORWARD);
-      puttGridBaseForward.y = 0;
-      if (puttGridBaseForward.lengthSq() <= 1e-8) {
-        puttGridBaseForward.copy(WORLD_FORWARD);
-      }
-      puttGridBaseForward.normalize();
-
-      let segmentCount = 0;
-      for (let rowIndex = 0; rowIndex <= preview.rows; rowIndex += 1) {
-        for (let columnIndex = 0; columnIndex < preview.columns; columnIndex += 1) {
-          copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
-          copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex + 1), gridVertexB);
-          segmentCount = writeGridSegment(segmentCount, gridVertexA, gridVertexB);
-        }
-      }
-
-      for (let columnIndex = 0; columnIndex <= preview.columns; columnIndex += 1) {
-        for (let rowIndex = 0; rowIndex < preview.rows; rowIndex += 1) {
-          copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
-          copyLiftedVertex(getVertexRecord(preview, rowIndex + 1, columnIndex), gridVertexB);
-          segmentCount = writeGridSegment(segmentCount, gridVertexA, gridVertexB);
-        }
-      }
-
-      puttGridLineGeometry.attributes.position.needsUpdate = true;
-      puttGridLineGeometry.computeBoundingSphere();
-      puttGridLineGeometry.setDrawRange(0, segmentCount * 2);
-
-      const maxCircleOffsetMeters = Math.min(preview.cellWidthMeters, preview.cellDepthMeters) * PUTT_GRID_CIRCLE_OFFSET_LIMIT;
-      for (let cellIndex = 0; cellIndex < puttGridCircles.length; cellIndex += 1) {
-        const circle = puttGridCircles[cellIndex];
-        const cellPreview = preview.cells[cellIndex];
-        if (!cellPreview) {
-          circle.visible = false;
-          continue;
-        }
-
-        cellForward.copy(puttGridBaseForward).addScaledVector(
-          cellPreview.normal,
-          -puttGridBaseForward.dot(cellPreview.normal),
-        );
-        if (cellForward.lengthSq() <= 1e-8) {
-          cellForward.copy(WORLD_FORWARD).addScaledVector(
-            cellPreview.normal,
-            -WORLD_FORWARD.dot(cellPreview.normal),
-          );
-        }
-        if (cellForward.lengthSq() <= 1e-8) {
-          circle.visible = false;
-          continue;
-        }
-        cellForward.normalize();
-        cellRight.crossVectors(cellForward, cellPreview.normal);
-        if (cellRight.lengthSq() <= 1e-8) {
-          circle.visible = false;
-          continue;
-        }
-        cellRight.normalize();
-
-        liftedCellPosition.copy(cellPreview.point).addScaledVector(
-          cellPreview.normal,
-          PUTT_GRID_SURFACE_OFFSET_METERS,
-        );
-        cellMatrix.makeBasis(cellRight, cellForward, cellPreview.normal);
-        circle.position.copy(liftedCellPosition);
-        circle.quaternion.setFromRotationMatrix(cellMatrix).normalize();
-
-        horizontalNormal.copy(cellPreview.normal);
-        horizontalNormal.y = 0;
-        const horizontalSlopeStrength = horizontalNormal.length();
-        let circleOffsetScale = 0;
-        if (horizontalSlopeStrength > 1e-8) {
-          horizontalNormal.divideScalar(horizontalSlopeStrength);
-          const slopeAlpha = THREE.MathUtils.clamp(
-            horizontalSlopeStrength / PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE,
-            0,
-            1,
-          );
-          // Strongly bias gentle slopes upward so even subtle break stays legible.
-          circleOffsetScale = Math.pow(slopeAlpha, 0.4);
-        }
-
-        const circleOffsetMeters = maxCircleOffsetMeters * circleOffsetScale;
-        const rightOffset = horizontalNormal.dot(cellRight) * circleOffsetMeters;
-        const forwardOffset = horizontalNormal.dot(cellForward) * circleOffsetMeters;
-        circle.position.addScaledVector(cellRight, rightOffset);
-        circle.position.addScaledVector(cellForward, forwardOffset);
-        circle.position.addScaledVector(cellPreview.normal, 0.0015);
-        circle.visible = true;
-        const circleScale = THREE.MathUtils.lerp(1, PUTT_GRID_CIRCLE_MAX_SCALE, circleOffsetScale);
-        circle.scale.set(circleScale, circleScale, 1);
-        circle.updateMatrixWorld();
-      }
-      puttGridRoot.visible = true;
+    setSlopeGrid(preview) {
+      renderGridOverlay(
+        preview,
+        slopeGridRoot,
+        slopeGridLineGeometry,
+        slopeGridCircles,
+        slopeGridBaseForward,
+        slopeGridPositions,
+        SLOPE_GRID_MAX_LINE_SEGMENTS,
+      );
     },
   };
 }

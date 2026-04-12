@@ -16,7 +16,6 @@ import {
   FREE_CAMERA_MOVE_SPEED,
   FREE_CAMERA_PITCH_LIMIT_DEGREES,
   WORLD_FORWARD,
-  MAP_TEE_ORIGIN,
   MAX_RENDER_PIXEL_RATIO,
 } from '/static/js/game/constants.js';
 
@@ -36,7 +35,7 @@ export function createViewerScene(canvas) {
   scene.background = new THREE.Color('#050d18');
 
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 2000);
-  camera.position.set(2.6, 1.8, 4.4);
+  camera.position.copy(BALL_START_POSITION).add(new THREE.Vector3(2.6, 1.8, 4.4));
   scene.add(camera);
 
   const controls = new OrbitControls(camera, canvas);
@@ -46,7 +45,7 @@ export function createViewerScene(canvas) {
   controls.enableRotate = false;
   controls.enableZoom = false;
   controls.enabled = false;
-  controls.target.set(0, 0, 0);
+  controls.target.copy(BALL_START_POSITION);
   controls.minDistance = 0.01;
   controls.maxDistance = 500;
   controls.update();
@@ -451,10 +450,6 @@ export function createViewerScene(canvas) {
       freeCameraTranslation.normalize().multiplyScalar(FREE_CAMERA_MOVE_SPEED * deltaSeconds);
       camera.position.add(freeCameraTranslation);
       camera.updateMatrixWorld(true);
-    },
-
-    placeMapOriginAtTee() {
-      mapRoot.position.set(-MAP_TEE_ORIGIN.x, -MAP_TEE_ORIGIN.y, -MAP_TEE_ORIGIN.z);
     },
 
     positionBallAtStart() {

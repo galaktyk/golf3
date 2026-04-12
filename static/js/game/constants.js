@@ -12,10 +12,10 @@ export const CHARACTER_BALL_Z_OFFSET = 0.25;
 
 // Active course model path selected by courseData.
 export const MAP_MODEL_PATH = ACTIVE_COURSE.modelPath;
-// Tee position loaded from the active course definition.
+// Tee position loaded from the active course definition in world space.
 export const MAP_TEE_ORIGIN = ACTIVE_COURSE.tee.clone();
-// Local tee origin used as the default simulation start point.
-export const TEE_ORIGIN = new THREE.Vector3(0, 0, 0);
+// Runtime tee origin in world space. Gameplay now uses the same coordinates as the course data and BVH.
+export const TEE_ORIGIN = MAP_TEE_ORIGIN.clone();
 
 // Ball radius in meters. Larger values make the ball easier to hit and collide sooner with terrain.
 export const BALL_RADIUS = 0.04;

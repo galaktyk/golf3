@@ -1,9 +1,11 @@
 https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
---
 
-better adjust starter aim point
+make keyboard q change club left e change club right
+--
+grid 2x2 y
+around hole 20y x 20 y
 
 
 
