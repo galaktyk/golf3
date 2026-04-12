@@ -83,6 +83,7 @@ const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
 const AIMING_TARGET_DISTANCE_MIN_METERS = 0.25;
 const AIMING_TARGET_DISTANCE_MAX_METERS = 999;
+const AIMING_TARGET_RESET_HOLE_DISTANCE_SCALE = 0.95;
 const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
 const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
 const PUTT_PREVIEW_SPEED_BIAS_METERS_PER_SECOND = 0.15;
@@ -1624,7 +1625,7 @@ function getCurrentAimingPreviewHeadSpeed(ballPosition = ballPhysics.getPosition
 }
 
 /**
- * Resets the putt target distance to the current horizontal hole distance so putter mode starts from a sensible default.
+ * Resolves the post-reset target distance from the current hole distance without overwriting shorter launch targets.
  */
 function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
   if (!ballPosition) {
@@ -1633,11 +1634,17 @@ function syncPuttAimDistanceToHole(ballPosition = ballPhysics.getPosition()) {
 
   puttHoleOffset.subVectors(COURSE_HOLE_POSITION, ballPosition);
   puttHoleOffset.y = 0;
-  setAimingTargetDistanceMeters(THREE.MathUtils.clamp(
-    puttHoleOffset.length(),
-    AIMING_TARGET_DISTANCE_MIN_METERS,
-    AIMING_TARGET_DISTANCE_MAX_METERS,
-  ));
+  const holeDistanceMeters = puttHoleOffset.length();
+  const previousAimDistanceMeters = aimingTargetDistanceMeters;
+  let nextAimDistanceMeters = holeDistanceMeters;
+
+  if (usesLaunchAimingPreview()) {
+    nextAimDistanceMeters = previousAimDistanceMeters > holeDistanceMeters
+      ? holeDistanceMeters * AIMING_TARGET_RESET_HOLE_DISTANCE_SCALE
+      : previousAimDistanceMeters;
+  }
+
+  setAimingTargetDistanceMeters(nextAimDistanceMeters);
 }
 
 /**
