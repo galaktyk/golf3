@@ -26,9 +26,8 @@ const PREVIEW_CLEARANCE_HEIGHT_METERS = BALL_RADIUS * 0.35;
 const PREVIEW_MIN_LANDING_TRAVEL_METERS = Math.max(BALL_RADIUS * 6, 0.24);
 const PREVIEW_FALLBACK_GROUND_SNAP_DISTANCE = 12;
 const PUTT_PREVIEW_GRID_BASE_ROWS = 10;
-const PUTT_PREVIEW_GRID_MIN_ROWS = 8;
+const PUTT_PREVIEW_GRID_DEFAULT_ROWS = 8;
 const PUTT_PREVIEW_GRID_MAX_ROWS = 48;
-const PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS = 2;
 const PUTT_PREVIEW_GRID_COLUMNS = 9;
 const PREVIEW_GRID_CELL_SIZE_YARDS = 2;
 const PUTT_PREVIEW_YARDS_TO_METERS = 0.9144;
@@ -172,22 +171,33 @@ export function createPreviewSurfaceSampler(viewerScene, holePosition = null) {
 }
 
 /**
- * Resolves the putt-grid row count while keeping the same cell depth at all distances.
+ * Resolves a fixed putt-grid row count from a preview distance while keeping the same cell depth.
  */
-function resolvePuttPreviewLayout(aimDistanceMeters) {
-  if (!Number.isFinite(aimDistanceMeters) || aimDistanceMeters <= 0) {
-    return {
-      cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
-      rowCount: PUTT_PREVIEW_GRID_MIN_ROWS,
-    };
+export function resolvePuttPreviewRowCount(previewDistanceMeters) {
+  if (!Number.isFinite(previewDistanceMeters) || previewDistanceMeters <= 0) {
+    return PUTT_PREVIEW_GRID_DEFAULT_ROWS;
   }
 
-  const aimedRows = Math.ceil(aimDistanceMeters / PUTT_PREVIEW_CELL_DEPTH_METERS) + PUTT_PREVIEW_GRID_EXTRA_AIM_ROWS;
-  const rowCount = THREE.MathUtils.clamp(aimedRows, PUTT_PREVIEW_GRID_MIN_ROWS, PUTT_PREVIEW_GRID_MAX_ROWS);
+  return THREE.MathUtils.clamp(
+    Math.ceil(previewDistanceMeters / PUTT_PREVIEW_CELL_DEPTH_METERS),
+    PUTT_PREVIEW_GRID_DEFAULT_ROWS,
+    PUTT_PREVIEW_GRID_MAX_ROWS,
+  );
+}
+
+/**
+ * Resolves the putt-grid layout for a caller-provided row count.
+ */
+function resolvePuttPreviewLayout(rowCount = PUTT_PREVIEW_GRID_DEFAULT_ROWS) {
+  const clampedRowCount = THREE.MathUtils.clamp(
+    Math.round(rowCount),
+    PUTT_PREVIEW_GRID_DEFAULT_ROWS,
+    PUTT_PREVIEW_GRID_MAX_ROWS,
+  );
 
   return {
     cellDepthMeters: PUTT_PREVIEW_CELL_DEPTH_METERS,
-    rowCount,
+    rowCount: clampedRowCount,
   };
 }
 
@@ -308,12 +318,12 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
 }
 
 /**
- * Samples a variable-depth slope grid in front of the ball for putt aiming.
+ * Samples a fixed-row slope grid in front of the ball for putt aiming.
  */
 export function buildPuttGridPreview(
   viewerScene,
   ballPosition,
-  aimDistanceMeters = 0,
+  rowCount = PUTT_PREVIEW_GRID_DEFAULT_ROWS,
   referenceForward = null,
   holePosition = null,
 ) {
@@ -321,7 +331,7 @@ export function buildPuttGridPreview(
     return null;
   }
 
-  const { cellDepthMeters, rowCount } = resolvePuttPreviewLayout(aimDistanceMeters);
+  const { cellDepthMeters, rowCount: resolvedRowCount } = resolvePuttPreviewLayout(rowCount);
   const previewSurfaceSampler = createPreviewSurfaceSampler(viewerScene, holePosition);
 
   const groundSample = previewSurfaceSampler(
@@ -337,7 +347,7 @@ export function buildPuttGridPreview(
   }
 
   const vertices = [];
-  for (let rowIndex = 0; rowIndex <= rowCount; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex <= resolvedRowCount; rowIndex += 1) {
     const forwardOffset = rowIndex * cellDepthMeters;
     for (let columnIndex = 0; columnIndex <= PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
@@ -367,7 +377,7 @@ export function buildPuttGridPreview(
   }
 
   const cells = [];
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+  for (let rowIndex = 0; rowIndex < resolvedRowCount; rowIndex += 1) {
     const forwardOffset = (rowIndex + 0.5) * cellDepthMeters;
     for (let columnIndex = 0; columnIndex < PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
       const lateralOffset = (
@@ -406,7 +416,7 @@ export function buildPuttGridPreview(
     columns: PUTT_PREVIEW_GRID_COLUMNS,
     vertices,
     forward: PUTT_PREVIEW_FORWARD.clone(),
-    rows: rowCount,
+    rows: resolvedRowCount,
     cells,
   };
 }

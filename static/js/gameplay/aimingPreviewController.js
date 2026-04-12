@@ -13,6 +13,7 @@ import {
   buildPuttGridPreview,
   createPreviewSurfaceSampler,
   predictFirstContactPoint,
+  resolvePuttPreviewRowCount,
 } from '/static/js/game/aimPreview.js';
 import { formatDistanceYards, formatMetersPerSecond } from '/static/js/game/formatting.js';
 import { getNeutralClubLaunchPreview } from '/static/js/game/impact/clubImpact.js';
@@ -30,6 +31,7 @@ const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
 const PUTT_PREVIEW_EFFECTIVE_ROLL_FRICTION_MULTIPLIER = 6;
 const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
 const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
+const PUTT_PREVIEW_HOLE_LENGTH_SCALE = 1.25;
 
 /**
  * Owns aiming-preview state, hole-relative target solving, and aiming-marker presentation.
@@ -57,6 +59,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
   let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
   let aimingTargetDistanceMeters = 5;
   let puttAimDistanceMeters = 5;
+  let puttPreviewPinnedRowCount = null;
 
   const usesLaunchAimingPreview = () => getActiveClub()?.category !== 'putter';
 
@@ -199,6 +202,31 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     }
   };
 
+  /**
+   * Pins the putt grid depth from the current hole distance so aim tweaks do not keep extending the preview.
+   */
+  const pinPuttPreviewRowCount = (ballPosition = ballPhysics.getPosition()) => {
+    if (!ballPosition) {
+      puttPreviewPinnedRowCount = resolvePuttPreviewRowCount(0);
+      return puttPreviewPinnedRowCount;
+    }
+
+    puttHoleOffset.subVectors(resolveHoleWorldPosition(), ballPosition);
+    puttHoleOffset.y = 0;
+    puttPreviewPinnedRowCount = resolvePuttPreviewRowCount(
+      puttHoleOffset.length() * PUTT_PREVIEW_HOLE_LENGTH_SCALE,
+    );
+    return puttPreviewPinnedRowCount;
+  };
+
+  const ensurePuttPreviewRowCount = (ballPosition = ballPhysics.getPosition()) => {
+    if (Number.isFinite(puttPreviewPinnedRowCount)) {
+      return puttPreviewPinnedRowCount;
+    }
+
+    return pinPuttPreviewRowCount(ballPosition);
+  };
+
   const syncPuttAimDistanceToHole = (ballPosition = ballPhysics.getPosition()) => {
     if (!ballPosition) {
       return;
@@ -221,11 +249,13 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     setAimingTargetDistanceMeters(nextAimDistanceMeters);
 
     if (usesLaunchAimingPreview()) {
+      puttPreviewPinnedRowCount = null;
       syncLaunchPreviewHeadSpeedToAimingTarget(ballPosition);
       return;
     }
 
     syncPuttAimDistanceToAimingTarget();
+    pinPuttPreviewRowCount(ballPosition);
   };
 
   const syncPuttAimDistanceToAimingTarget = () => {
@@ -353,7 +383,9 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     preserveCurrentTargetDistance();
     if (!usesLaunchAimingPreview()) {
       syncPuttAimDistanceToAimingTarget();
+      pinPuttPreviewRowCount();
     } else {
+      puttPreviewPinnedRowCount = null;
       syncLaunchPreviewHeadSpeedToAimingTarget();
     }
     syncSwingPreviewTarget();
@@ -402,7 +434,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       const puttGridPreview = buildPuttGridPreview(
         viewerScene,
         ballPhysics.getPosition(),
-        puttAimDistanceMeters,
+        ensurePuttPreviewRowCount(ballPhysics.getPosition()),
         puttAimForward,
         resolveHoleWorldPosition(),
       );
