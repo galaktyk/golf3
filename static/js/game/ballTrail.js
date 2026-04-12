@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 
-const MAX_TRAIL_SAMPLES = 42;
-const TRAIL_SAMPLE_LIFETIME_SECONDS = 2.5;
+
+const TRAIL_SAMPLE_LIFETIME_SECONDS = 200.5;
 const TRAIL_MIN_SAMPLE_DISTANCE = 0.018;
-const TRAIL_MAX_SAMPLE_INTERVAL_SECONDS = 1 / 120;
-const TRAIL_BASE_OPACITY = 0.68;
+const TRAIL_MAX_SAMPLE_INTERVAL_SECONDS = 1 / 60;
+const TRAIL_BASE_OPACITY = 1;//0.68;
 const TRAIL_RADIUS_SCALE = 0.74;
 const TRAIL_MIN_POINT_DISTANCE = 0.001;
 const TRAIL_TUBULAR_SEGMENTS_PER_SPAN = 3;
@@ -83,9 +83,7 @@ export function createBallTrail(ballRadius) {
       age: 0,
       position: position.clone(),
     });
-    if (samples.length > MAX_TRAIL_SAMPLES) {
-      samples.length = MAX_TRAIL_SAMPLES;
-    }
+
 
     lastSamplePosition.copy(position);
     hasLastSample = true;
@@ -164,12 +162,13 @@ function createTailFadeTexture() {
   canvas.height = 1;
 
   const context = canvas.getContext('2d');
-  const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
-  gradient.addColorStop(0, 'rgb(0, 0, 0)');
-  gradient.addColorStop(0.18, 'rgb(20, 20, 20)');
-  gradient.addColorStop(0.45, 'rgb(115, 115, 115)');
-  gradient.addColorStop(1, 'rgb(255, 255, 255)');
-  context.fillStyle = gradient;
+  // const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+  // gradient.addColorStop(0, 'rgb(0, 0, 0)');
+  // gradient.addColorStop(0.18, 'rgb(20, 20, 20)');
+  // gradient.addColorStop(0.45, 'rgb(115, 115, 115)');
+  // gradient.addColorStop(1, 'rgb(255, 255, 255)');
+  // context.fillStyle = gradient;
+  context.fillStyle = 'rgb(255, 255, 255)';
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   const texture = new THREE.CanvasTexture(canvas);

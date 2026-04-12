@@ -1378,8 +1378,8 @@ function updateAimingPreviewIfNeeded() {
     ballSpeed: launchPreview.ballSpeed,
     verticalLaunchAngle: launchPreview.verticalLaunchAngle,
     horizontalLaunchAngle: 0,
-    spinSpeed: BALL_DEFAULT_LAUNCH_DATA.spinSpeed,
-    spinAxis: BALL_DEFAULT_LAUNCH_DATA.spinAxis,
+    spinSpeed: launchPreview.spinSpeed,
+    spinAxis: launchPreview.spinAxis,
   };
   syncLaunchDebugInputs(aimingPreviewLaunchData);
 

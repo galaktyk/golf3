@@ -43,7 +43,8 @@ function formatGroundTransitionComponents(transitionDebug) {
   }
 
   return `n ${transitionDebug.preImpactNormalSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactNormalSpeedMetersPerSecond.toFixed(2)} | `
-    + `t ${transitionDebug.preImpactTangentSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactTangentSpeedMetersPerSecond.toFixed(2)}`;
+    + `t ${transitionDebug.preImpactTangentSpeedMetersPerSecond.toFixed(2)} -> ${transitionDebug.postImpactTangentSpeedMetersPerSecond.toFixed(2)} | `
+    + `drop ${formatDegrees(transitionDebug.preImpactDescentAngleDegrees)}`;
 }
 
 const SWING_PREVIEW_TARGET_PERCENT = 80;

@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 import {
-  BALL_IMPACT_DEBUG_SPIN_AXIS,
-  BALL_IMPACT_DEBUG_SPIN_SPEED,
   BALL_IMPACT_VERTICAL_LAUNCH_ANGLE,
   BALL_RADIUS,
   CLUB_HEAD_COLLIDER_RADIUS,
@@ -27,6 +25,24 @@ const CLUB_HEAD_LAUNCH_DIRECTION = new THREE.Vector3();
 const HORIZONTAL_LAUNCH_DIRECTION = new THREE.Vector3();
 const SIGNED_ANGLE_CROSS = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const CLUB_CATEGORY_SPIN_MULTIPLIERS = {
+  wood: 0.95,
+  iron: 1.12,
+  wedge: 1.22,
+  putter: 0.05,
+};
+const CLUB_CATEGORY_MIN_SPIN_RPM = {
+  wood: 2200,
+  iron: 4000,
+  wedge: 6500,
+  putter: 20,
+};
+const CLUB_CATEGORY_MAX_SPIN_RPM = {
+  wood: 4800,
+  iron: 8500,
+  wedge: 12000,
+  putter: 220,
+};
 
 export function resolveClubBallImpact(
   characterTelemetry,
@@ -132,9 +148,11 @@ export function getNeutralClubLaunchPreview(estimatedClubHeadSpeedMetersPerSecon
 
 function buildLaunchPreview(impactSample, activeClub, launchMetrics = null) {
   const resolvedLaunchMetrics = launchMetrics ?? getLaunchMetrics(impactSample, activeClub);
+  const spinMetrics = getLaunchSpinMetrics(impactSample, activeClub, resolvedLaunchMetrics);
 
   return {
     ...resolvedLaunchMetrics,
+    ...spinMetrics,
     clubHeadSpeedMetersPerSecond: impactSample.clubHeadSpeedMetersPerSecond,
     isReady: impactSample.clubHeadSpeedMetersPerSecond > 0.1,
   };
@@ -204,13 +222,49 @@ function getSegmentSphereContactAlpha(startPosition, endPosition, sphereCenter, 
 
 function buildImpactLaunchData(impactSample, activeClub, launchMetrics = null) {
   const resolvedLaunchMetrics = launchMetrics ?? getLaunchMetrics(impactSample, activeClub);
+  const spinMetrics = getLaunchSpinMetrics(impactSample, activeClub, resolvedLaunchMetrics);
 
   return {
     ballSpeed: resolvedLaunchMetrics.ballSpeed,
     verticalLaunchAngle: resolvedLaunchMetrics.verticalLaunchAngle,
     horizontalLaunchAngle: resolvedLaunchMetrics.horizontalLaunchAngle,
-    spinSpeed: BALL_IMPACT_DEBUG_SPIN_SPEED,
-    spinAxis: BALL_IMPACT_DEBUG_SPIN_AXIS,
+    spinSpeed: spinMetrics.spinSpeed,
+    spinAxis: spinMetrics.spinAxis,
+  };
+}
+
+/**
+ * Produces a compact club-and-impact-based spin estimate instead of a debug-only placeholder.
+ */
+function getLaunchSpinMetrics(impactSample, activeClub, launchMetrics) {
+  const category = activeClub?.category ?? 'iron';
+  if (category === 'putter') {
+    return {
+      spinSpeed: THREE.MathUtils.clamp(impactSample.clubHeadSpeedMetersPerSecond * 12, 20, 220),
+      spinAxis: 0,
+    };
+  }
+
+  const loftDegrees = Number.isFinite(launchMetrics?.dynamicLoftDegrees)
+    ? launchMetrics.dynamicLoftDegrees
+    : launchMetrics?.baseLoftDegrees ?? BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  const verticalLaunchAngleDegrees = Number.isFinite(launchMetrics?.verticalLaunchAngle)
+    ? launchMetrics.verticalLaunchAngle
+    : BALL_IMPACT_VERTICAL_LAUNCH_ANGLE;
+  const speedFactor = THREE.MathUtils.clamp(
+    impactSample.clubHeadSpeedMetersPerSecond / 42,
+    0.78,
+    1.38,
+  );
+  const spinLoftDegrees = Math.max(loftDegrees - verticalLaunchAngleDegrees, 0);
+  const spinMultiplier = CLUB_CATEGORY_SPIN_MULTIPLIERS[category] ?? 1;
+  const baseSpinRpm = (1200 + (loftDegrees * 120) + (spinLoftDegrees * 220)) * spinMultiplier;
+  const minSpinRpm = CLUB_CATEGORY_MIN_SPIN_RPM[category] ?? 1800;
+  const maxSpinRpm = CLUB_CATEGORY_MAX_SPIN_RPM[category] ?? 7500;
+
+  return {
+    spinSpeed: THREE.MathUtils.clamp(baseSpinRpm * speedFactor, minSpinRpm, maxSpinRpm),
+    spinAxis: THREE.MathUtils.clamp(-(launchMetrics?.horizontalLaunchAngle ?? 0) * 0.55, -18, 18),
   };
 }
 
