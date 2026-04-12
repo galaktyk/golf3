@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { SURFACE_TYPES } from '/static/js/game/surfaceData.js';
 import { getSurfaceTypeFromTextureName } from '/static/js/game/surfacePhysics.js';
 
 const LEAF_TRIANGLE_COUNT = 12;
 const MAX_BUILD_DEPTH = 32;
+const LEAF_OPACITY_COLLISION_THRESHOLD = 0.3;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_DOWN = new THREE.Vector3(0, -1, 0);
 const WORKING_CENTROID_SIZE = new THREE.Vector3();
@@ -10,9 +12,13 @@ const WORKING_CLOSEST_POINT = new THREE.Vector3();
 const WORKING_LEFT_CENTER = new THREE.Vector3();
 const WORKING_RIGHT_CENTER = new THREE.Vector3();
 const WORKING_RAY_POINT = new THREE.Vector3();
+const WORKING_ALPHA_SAMPLE_POINT = new THREE.Vector3();
+const WORKING_BARYCOORD = new THREE.Vector3();
+const WORKING_UV = new THREE.Vector2();
 const RAYCAST_NORMAL = new THREE.Vector3();
 const SURFACE_SAMPLE_ORIGIN = new THREE.Vector3();
 const SURFACE_SAMPLE_DIRECTION = new THREE.Vector3(0, -1, 0);
+const OPACITY_IMAGE_DATA_CACHE = new WeakMap();
 
 export function buildCourseCollision(mapRoot) {
   mapRoot.updateWorldMatrix(true, true);
@@ -31,6 +37,7 @@ export function buildCourseCollision(mapRoot) {
     }
 
     const index = node.geometry.getIndex();
+    const uvAttribute = node.geometry.getAttribute('uv');
     const triangleCount = index ? index.count / 3 : positionAttribute.count / 3;
 
     if (!triangleCount) {
@@ -62,6 +69,13 @@ export function buildCourseCollision(mapRoot) {
           || triangleMaterial.name;
       }
       const surfaceType = getSurfaceTypeFromTextureName(textureName);
+      const opacityTexture = surfaceType === SURFACE_TYPES.LEAF
+        ? (triangleMaterial?.alphaMap ?? triangleMaterial?.map ?? null)
+        : null;
+      const opacityChannel = triangleMaterial?.alphaMap ? 'green' : 'alpha';
+      const opacityThreshold = surfaceType === SURFACE_TYPES.LEAF
+        ? Math.max(triangleMaterial?.alphaTest ?? 0, LEAF_OPACITY_COLLISION_THRESHOLD)
+        : 0;
 
       const aIndex = index ? index.getX(triangleIndex * 3) : triangleIndex * 3;
       const bIndex = index ? index.getX(triangleIndex * 3 + 1) : triangleIndex * 3 + 1;
@@ -79,8 +93,23 @@ export function buildCourseCollision(mapRoot) {
       const normal = triangle.getNormal(new THREE.Vector3());
       const bounds = new THREE.Box3().setFromPoints([a, b, c]);
       const centroid = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+      const uvA = uvAttribute ? new THREE.Vector2().fromBufferAttribute(uvAttribute, aIndex) : null;
+      const uvB = uvAttribute ? new THREE.Vector2().fromBufferAttribute(uvAttribute, bIndex) : null;
+      const uvC = uvAttribute ? new THREE.Vector2().fromBufferAttribute(uvAttribute, cIndex) : null;
 
-      triangles.push({ triangle, normal, bounds, centroid, surfaceType });
+      triangles.push({
+        bounds,
+        centroid,
+        normal,
+        opacityChannel,
+        opacityTexture,
+        opacityThreshold,
+        surfaceType,
+        triangle,
+        uvA,
+        uvB,
+        uvC,
+      });
     }
   });
 
@@ -419,6 +448,10 @@ function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTim
   const startDistanceSq = start.distanceToSquared(closestPoint);
 
   if (startDistanceSq <= radius * radius) {
+    if (!isTriangleCollisionPointOpaque(triangleRecord, closestPoint)) {
+      return null;
+    }
+
     const overlapNormal = start.clone().sub(closestPoint);
     if (overlapNormal.lengthSq() <= 1e-10) {
       overlapNormal.copy(orientNormalAgainstMotion(triangleRecord.normal, displacement));
@@ -429,6 +462,7 @@ function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTim
     if (displacement.dot(overlapNormal) < -1e-6) {
       return {
         normal: overlapNormal,
+        surfaceType: triangleRecord.surfaceType,
         time: 0,
       };
     }
@@ -457,6 +491,11 @@ function sweepSphereTriangle(start, displacement, radius, triangleRecord, maxTim
 
   for (const edgeHit of edgeHits) {
     if (!edgeHit || edgeHit.distance >= bestDistance) {
+      continue;
+    }
+
+    triangle.closestPointToPoint(edgeHit.hitPoint, WORKING_ALPHA_SAMPLE_POINT);
+    if (!isTriangleCollisionPointOpaque(triangleRecord, WORKING_ALPHA_SAMPLE_POINT)) {
       continue;
     }
 
@@ -507,6 +546,10 @@ function intersectSweptSphereTriangleFace(start, direction, maxDistance, radius,
     return null;
   }
 
+  if (!isTriangleCollisionPointOpaque(triangleRecord, contactPoint)) {
+    return null;
+  }
+
   return {
     distance: hitDistance,
     normal: orientNormalAgainstMotion(planeNormal.clone().multiplyScalar(Math.sign(targetDistance) || 1), direction),
@@ -541,6 +584,7 @@ function intersectRayCapsule(origin, direction, maxDistance, start, end, radius)
         const closestPoint = start.clone().addScaledVector(axis, axisPosition / axisLengthSq);
         bestHit = {
           distance: hitDistance,
+          hitPoint: hitPoint.clone(),
           normal: hitPoint.sub(closestPoint).normalize(),
         };
       }
@@ -581,7 +625,8 @@ function intersectRaySphere(origin, direction, maxDistance, center, radius) {
   const hitPoint = origin.clone().addScaledVector(direction, hitDistance);
   return {
     distance: hitDistance,
-    normal: hitPoint.sub(center).normalize(),
+    hitPoint,
+    normal: hitPoint.clone().sub(center).normalize(),
   };
 }
 
@@ -612,6 +657,10 @@ function findNearestTrianglePoint(node, point, maxDistance, bestHit, ignoredSurf
       }
 
       triangleRecord.triangle.closestPointToPoint(point, WORKING_CLOSEST_POINT);
+      if (!isTriangleCollisionPointOpaque(triangleRecord, WORKING_CLOSEST_POINT)) {
+        continue;
+      }
+
       const distanceSq = point.distanceToSquared(WORKING_CLOSEST_POINT);
 
       if (distanceSq >= bestHit.distanceSq || distanceSq > maxDistanceSq) {
@@ -694,6 +743,10 @@ function raycastNode(node, ray, maxDistance, bestHit) {
         continue;
       }
 
+      if (!isTriangleCollisionPointOpaque(triangleRecord, hitPoint)) {
+        continue;
+      }
+
       const hitDistance = ray.origin.distanceTo(hitPoint);
       if (hitDistance > maxDistance || (bestHit && hitDistance >= bestHit.distance)) {
         continue;
@@ -725,4 +778,95 @@ function raycastNode(node, ray, maxDistance, bestHit) {
   bestHit = raycastNode(firstChild, ray, maxDistance, bestHit);
   bestHit = raycastNode(secondChild, ray, maxDistance, bestHit);
   return bestHit;
+}
+
+/**
+ * Rejects collision hits on transparent texels for alpha-cut leaf textures.
+ */
+function isTriangleCollisionPointOpaque(triangleRecord, point) {
+  if (!triangleRecord || triangleRecord.surfaceType !== SURFACE_TYPES.LEAF) {
+    return true;
+  }
+
+  if (!triangleRecord.opacityTexture || !triangleRecord.uvA || !triangleRecord.uvB || !triangleRecord.uvC) {
+    return true;
+  }
+
+  const opacity = sampleTriangleOpacity(triangleRecord, point);
+  if (opacity === null) {
+    return true;
+  }
+
+  return opacity >= triangleRecord.opacityThreshold;
+}
+
+function sampleTriangleOpacity(triangleRecord, point) {
+  triangleRecord.triangle.getBarycoord(point, WORKING_BARYCOORD);
+  if (!Number.isFinite(WORKING_BARYCOORD.x) || !Number.isFinite(WORKING_BARYCOORD.y) || !Number.isFinite(WORKING_BARYCOORD.z)) {
+    return null;
+  }
+
+  WORKING_UV.set(
+    (triangleRecord.uvA.x * WORKING_BARYCOORD.x)
+      + (triangleRecord.uvB.x * WORKING_BARYCOORD.y)
+      + (triangleRecord.uvC.x * WORKING_BARYCOORD.z),
+    (triangleRecord.uvA.y * WORKING_BARYCOORD.x)
+      + (triangleRecord.uvB.y * WORKING_BARYCOORD.y)
+      + (triangleRecord.uvC.y * WORKING_BARYCOORD.z),
+  );
+
+  const texture = triangleRecord.opacityTexture;
+  texture.updateMatrix();
+  texture.transformUv(WORKING_UV);
+
+  const imageData = getTextureImageData(texture);
+  if (!imageData) {
+    return null;
+  }
+
+  const pixelX = THREE.MathUtils.clamp(Math.round(WORKING_UV.x * (imageData.width - 1)), 0, imageData.width - 1);
+  const pixelY = THREE.MathUtils.clamp(Math.round(WORKING_UV.y * (imageData.height - 1)), 0, imageData.height - 1);
+  const pixelIndex = ((pixelY * imageData.width) + pixelX) * 4;
+
+  if (triangleRecord.opacityChannel === 'green') {
+    return imageData.data[pixelIndex + 1] / 255;
+  }
+
+  return imageData.data[pixelIndex + 3] / 255;
+}
+
+function getTextureImageData(texture) {
+  const image = texture?.image;
+  if (!image) {
+    return null;
+  }
+
+  const cachedImageData = OPACITY_IMAGE_DATA_CACHE.get(image);
+  if (cachedImageData) {
+    return cachedImageData;
+  }
+
+  const width = image.naturalWidth ?? image.videoWidth ?? image.width ?? 0;
+  const height = image.naturalHeight ?? image.videoHeight ?? image.height ?? 0;
+  if (!width || !height) {
+    return null;
+  }
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) {
+      return null;
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+    const imageData = context.getImageData(0, 0, width, height);
+    OPACITY_IMAGE_DATA_CACHE.set(image, imageData);
+    return imageData;
+  } catch (error) {
+    console.warn('[collision] Failed to sample texture opacity for collision.', error);
+    return null;
+  }
 }
