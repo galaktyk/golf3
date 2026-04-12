@@ -39,13 +39,13 @@ export const BALL_AIR_LIFT_MAX_UPWARD_ACCELERATION = 6.5;
 export const BALL_AIR_INDUCED_DRAG_COEFFICIENT = 0.85;
 
 // Max normal-energy return on bounce. Higher values create higher, livelier hops.
-export const BALL_BOUNCE_RESTITUTION = 0.34;
+export const BALL_BOUNCE_RESTITUTION = 0.4;
 // Minimum tangential speed loss on impact. Higher values reduce forward skid on shallow bounces.
-export const BALL_IMPACT_FRICTION = 0.2;
+export const BALL_IMPACT_FRICTION = 0.14;
 // Maximum tangential speed loss on hard impacts. Higher values make steep landings check harder.
-export const BALL_IMPACT_MAX_FRICTION = 0.85;
+export const BALL_IMPACT_MAX_FRICTION = 0.4;
 // Normal-speed level where impact behavior reaches full strength. Lower values make bounce/friction ramp up sooner.
-export const BALL_IMPACT_REFERENCE_NORMAL_SPEED = 6.5;
+export const BALL_IMPACT_REFERENCE_NORMAL_SPEED = 8.0;
 
 // Landing skid friction. Higher values scrub contact-point slip faster during the landing-check phase.
 export const BALL_LANDING_SLIDING_FRICTION = 1.7;
@@ -68,11 +68,11 @@ export const BALL_LANDING_CONTACT_ENTRY_NORMAL_SPEED = 1.4;
 // Spin damping in the air. Higher values decay airborne spin faster.
 export const BALL_SPIN_AIR_DAMPING = 0.05;
 // Spin damping while on the ground. Higher values remove ground spin faster.
-export const BALL_SPIN_GROUND_DAMPING = 0.75;
+export const BALL_SPIN_GROUND_DAMPING = 0.45;
 // Rebound normal-speed threshold below which a bounce is captured to ground.
 export const BALL_LANDING_CAPTURE_NORMAL_SPEED = 0.42;
 // Total-speed threshold for capturing very slow rebounds to ground.
-export const BALL_LANDING_CAPTURE_SPEED = 2.4;
+export const BALL_LANDING_CAPTURE_SPEED = 1.4;
 // Speed below which the ball can be treated as stopped for resting/slope checks.
 export const BALL_STOP_SPEED = 0.02;
 

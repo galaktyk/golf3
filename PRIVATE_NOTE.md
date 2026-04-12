@@ -2,11 +2,20 @@ https://help.opengolfsim.com/desktop/apis/shot-data/
 
 
 
-
+in club info widget , add button in a row for click to switch club
 --
 add spin rpm in swing preview
 
 invert horizontal axis
+
+
+---
+
+
+aim preview currently auto set spin rpm with a cap? 
+should we have a spin cap at all? since player might use 9I on 30y shot
+also the audo assign spin seems to high
+on 7I 150y shot it assign 8000rpm 
 
 
 ---

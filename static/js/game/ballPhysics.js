@@ -662,7 +662,8 @@ function resolveImpactVelocity(velocity, angularVelocity, hitNormal) {
       const dot = CONTACT_IMPULSE_DELTA.dot(linearDir);
       
       // If the impulse opposes our travel direction strongly enough to completely reverse us backward
-      const maxReversal = linearForward + (friction * incomingNormalSpeed * 0.2);
+      // Allow more backroll on initial bites by turning up the spin pull limit depending on how steep we land.
+      const maxReversal = linearForward + (friction * incomingNormalSpeed * 1.5);
       if (dot < -maxReversal) {
          const scaling = maxReversal / -dot;
          tangentDeltaSpeed *= scaling;
