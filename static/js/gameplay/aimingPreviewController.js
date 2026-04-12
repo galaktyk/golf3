@@ -8,8 +8,12 @@ import {
   BALL_ROLLING_RESISTANCE,
   COURSE_HOLE_POSITION,
 } from '/static/js/game/constants.js';
-import { buildHoleSlopeGridPreview, buildPuttGridPreview, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
-import { sampleCourseSurface } from '/static/js/game/collision.js';
+import {
+  buildHoleSlopeGridPreview,
+  buildPuttGridPreview,
+  createPreviewSurfaceSampler,
+  predictFirstContactPoint,
+} from '/static/js/game/aimPreview.js';
 import { formatDistanceYards, formatMetersPerSecond } from '/static/js/game/formatting.js';
 import { getNeutralClubLaunchPreview } from '/static/js/game/impact/clubImpact.js';
 
@@ -140,12 +144,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       return target;
     }
 
-    const surfaceSample = sampleCourseSurface(
-      viewerScene.courseCollision,
-      target,
-      3,
-      18,
-    );
+    const surfaceSample = createPreviewSurfaceSampler(viewerScene, resolveHoleWorldPosition())(target, 3, 18);
 
     return target.copy(surfaceSample?.point ?? target);
   };
@@ -405,6 +404,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
         ballPhysics.getPosition(),
         puttAimDistanceMeters,
         puttAimForward,
+        resolveHoleWorldPosition(),
       );
       aimingPreview.mode = 'putt-grid';
       aimingPreview.puttGrid = puttGridPreview;

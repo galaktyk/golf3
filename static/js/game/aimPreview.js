@@ -47,7 +47,129 @@ const PUTT_PREVIEW_SAMPLE_POINT = new THREE.Vector3();
 const PUTT_PREVIEW_VERTEX_SAMPLE_POINT = new THREE.Vector3();
 const PUTT_PREVIEW_FALLBACK_NORMAL = new THREE.Vector3(0, 1, 0);
 const PUTT_PREVIEW_SUPPORT_SAMPLE = new THREE.Vector3();
+const PREVIEW_CUP_PLANE_POINT = new THREE.Vector3();
+const PREVIEW_CUP_PLANE_NORMAL = new THREE.Vector3();
+const PREVIEW_CUP_SURFACE_POINT = new THREE.Vector3();
+const PREVIEW_CUP_RING_SAMPLE_POINT = new THREE.Vector3();
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+
+// Avoid dropping the preview to the hole bottom 
+const PREVIEW_CUP_EXCLUSION_RADIUS_METERS = 0.25;
+const PREVIEW_CUP_MAX_DEPTH_METERS = 0.05;
+const PREVIEW_CUP_SURFACE_SAMPLE_RADIUS_METERS = 0.5;
+const PREVIEW_CUP_SURFACE_SAMPLE_COUNT = 6;
+
+/**
+ * Estimates the green surface across the cup opening so preview overlays do not drop to the hole bottom.
+ */
+function estimatePreviewCupSurface(courseCollision, holePosition) {
+  if (!courseCollision?.root || !holePosition) {
+    return null;
+  }
+
+  PREVIEW_CUP_PLANE_POINT.set(0, 0, 0);
+  PREVIEW_CUP_PLANE_NORMAL.set(0, 0, 0);
+  let sampleCount = 0;
+
+  for (let sampleIndex = 0; sampleIndex < PREVIEW_CUP_SURFACE_SAMPLE_COUNT; sampleIndex += 1) {
+    const angle = (sampleIndex / PREVIEW_CUP_SURFACE_SAMPLE_COUNT) * Math.PI * 2;
+    PREVIEW_CUP_RING_SAMPLE_POINT.copy(holePosition);
+    PREVIEW_CUP_RING_SAMPLE_POINT.x += Math.cos(angle) * PREVIEW_CUP_SURFACE_SAMPLE_RADIUS_METERS;
+    PREVIEW_CUP_RING_SAMPLE_POINT.z += Math.sin(angle) * PREVIEW_CUP_SURFACE_SAMPLE_RADIUS_METERS;
+
+    const surfaceSample = sampleCourseSurface(
+      courseCollision,
+      PREVIEW_CUP_RING_SAMPLE_POINT,
+      PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
+      PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
+    );
+    if (!surfaceSample) {
+      continue;
+    }
+
+    PREVIEW_CUP_PLANE_POINT.add(surfaceSample.point);
+    PREVIEW_CUP_PLANE_NORMAL.add(surfaceSample.normal);
+    sampleCount += 1;
+  }
+
+  if (sampleCount < 3) {
+    return null;
+  }
+
+  PREVIEW_CUP_PLANE_POINT.multiplyScalar(1 / sampleCount);
+  if (PREVIEW_CUP_PLANE_NORMAL.lengthSq() <= 1e-8) {
+    PREVIEW_CUP_PLANE_NORMAL.copy(PUTT_PREVIEW_FALLBACK_NORMAL);
+  } else {
+    PREVIEW_CUP_PLANE_NORMAL.normalize();
+  }
+
+  return {
+    center: holePosition.clone(),
+    exclusionRadiusMeters: PREVIEW_CUP_EXCLUSION_RADIUS_METERS,
+    maxDepthMeters: PREVIEW_CUP_MAX_DEPTH_METERS,
+    point: PREVIEW_CUP_PLANE_POINT.clone(),
+    normal: PREVIEW_CUP_PLANE_NORMAL.clone(),
+  };
+}
+
+/**
+ * Projects a preview sample onto the estimated lip plane while preserving the original X/Z placement.
+ */
+function projectPreviewSampleOntoCupSurface(point, cupSurface, target) {
+  target.copy(point);
+
+  if (Math.abs(cupSurface.normal.y) <= 1e-6) {
+    target.y = cupSurface.point.y;
+    return target;
+  }
+
+  target.y = cupSurface.point.y - (
+    (target.x - cupSurface.point.x) * cupSurface.normal.x
+    + (target.z - cupSurface.point.z) * cupSurface.normal.z
+  ) / cupSurface.normal.y;
+  return target;
+}
+
+/**
+ * Samples preview ground and suppresses cup-bottom hits near the hole.
+ */
+function samplePreviewSurface(courseCollision, point, maxUpDistance, maxDownDistance, cupSurface = null) {
+  const surfaceSample = sampleCourseSurface(courseCollision, point, maxUpDistance, maxDownDistance);
+  if (!surfaceSample || !cupSurface) {
+    return surfaceSample;
+  }
+
+  const deltaX = point.x - cupSurface.center.x;
+  const deltaZ = point.z - cupSurface.center.z;
+  const exclusionRadiusSq = cupSurface.exclusionRadiusMeters * cupSurface.exclusionRadiusMeters;
+  if ((deltaX * deltaX) + (deltaZ * deltaZ) > exclusionRadiusSq) {
+    return surfaceSample;
+  }
+
+  projectPreviewSampleOntoCupSurface(point, cupSurface, PREVIEW_CUP_SURFACE_POINT);
+  if (surfaceSample.point.y >= PREVIEW_CUP_SURFACE_POINT.y - cupSurface.maxDepthMeters) {
+    return surfaceSample;
+  }
+
+  return {
+    distance: surfaceSample.distance,
+    normal: cupSurface.normal.clone(),
+    point: PREVIEW_CUP_SURFACE_POINT.clone(),
+    verticalOffset: maxUpDistance - (PREVIEW_CUP_SURFACE_POINT.y - point.y),
+  };
+}
+
+/**
+ * Creates a reusable surface sampler for preview rendering that ignores the cup interior near the hole.
+ */
+export function createPreviewSurfaceSampler(viewerScene, holePosition = null) {
+  const courseCollision = viewerScene?.courseCollision;
+  const cupSurface = estimatePreviewCupSurface(courseCollision, holePosition);
+
+  return (point, maxUpDistance = PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE, maxDownDistance = PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE) => (
+    samplePreviewSurface(courseCollision, point, maxUpDistance, maxDownDistance, cupSurface)
+  );
+}
 
 /**
  * Resolves the putt-grid row count while keeping the same cell depth at all distances.
@@ -188,15 +310,21 @@ export function predictFirstContactPoint(viewerScene, startPosition, launchData,
 /**
  * Samples a variable-depth slope grid in front of the ball for putt aiming.
  */
-export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeters = 0, referenceForward = null) {
+export function buildPuttGridPreview(
+  viewerScene,
+  ballPosition,
+  aimDistanceMeters = 0,
+  referenceForward = null,
+  holePosition = null,
+) {
   if (!viewerScene?.courseCollision?.root || !ballPosition) {
     return null;
   }
 
   const { cellDepthMeters, rowCount } = resolvePuttPreviewLayout(aimDistanceMeters);
+  const previewSurfaceSampler = createPreviewSurfaceSampler(viewerScene, holePosition);
 
-  const groundSample = sampleCourseSurface(
-    viewerScene.courseCollision,
+  const groundSample = previewSurfaceSampler(
     PUTT_PREVIEW_SUPPORT_SAMPLE.copy(ballPosition),
     PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
     PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
@@ -220,8 +348,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
         .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
         .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
 
-      const surfaceSample = sampleCourseSurface(
-        viewerScene.courseCollision,
+      const surfaceSample = previewSurfaceSampler(
         PUTT_PREVIEW_VERTEX_SAMPLE_POINT,
         PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
         PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
@@ -251,8 +378,7 @@ export function buildPuttGridPreview(viewerScene, ballPosition, aimDistanceMeter
         .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
         .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
 
-      const surfaceSample = sampleCourseSurface(
-        viewerScene.courseCollision,
+      const surfaceSample = previewSurfaceSampler(
         PUTT_PREVIEW_SAMPLE_POINT,
         PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
         PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
@@ -293,8 +419,8 @@ export function buildHoleSlopeGridPreview(viewerScene, holePosition, referenceFo
     return null;
   }
 
-  const groundSample = sampleCourseSurface(
-    viewerScene.courseCollision,
+  const previewSurfaceSampler = createPreviewSurfaceSampler(viewerScene, holePosition);
+  const groundSample = previewSurfaceSampler(
     PUTT_PREVIEW_SUPPORT_SAMPLE.copy(holePosition),
     PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
     PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
@@ -318,8 +444,7 @@ export function buildHoleSlopeGridPreview(viewerScene, holePosition, referenceFo
         .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
         .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
 
-      const surfaceSample = sampleCourseSurface(
-        viewerScene.courseCollision,
+      const surfaceSample = previewSurfaceSampler(
         PUTT_PREVIEW_VERTEX_SAMPLE_POINT,
         PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
         PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
@@ -347,8 +472,7 @@ export function buildHoleSlopeGridPreview(viewerScene, holePosition, referenceFo
         .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
         .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
 
-      const surfaceSample = sampleCourseSurface(
-        viewerScene.courseCollision,
+      const surfaceSample = previewSurfaceSampler(
         PUTT_PREVIEW_SAMPLE_POINT,
         PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
         PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
