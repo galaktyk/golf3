@@ -15,6 +15,7 @@ import {
   AIMING_PREVIEW_HEAD_SPEED_MAX_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_MIN_METERS_PER_SECOND,
   AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND,
+  BALL_GROUNDED_NORMAL_MIN_Y,
   BALL_ROLLING_RESISTANCE,
   BALL_DEFAULT_LAUNCH_DATA,
   BALL_RADIUS,
@@ -42,7 +43,7 @@ import { ACTIVE_CLUB, ACTIVE_CLUB_SET } from '/static/js/game/clubData.js';
 import { buildPuttGridPreview, predictFirstContactPoint } from '/static/js/game/aimPreview.js';
 import { createBallPhysics } from '/static/js/game/ballPhysics.js';
 import { createBallTrail } from '/static/js/game/ballTrail.js';
-import { sampleCourseSurface } from '/static/js/game/collision.js';
+import { raycastCourseSurface, sampleCourseSurface } from '/static/js/game/collision.js';
 import { getViewerDom } from '/static/js/game/dom.js';
 import { formatDistanceYards, formatHeightDeltaMeters, formatMetersPerSecond } from '/static/js/game/formatting.js';
 import { createViewerHud } from '/static/js/game/hud.js';
@@ -123,6 +124,9 @@ let freeCameraLookActive = false;
 let hasFreeCameraFallbackPointerPosition = false;
 let lastFreeCameraPointerClientX = 0;
 let lastFreeCameraPointerClientY = 0;
+let hasCursorPointerPosition = false;
+let lastCursorPointerClientX = 0;
+let lastCursorPointerClientY = 0;
 let aimingPreviewHeadSpeedMetersPerSecond = AIMING_PREVIEW_HEAD_SPEED_METERS_PER_SECOND;
 let aimingTargetDistanceMeters = 5;
 let puttAimDistanceMeters = 5;
@@ -142,6 +146,8 @@ const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS = THREE.MathUtils.degToRad(
 const holeProjection = new THREE.Vector3();
 const holeCameraSpace = new THREE.Vector3();
 const holeWorldPosition = new THREE.Vector3();
+const cursorRaycaster = new THREE.Raycaster();
+const cursorRayNdc = new THREE.Vector2();
 const aimingMarkerCameraSpace = new THREE.Vector3();
 const aimingPreviewLandingPoint = new THREE.Vector3();
 const aimingPreviewTargetProbePoint = new THREE.Vector3();
@@ -243,6 +249,12 @@ window.addEventListener('resize', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyG' && event.altKey && !event.repeat) {
+    event.preventDefault();
+    warpBallToMousePosition();
+    return;
+  }
+
   if (event.code === 'KeyF' && !event.repeat) {
     const freeCameraEnabled = viewerScene.setFreeCameraEnabled(!viewerScene.isFreeCameraEnabled());
     rotateCharacterLeft = false;
@@ -490,6 +502,8 @@ window.addEventListener('mouseup', (event) => {
 });
 
 window.addEventListener('mousemove', (event) => {
+  rememberCursorPointerPosition(event.clientX, event.clientY);
+
   if (!viewerScene.isFreeCameraEnabled() || !freeCameraLookActive) {
     return;
   }
@@ -528,6 +542,19 @@ function beginFreeCameraLook(pointerClientX = null, pointerClientY = null) {
 function endFreeCameraLook() {
   freeCameraLookActive = false;
   hasFreeCameraFallbackPointerPosition = false;
+}
+
+/**
+ * Keeps the last visible mouse position available so debug movement can raycast from the cursor.
+ */
+function rememberCursorPointerPosition(clientX, clientY) {
+  hasCursorPointerPosition = Number.isFinite(clientX) && Number.isFinite(clientY);
+  if (!hasCursorPointerPosition) {
+    return;
+  }
+
+  lastCursorPointerClientX = clientX;
+  lastCursorPointerClientY = clientY;
 }
 
 function animate() {
@@ -1293,8 +1320,12 @@ function releaseClubBallContactLatch(clubHeadPosition) {
   }
 }
 
-function resetShotFlow() {
-  ballPhysics.reset();
+function resetShotFlow(surfacePoint = null, surfaceNormal = null) {
+  if (surfacePoint) {
+    ballPhysics.teleportToSurface(surfacePoint, surfaceNormal);
+  } else {
+    ballPhysics.reset();
+  }
   ballTrail.reset();
   viewerScene.ballRoot.position.copy(ballPhysics.getPosition());
   viewerScene.ballRoot.quaternion.copy(ballPhysics.getOrientation());
@@ -1314,6 +1345,76 @@ function resetShotFlow() {
   hud.updateSwingPreviewCapture(null, getCurrentAimingPreviewHeadSpeed(ballPhysics.getPosition()));
   updateLaunchDebugUiState();
   invalidateAimingPreview();
+}
+
+/**
+ * Raycasts from the current cursor position and moves the ball to the nearest grounded course point.
+ */
+function warpBallToMousePosition() {
+  if (!viewerScene.courseCollision?.root) {
+    hud.setStatus('Ball warp unavailable until the course collision data is ready.');
+    return false;
+  }
+
+  const warpTarget = resolveCursorWarpTarget();
+  if (!warpTarget) {
+    hud.setStatus('Ball warp failed. Move the mouse over the course and try again.');
+    return false;
+  }
+
+  resetShotFlow(warpTarget.point, warpTarget.normal);
+  hud.setStatus('Ball warped to cursor.');
+  return true;
+}
+
+/**
+ * Resolves a stable grounded warp target from the cursor ray so the ball does not teleport onto steep walls.
+ */
+function resolveCursorWarpTarget() {
+  if (!hasCursorPointerPosition) {
+    return null;
+  }
+
+  const canvasRect = dom.canvas.getBoundingClientRect();
+  if (canvasRect.width <= 1 || canvasRect.height <= 1) {
+    return null;
+  }
+
+  const pointerX = lastCursorPointerClientX - canvasRect.left;
+  const pointerY = lastCursorPointerClientY - canvasRect.top;
+  if (pointerX < 0 || pointerX > canvasRect.width || pointerY < 0 || pointerY > canvasRect.height) {
+    return null;
+  }
+
+  cursorRayNdc.set(
+    (pointerX / canvasRect.width) * 2 - 1,
+    -((pointerY / canvasRect.height) * 2 - 1),
+  );
+  cursorRaycaster.setFromCamera(cursorRayNdc, viewerScene.camera);
+
+  const rayHit = raycastCourseSurface(
+    viewerScene.courseCollision,
+    cursorRaycaster.ray,
+    viewerScene.camera.far,
+  );
+  if (!rayHit) {
+    return null;
+  }
+
+  // Re-sample downward from the hit so side faces resolve to a grounded landing point when possible.
+  const groundedSurface = sampleCourseSurface(viewerScene.courseCollision, rayHit.point, 2, 40) ?? rayHit;
+  if (!groundedSurface?.point || !groundedSurface?.normal) {
+    return null;
+  }
+
+  if (groundedSurface.normal.y < BALL_GROUNDED_NORMAL_MIN_Y) {
+    return null;
+  }
+
+  return {
+    point: groundedSurface.point.clone(),
+    normal: groundedSurface.normal.clone(),
+  };
 }
 
 function initializeLaunchDebugUi() {

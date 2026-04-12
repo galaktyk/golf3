@@ -216,6 +216,35 @@ export function sampleCourseSurface(courseCollision, point, maxUpDistance = 2, m
   };
 }
 
+/**
+ * Raycasts the course BVH with a world-space ray and returns the nearest surface hit.
+ */
+export function raycastCourseSurface(courseCollision, ray, maxDistance = Infinity) {
+  const root = courseCollision?.root;
+  if (!root || !ray) {
+    return null;
+  }
+
+  const resolvedMaxDistance = Number.isFinite(maxDistance) && maxDistance > 0
+    ? maxDistance
+    : Infinity;
+  const hit = raycastNode(root, ray, resolvedMaxDistance, null);
+  if (!hit) {
+    return null;
+  }
+
+  const normal = hit.normal.clone();
+  if (normal.y < 0) {
+    normal.negate();
+  }
+
+  return {
+    distance: hit.distance,
+    normal,
+    point: hit.point.clone(),
+  };
+}
+
 function buildNode(triangles, depth) {
   const bounds = computeTriangleBounds(triangles);
   if (triangles.length <= LEAF_TRIANGLE_COUNT || depth >= MAX_BUILD_DEPTH) {

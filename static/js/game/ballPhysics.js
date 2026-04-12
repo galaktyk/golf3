@@ -53,6 +53,7 @@ const TARGET_ANGULAR_VELOCITY = new THREE.Vector3();
 const ANGULAR_STEP_AXIS = new THREE.Vector3();
 const ANGULAR_NORMAL_COMPONENT = new THREE.Vector3();
 const TANGENT_VELOCITY = new THREE.Vector3();
+const TELEPORT_SURFACE_NORMAL = new THREE.Vector3(0, 1, 0);
 
 function createGroundTransitionDebug() {
   return {
@@ -412,12 +413,10 @@ export function createBallPhysics(viewerScene) {
     shotSettled = false;
   };
 
-  const reset = () => {
-    position.copy(BALL_START_POSITION);
+  const resetReadyState = () => {
     velocity.set(0, 0, 0);
     angularVelocity.set(0, 0, 0);
     orientation.identity();
-    shotStartPosition.copy(position);
     supportNormal.set(0, 1, 0);
     accumulatorSeconds = 0;
     hasCourseContact = false;
@@ -427,10 +426,34 @@ export function createBallPhysics(viewerScene) {
     shotSettled = false;
     lastGroundTransitionDebug = createGroundTransitionDebug();
     ensureCourseContact();
+    shotStartPosition.copy(position);
     previousPosition.copy(position);
     previousOrientation.copy(orientation);
     renderPosition.copy(position);
     renderOrientation.copy(orientation);
+  };
+
+  const reset = () => {
+    position.copy(BALL_START_POSITION);
+    resetReadyState();
+  };
+
+  /**
+   * Places the ball on a course surface hit and restores the ready state for the next shot.
+   */
+  const teleportToSurface = (surfacePoint, surfaceNormal = null) => {
+    if (!surfacePoint) {
+      reset();
+      return;
+    }
+
+    TELEPORT_SURFACE_NORMAL.set(0, 1, 0);
+    if (surfaceNormal?.lengthSq?.() > 1e-8) {
+      TELEPORT_SURFACE_NORMAL.copy(surfaceNormal).normalize();
+    }
+
+    position.copy(surfacePoint).addScaledVector(TELEPORT_SURFACE_NORMAL, BALL_RADIUS + BALL_COLLISION_SKIN + 1e-3);
+    resetReadyState();
   };
 
   const prepareForNextShot = () => {
@@ -500,6 +523,10 @@ export function createBallPhysics(viewerScene) {
 
     reset() {
       reset();
+    },
+
+    teleportToSurface(surfacePoint, surfaceNormal = null) {
+      teleportToSurface(surfacePoint, surfaceNormal);
     },
 
     update(deltaSeconds) {
