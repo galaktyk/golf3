@@ -378,30 +378,31 @@ export function buildPuttGridPreview(
 
   const cells = [];
   for (let rowIndex = 0; rowIndex < resolvedRowCount; rowIndex += 1) {
-    const forwardOffset = (rowIndex + 0.5) * cellDepthMeters;
     for (let columnIndex = 0; columnIndex < PUTT_PREVIEW_GRID_COLUMNS; columnIndex += 1) {
-      const lateralOffset = (
-        columnIndex - (PUTT_PREVIEW_GRID_COLUMNS * 0.5) + 0.5
-      ) * PUTT_PREVIEW_CELL_WIDTH_METERS;
+      const v00 = vertices[rowIndex * (PUTT_PREVIEW_GRID_COLUMNS + 1) + columnIndex];
+      const v01 = vertices[rowIndex * (PUTT_PREVIEW_GRID_COLUMNS + 1) + columnIndex + 1];
+      const v10 = vertices[(rowIndex + 1) * (PUTT_PREVIEW_GRID_COLUMNS + 1) + columnIndex];
+      const v11 = vertices[(rowIndex + 1) * (PUTT_PREVIEW_GRID_COLUMNS + 1) + columnIndex + 1];
 
-      PUTT_PREVIEW_SAMPLE_POINT.copy(ballPosition)
-        .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
-        .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
+      const avgNormal = new THREE.Vector3()
+        .add(v00.normal)
+        .add(v01.normal)
+        .add(v10.normal)
+        .add(v11.normal)
+        .normalize();
 
-      const surfaceSample = previewSurfaceSampler(
-        PUTT_PREVIEW_SAMPLE_POINT,
-        PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
-        PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
-      );
-      if (!surfaceSample) {
-        continue;
-      }
+      const avgPoint = new THREE.Vector3()
+        .add(v00.point)
+        .add(v01.point)
+        .add(v10.point)
+        .add(v11.point)
+        .multiplyScalar(0.25);
 
       cells.push({
         columnIndex,
         rowIndex,
-        normal: surfaceSample.normal.clone(),
-        point: surfaceSample.point.clone(),
+        normal: avgNormal,
+        point: avgPoint,
       });
     }
   }
@@ -479,28 +480,31 @@ export function buildHoleSlopeGridPreview(
 
   const cells = [];
   for (let rowIndex = 0; rowIndex < HOLE_SLOPE_GRID_ROWS; rowIndex += 1) {
-    const forwardOffset = (rowIndex - (HOLE_SLOPE_GRID_ROWS * 0.5) + 0.5) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
     for (let columnIndex = 0; columnIndex < HOLE_SLOPE_GRID_COLUMNS; columnIndex += 1) {
-      const lateralOffset = (columnIndex - (HOLE_SLOPE_GRID_COLUMNS * 0.5) + 0.5) * HOLE_SLOPE_GRID_CELL_SIZE_METERS;
+      const v00 = vertices[rowIndex * (HOLE_SLOPE_GRID_COLUMNS + 1) + columnIndex];
+      const v01 = vertices[rowIndex * (HOLE_SLOPE_GRID_COLUMNS + 1) + columnIndex + 1];
+      const v10 = vertices[(rowIndex + 1) * (HOLE_SLOPE_GRID_COLUMNS + 1) + columnIndex];
+      const v11 = vertices[(rowIndex + 1) * (HOLE_SLOPE_GRID_COLUMNS + 1) + columnIndex + 1];
 
-      PUTT_PREVIEW_SAMPLE_POINT.copy(groundSample.point)
-        .addScaledVector(PUTT_PREVIEW_FORWARD, forwardOffset)
-        .addScaledVector(PUTT_PREVIEW_RIGHT, lateralOffset);
+      const avgNormal = new THREE.Vector3()
+        .add(v00.normal)
+        .add(v01.normal)
+        .add(v10.normal)
+        .add(v11.normal)
+        .normalize();
 
-      const surfaceSample = previewSurfaceSampler(
-        PUTT_PREVIEW_SAMPLE_POINT,
-        PUTT_PREVIEW_SURFACE_SAMPLE_UP_DISTANCE,
-        PUTT_PREVIEW_SURFACE_SAMPLE_DOWN_DISTANCE,
-      );
-      if (!surfaceSample) {
-        continue;
-      }
+      const avgPoint = new THREE.Vector3()
+        .add(v00.point)
+        .add(v01.point)
+        .add(v10.point)
+        .add(v11.point)
+        .multiplyScalar(0.25);
 
       cells.push({
         columnIndex,
         rowIndex,
-        normal: surfaceSample.normal.clone(),
-        point: surfaceSample.point.clone(),
+        normal: avgNormal,
+        point: avgPoint,
       });
     }
   }

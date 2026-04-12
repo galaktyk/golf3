@@ -884,13 +884,24 @@ function createAimingMarker() {
       }
 
       const circleOffsetMeters = maxCircleOffsetMeters * circleOffsetScale;
-      const rightOffset = horizontalNormal.dot(cellRight) * circleOffsetMeters;
-      const forwardOffset = horizontalNormal.dot(cellForward) * circleOffsetMeters;
-      circle.position.addScaledVector(cellRight, rightOffset);
-      circle.position.addScaledVector(cellForward, forwardOffset);
+      const targetRightOffset = horizontalNormal.dot(cellRight) * circleOffsetMeters;
+      const targetForwardOffset = horizontalNormal.dot(cellForward) * circleOffsetMeters;
+
+      if (circle.userData.rightOffset === undefined) {
+        circle.userData.rightOffset = targetRightOffset;
+        circle.userData.forwardOffset = targetForwardOffset;
+        circle.userData.circleScale = circleOffsetScale;
+      } else {
+        circle.userData.rightOffset += (targetRightOffset - circle.userData.rightOffset) * 0.2;
+        circle.userData.forwardOffset += (targetForwardOffset - circle.userData.forwardOffset) * 0.2;
+        circle.userData.circleScale += (circleOffsetScale - circle.userData.circleScale) * 0.2;
+      }
+
+      circle.position.addScaledVector(cellRight, circle.userData.rightOffset);
+      circle.position.addScaledVector(cellForward, circle.userData.forwardOffset);
       circle.position.addScaledVector(cellPreview.normal, 0.0015);
       circle.visible = true;
-      const circleScale = THREE.MathUtils.lerp(1, PUTT_GRID_CIRCLE_MAX_SCALE, circleOffsetScale);
+      const circleScale = THREE.MathUtils.lerp(1, PUTT_GRID_CIRCLE_MAX_SCALE, circle.userData.circleScale);
       circle.scale.set(circleScale, circleScale, 1);
       circle.updateMatrixWorld();
     }
