@@ -8,6 +8,7 @@ import {
 const SHOT_AUDIO_PATHS = {
   light: '/assets/audio_clip/shot/shot_light_normal.wav',
   medium: '/assets/audio_clip/shot/shot_medium_normal.wav',
+  practice: '/assets/audio_clip/shot/shot_practice.wav',
   strong: '/assets/audio_clip/shot/shot_strong_normal.wav',
   pangya: '/assets/audio_clip/shot/pangya.wav',
   whoosh: '/assets/audio_clip/whoosh/whoosh_foley1.wav',
@@ -19,6 +20,7 @@ export function createShotImpactAudio() {
   const clips = {
     light: createClipState(SHOT_AUDIO_PATHS.light),
     medium: createClipState(SHOT_AUDIO_PATHS.medium),
+    practice: createClipState(SHOT_AUDIO_PATHS.practice),
     strong: createClipState(SHOT_AUDIO_PATHS.strong),
     pangya: createClipState(SHOT_AUDIO_PATHS.pangya),
     whoosh: createClipState(SHOT_AUDIO_PATHS.whoosh),
@@ -28,6 +30,7 @@ export function createShotImpactAudio() {
     removeUnlockListeners(unlockAudio);
     primeClip(clips.light.base);
     primeClip(clips.medium.base);
+    primeClip(clips.practice.base);
     primeClip(clips.strong.base);
     primeClip(clips.pangya.base);
     primeClip(clips.whoosh.base);
@@ -46,6 +49,9 @@ export function createShotImpactAudio() {
     },
     playPangya() {
       playClip(clips.pangya);
+    },
+    playPractice() {
+      playClip(clips.practice);
     },
     playWhoosh(clubHeadSpeedMetersPerSecond) {
       const volume = getWhooshVolume(clubHeadSpeedMetersPerSecond);

@@ -1174,6 +1174,8 @@ function launchBall(launchData, referenceForward, impactSpeedMetersPerSecond = n
  * Emits practice launch data locally so preview UI can react without advancing the real shot state.
  */
 function handlePracticeLaunch(impact) {
+  shotImpactAudio.playPractice();
+
   window.dispatchEvent(new CustomEvent('practiceLaunch', {
     detail: {
       practiceSwingMode: true,
