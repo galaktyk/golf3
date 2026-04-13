@@ -664,24 +664,34 @@ p {
   min-width: 180px;
   min-height: calc(100% - 20px);
   padding-left: 45px;
-  background: rgba(88, 134, 179, 0.34);
-  border-color: rgba(88, 134, 179, 0.5);
+  color: rgba(247, 251, 255, 0.98);
+  background: rgba(23, 36, 49, 0.5);
+  border-color: rgba(23, 36, 49, 0.5);
   backdrop-filter: none;
-  box-shadow: 0 22px 48px rgba(31, 64, 98, 0.24);
-  opacity: 0;
-  transform: translateX(-22px);
+  box-shadow: none;
+  visibility: hidden;
+  transform: translateX(-100%);
   pointer-events: none;
-  transition: transform 220ms ease, opacity 220ms ease;
+  transition: transform 220ms ease, visibility 0s linear 220ms;
 }
 
 .club-panel-details::after {
   background: linear-gradient(180deg, rgba(190, 225, 255, 0.24), rgba(255, 255, 255, 0.02));
 }
 
+.club-panel-details .debug-label {
+  color: rgba(220, 236, 250, 0.86);
+}
+
+.club-panel-details .debug-value {
+  color: rgba(255, 255, 255, 0.98);
+}
+
 .club-panel-shell.is-expanded .club-panel-details {
-  opacity: 1;
+  visibility: visible;
   transform: translateX(0);
   pointer-events: auto;
+  transition-delay: 0s;
 }
 
 .club-panel-shell.is-expanded .club-panel-toggle {
