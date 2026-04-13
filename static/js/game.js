@@ -1462,9 +1462,14 @@ function setActiveClub(nextClub) {
   }
 
   const previousClub = activeClub;
+  if (previousClub?.id === nextClub.id) {
+    return;
+  }
+
   activeClub = nextClub;
   aimingPreviewController.onClubChanged(previousClub, activeClub);
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
+  shotImpactAudio.playClubChange();
 }
 
 /**

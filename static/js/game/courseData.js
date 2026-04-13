@@ -6,6 +6,7 @@ const COURSE_DEFINITIONS = [
   {
     id: 'blue_lagoon_1',
     name: 'Blue Lagoon 1',
+    par: 4,
     modelPath: '/assets/models/maps/blue_lagoon_1.glb',
     tee: new THREE.Vector3(-0.134, -1.32, -7.978),
     hole: new THREE.Vector3(42.96, -3.102, -394.2),
@@ -14,6 +15,7 @@ const COURSE_DEFINITIONS = [
   {
     id: 'blue_lagoon_2',
     name: 'Blue Lagoon 2',
+    par: 3,
     modelPath: '/assets/models/maps/blue_lagoon_2.glb',
     tee: new THREE.Vector3(-0.033, -1.327, -7.215),
     hole: new THREE.Vector3(-0.00224, -5.663, -216.9),

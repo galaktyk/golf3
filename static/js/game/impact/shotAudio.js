@@ -12,6 +12,7 @@ const SHOT_AUDIO_PATHS = {
   practice: '/assets/audio_clip/shot/shot_practice.wav',
   strong: '/assets/audio_clip/shot/shot_strong_normal.wav',
   pangya: '/assets/audio_clip/shot/pangya.wav',
+  clubChange: '/assets/audio_clip/ui_club_change.wav',
   whoosh: '/assets/audio_clip/whoosh/whoosh_foley1.wav',
 };
 
@@ -39,6 +40,7 @@ export function createShotImpactAudio() {
     practice: createClipState(SHOT_AUDIO_PATHS.practice),
     strong: createClipState(SHOT_AUDIO_PATHS.strong),
     pangya: createClipState(SHOT_AUDIO_PATHS.pangya),
+    clubChange: createClipState(SHOT_AUDIO_PATHS.clubChange),
     whoosh: createClipState(SHOT_AUDIO_PATHS.whoosh),
   };
   const surfaceClips = Object.fromEntries(
@@ -52,6 +54,7 @@ export function createShotImpactAudio() {
     primeClip(clips.practice.base);
     primeClip(clips.strong.base);
     primeClip(clips.pangya.base);
+    primeClip(clips.clubChange.base);
     primeClip(clips.whoosh.base);
     for (const clipState of Object.values(surfaceClips)) {
       primeClip(clipState.base);
@@ -71,6 +74,9 @@ export function createShotImpactAudio() {
     },
     playPangya() {
       playClip(clips.pangya);
+    },
+    playClubChange() {
+      playClip(clips.clubChange);
     },
     playPractice() {
       playClip(clips.practice);
