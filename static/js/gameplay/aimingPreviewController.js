@@ -33,6 +33,7 @@ const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
 const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
 const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
 const PUTT_PREVIEW_HOLE_LENGTH_SCALE = 1.25;
+const AIMING_PREVIEW_POINT_FOLLOW_STIFFNESS = 14;
 
 /**
  * Owns aiming-preview state, hole-relative target solving, and aiming-marker presentation.
@@ -40,6 +41,7 @@ const PUTT_PREVIEW_HOLE_LENGTH_SCALE = 1.25;
 export function createAimingPreviewController({ viewerScene, hud, ballPhysics, getActiveClub, syncLaunchDebugInputs }) {
   const aimingMarkerCameraSpace = new THREE.Vector3();
   const aimingPreviewLandingPoint = new THREE.Vector3();
+  const aimingPreviewDisplayPoint = new THREE.Vector3();
   const aimingPreviewTargetProbePoint = new THREE.Vector3();
   const aimingPreviewTargetForward = new THREE.Vector3();
   const aimingPreviewTargetLateralOffset = new THREE.Vector3();
@@ -61,6 +63,8 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
   let aimingTargetDistanceMeters = 5;
   let puttAimDistanceMeters = 5;
   let puttPreviewPinnedRowCount = null;
+  let aimingPreviewDisplayPointNeedsSnap = true;
+  let aimingPreviewDisplayMode = 'landing';
 
   /**
    * Keeps club-category checks consistent anywhere the controller needs to detect putt-mode transitions.
@@ -270,6 +274,45 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     if (!usesLaunchAimingPreview()) {
       syncSwingPreviewTarget();
     }
+  };
+
+  /**
+   * Returns the point presentation systems should follow so preview smoothing does not feed back into shot solving.
+   */
+  const getRenderedPreviewPoint = () => (
+    aimingPreview.mode === 'landing'
+      ? aimingPreviewDisplayPoint
+      : aimingPreviewLandingPoint
+  );
+
+  /**
+   * Smooths only the rendered landing marker for launch previews while keeping simulation results exact.
+   */
+  const updatePresentation = (deltaSeconds) => {
+    if (!aimingPreview.isVisible || !aimingPreview.hasTargetPoint) {
+      aimingPreviewDisplayPointNeedsSnap = true;
+      return;
+    }
+
+    const shouldSmoothLaunchPoint = aimingPreview.mode === 'landing';
+    if (!shouldSmoothLaunchPoint) {
+      aimingPreviewDisplayPoint.copy(aimingPreviewLandingPoint);
+      aimingPreviewDisplayPointNeedsSnap = true;
+      aimingPreviewDisplayMode = aimingPreview.mode;
+      return;
+    }
+
+    if (aimingPreviewDisplayPointNeedsSnap || aimingPreviewDisplayMode !== aimingPreview.mode) {
+      aimingPreviewDisplayPoint.copy(aimingPreviewLandingPoint);
+      aimingPreviewDisplayPointNeedsSnap = false;
+      aimingPreviewDisplayMode = aimingPreview.mode;
+      return;
+    }
+
+    const followAlpha = Number.isFinite(deltaSeconds) && deltaSeconds > 0
+      ? 1 - Math.exp(-AIMING_PREVIEW_POINT_FOLLOW_STIFFNESS * deltaSeconds)
+      : 1;
+    aimingPreviewDisplayPoint.lerp(aimingPreviewLandingPoint, followAlpha);
   };
 
   /**
@@ -596,6 +639,8 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       return;
     }
 
+    const renderedPreviewPoint = getRenderedPreviewPoint();
+
     const hasSlopeGrid = Boolean(aimingPreview.slopeGrid?.cells?.length);
 
     if (ballTelemetry.phase === 'moving' || (!aimingPreview.isVisible && !hasSlopeGrid)) {
@@ -614,20 +659,20 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
         aimingMarker.setVisible(false);
         return;
       }
-      aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+      aimingMarkerCameraSpace.copy(renderedPreviewPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
       if (aimingMarkerCameraSpace.z >= 0) {
         aimingMarker.setVisible(false);
         return;
       }
 
-      const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+      const distanceToCamera = viewerScene.camera.position.distanceTo(renderedPreviewPoint);
       const worldHeight = 2
         * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
         * Math.max(distanceToCamera, 0.01)
         * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
 
       aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
-      aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+      aimingMarker.setWorldPosition(renderedPreviewPoint);
       aimingMarker.setWorldHeight(worldHeight);
       aimingMarker.setVisible(true);
       return;
@@ -642,20 +687,20 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
       return;
     }
 
-    aimingMarkerCameraSpace.copy(aimingPreviewLandingPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
+    aimingMarkerCameraSpace.copy(renderedPreviewPoint).applyMatrix4(viewerScene.camera.matrixWorldInverse);
     if (aimingMarkerCameraSpace.z >= 0) {
       aimingMarker.setVisible(false);
       return;
     }
 
-    const distanceToCamera = viewerScene.camera.position.distanceTo(aimingPreviewLandingPoint);
+    const distanceToCamera = viewerScene.camera.position.distanceTo(renderedPreviewPoint);
     const worldHeight = 2
       * Math.tan(THREE.MathUtils.degToRad(viewerScene.camera.fov * 0.5))
       * Math.max(distanceToCamera, 0.01)
       * (AIMING_MARKER_PIXEL_HEIGHT / window.innerHeight);
 
     aimingMarker.setDistanceLabel(formatDistanceYards(aimingPreview.carryDistanceMeters));
-    aimingMarker.setWorldPosition(aimingPreviewLandingPoint);
+    aimingMarker.setWorldPosition(renderedPreviewPoint);
     aimingMarker.setWorldHeight(worldHeight);
     aimingMarker.setVisible(true);
   };
@@ -663,7 +708,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
   const getBallFollowPreviewState = () => ({
     isVisible: aimingPreview.isVisible,
     hasTargetPoint: aimingPreview.hasTargetPoint,
-    point: aimingPreview.hasTargetPoint ? aimingPreviewLandingPoint : null,
+    point: aimingPreview.hasTargetPoint ? getRenderedPreviewPoint() : null,
   });
 
   return {
@@ -679,6 +724,7 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     syncPuttAimDistanceToHole,
     syncSwingPreviewTarget,
     syncLaunchPreviewHeadSpeedToAimingTarget,
+    updatePresentation,
     updateIfNeeded,
     updateMarker,
     updateSwingPreviewCaptureFromImpact,

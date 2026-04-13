@@ -120,6 +120,8 @@ export function createViewerScene(canvas) {
   const normalCameraTargetOffset = new THREE.Vector3();
   const aimingCameraFocusPoint = new THREE.Vector3();
   const aimingCameraLookAtMatrix = new THREE.Matrix4();
+  const aimingCameraLocalUp = new THREE.Vector3();
+  const desiredAimingCameraQuaternion = new THREE.Quaternion();
 
   scene.add(mapRoot);
   scene.add(ballRoot);
@@ -628,21 +630,29 @@ export function createViewerScene(canvas) {
 
         aimingCameraFocusPoint.copy(aimingPreviewState.point);
         composeAimingCameraPose(aimingCameraFocusPoint, desiredCameraTarget);
-        
+
         aimingCameraLookAtMatrix.lookAt(desiredCameraPosition, desiredCameraTarget, WORLD_UP);
-        const localUp = new THREE.Vector3().setFromMatrixColumn(aimingCameraLookAtMatrix, 1);
-        
-        // Translate both camera and its target along local Y, so the view rises without looking down at the ball
-        desiredCameraPosition.addScaledVector(localUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
-        desiredCameraTarget.addScaledVector(localUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
+        aimingCameraLocalUp.setFromMatrixColumn(aimingCameraLookAtMatrix, 1);
+
+        // Move camera and focus together in camera-local up so aim mode keeps its higher over-the-shoulder framing.
+        desiredCameraPosition.addScaledVector(aimingCameraLocalUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
+        desiredCameraTarget.addScaledVector(aimingCameraLocalUp, AIMING_CAMERA_LOCAL_UP_OFFSET);
 
         const aimingFollowAlpha = aimingCameraNeedsSnap
           ? 1
           : 1 - Math.exp(-AIMING_CAMERA_FOLLOW_STIFFNESS * deltaSeconds);
         aimingCameraLookAtMatrix.lookAt(desiredCameraPosition, desiredCameraTarget, WORLD_UP);
-        camera.position.lerp(desiredCameraPosition, aimingFollowAlpha);
-        controls.target.copy(desiredCameraTarget);
-        camera.quaternion.setFromRotationMatrix(aimingCameraLookAtMatrix);
+        desiredAimingCameraQuaternion.setFromRotationMatrix(aimingCameraLookAtMatrix);
+
+        if (aimingCameraNeedsSnap) {
+          camera.position.copy(desiredCameraPosition);
+          controls.target.copy(desiredCameraTarget);
+          camera.quaternion.copy(desiredAimingCameraQuaternion);
+        } else {
+          camera.position.lerp(desiredCameraPosition, aimingFollowAlpha);
+          controls.target.lerp(desiredCameraTarget, aimingFollowAlpha);
+          camera.quaternion.slerp(desiredAimingCameraQuaternion, aimingFollowAlpha);
+        }
         camera.updateMatrixWorld(true);
         aimingCameraNeedsSnap = false;
         return;

@@ -574,6 +574,7 @@ function animate() {
   character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
   const characterTelemetry = character.getDebugTelemetry();
   aimingPreviewController.updateIfNeeded(playerState);
+  aimingPreviewController.updatePresentation(deltaSeconds);
   updateClubWhooshAudio();
   detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);

@@ -6,27 +6,6 @@ the aim preview on non putt is janky im not sure it because it do the distance r
 
 
 
----
-
-the club ui (have split left-right) make the right side a separate sliding box collapsable instead
-
-### left ui
-- stay in place
-- have a long blue button behind it and peaking out to the right edge ">" (hang on the very edge )
-- when click will slide the hidden ui out and change to "<" (stay in the same place)
-- when click "<" will collapse the right part and change to ">"
-
-
-### hidden ui
-- bg color (50,100,150, 0.2)
-- collapse/hide as default
-
-
-
-
-
-----
-
 
 
 
