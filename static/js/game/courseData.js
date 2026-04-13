@@ -9,7 +9,7 @@ const COURSE_DEFINITIONS = [
     par: 4,
     modelPath: '/assets/models/maps/blue_lagoon_1.glb',
     tee: new THREE.Vector3(-0.134, -1.32, -7.978),
-    hole: new THREE.Vector3(42.96, -3.102, -394.2),
+    hole: new THREE.Vector3(42.9607 , -2.52835 , -394.162),
     aliases: ['lagoon1', 'lagoon_1', 'blue-lagoon-1', '1'],
   },
   {
@@ -18,7 +18,7 @@ const COURSE_DEFINITIONS = [
     par: 3,
     modelPath: '/assets/models/maps/blue_lagoon_2.glb',
     tee: new THREE.Vector3(-0.033, -1.327, -7.215),
-    hole: new THREE.Vector3(-0.00224, -5.663, -216.9),
+    hole: new THREE.Vector3(-0.000422, -5.09763 , -216.9),
     aliases: ['lagoon2', 'lagoon_2', 'blue-lagoon-2', '2'],
   },
 ];
