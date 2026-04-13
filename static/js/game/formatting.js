@@ -44,7 +44,7 @@ export function formatMetersPerSecond(value) {
     return '-';
   }
 
-  return `${value.toFixed(2)} m/s`;
+  return `${value.toFixed(1)} m/s`;
 }
 
 export function formatScalar(value, digits = 2) {

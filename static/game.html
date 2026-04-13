@@ -170,39 +170,64 @@
                 aria-hidden="true"
               ></div>
             </div>
-            <div
-              id="viewer-swing-preview-bar"
-              class="swing-preview-bar"
-              role="img"
-              aria-label="Last swing speed compared to target speed"
-            >
-              <div id="viewer-swing-preview-fill" class="swing-preview-fill"></div>
-              <div id="viewer-swing-preview-target-line" class="swing-preview-target-line" aria-hidden="true"></div>
+            <div class="swing-preview-speed-row">
+              <div
+                id="viewer-swing-preview-bar"
+                class="swing-preview-bar"
+                role="img"
+                aria-label="Last swing speed compared to target speed"
+              >
+                <div id="viewer-swing-preview-fill" class="swing-preview-fill"></div>
+                <div id="viewer-swing-preview-target-line" class="swing-preview-target-line" aria-hidden="true"></div>
+              </div>
+              <div
+                id="viewer-swing-preview-head-speed-anchor"
+                class="swing-preview-head-speed-anchor"
+                aria-live="polite"
+                hidden
+              >
+                <span id="viewer-preview-club-speed" class="debug-value swing-preview-head-speed">-</span>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="swing-preview-meta">
-        
-          <div class="debug-grid swing-preview-meta-grid">
-            <span class="debug-label">Head Speed</span>
-            <span id="viewer-preview-club-speed" class="debug-value">-</span>
-            <span class="debug-label">Ball Speed</span>
-            <span id="viewer-preview-ball-speed" class="debug-value">-</span>
-            <span class="debug-label">Spin RPM</span>
-            <span id="viewer-preview-spin-rpm" class="debug-value">-</span>
-            <span class="debug-label">Horizontal LA (+R)</span>
-            <span id="viewer-preview-horizontal-launch-angle" class="debug-value">-</span>
-            <span class="debug-label">Face Pitch</span>
-            <span id="viewer-preview-face-pitch" class="debug-value">-</span>
-            <span class="debug-label">Dynamic Loft</span>
-            <span id="viewer-preview-dynamic-loft" class="debug-value">-</span>
-            <span class="debug-label">Launch</span>
-            <span id="viewer-preview-launch-angle" class="debug-value">-</span>
           </div>
         </div>
       </div>
     </div>
   </div>
+  <div
+    id="viewer-swing-preview-detail-shell"
+    class="hud hud-right-center swing-preview-detail-shell is-collapsed"
+    hidden
+  >
+    <div
+      id="viewer-swing-preview-details"
+      class="panel panel-static swing-preview-details"
+      aria-hidden="true"
+    >
+      <div class="debug-grid swing-preview-meta-grid">
+        <span class="debug-label">Ball</span>
+        <span id="viewer-preview-ball-speed" class="debug-value">-</span>
+        <span class="debug-label">Spin</span>
+        <span id="viewer-preview-spin-rpm" class="debug-value">-</span>
+        <span class="debug-label">Hor LA</span>
+        <span id="viewer-preview-horizontal-launch-angle" class="debug-value">-</span>
+        <span class="debug-label">Face Pitch</span>
+        <span id="viewer-preview-face-pitch" class="debug-value">-</span>
+        <span class="debug-label">Dyn Loft</span>
+        <span id="viewer-preview-dynamic-loft" class="debug-value">-</span>
+        <span class="debug-label">Launch</span>
+        <span id="viewer-preview-launch-angle" class="debug-value">-</span>
+      </div>
+    </div>
+  </div>
+  <button
+    id="viewer-swing-preview-detail-toggle"
+    class="swing-preview-detail-toggle"
+    type="button"
+    aria-label="Show launch details"
+    aria-controls="viewer-swing-preview-details"
+    aria-expanded="false"
+  >&lt;</button>
   <canvas id="scene"></canvas>
   <script type="importmap">
     {

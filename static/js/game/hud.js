@@ -115,7 +115,69 @@ export function createViewerHud(dom) {
   const swingPreviewState = {
     targetSpeedMetersPerSecond: null,
     capturedSpeedMetersPerSecond: null,
+    preview: null,
+    playerState: 'control',
+    ballPhase: 'ready',
+    wasReadyForNextShot: true,
+    isDetailExpanded: false,
+    isDetailToggleBound: false,
   };
+
+  /**
+   * Keeps the detached launch-details card in sync with its manual slide state.
+   */
+  function updateSwingPreviewDetailUi() {
+    if (!dom.swingPreviewDetailShell || !dom.swingPreviewDetailToggleButton || !dom.swingPreviewDetailsPanel) {
+      return;
+    }
+
+    const isExpanded = swingPreviewState.isDetailExpanded;
+    const isCollapsed = !isExpanded;
+
+    dom.swingPreviewDetailShell.hidden = false;
+    dom.swingPreviewDetailShell.classList.toggle('is-expanded', isExpanded);
+    dom.swingPreviewDetailShell.classList.toggle('is-collapsed', isCollapsed);
+    dom.swingPreviewDetailsPanel.setAttribute('aria-hidden', String(!isExpanded));
+    dom.swingPreviewDetailToggleButton.setAttribute('aria-expanded', String(isExpanded));
+    dom.swingPreviewDetailToggleButton.setAttribute(
+      'aria-label',
+      isExpanded ? 'Hide launch details' : 'Show launch details',
+    );
+    dom.swingPreviewDetailToggleButton.textContent = isExpanded ? '>' : '<';
+  }
+
+  /**
+   * Binds the detached launch-details slide toggle once for the current HUD instance.
+   */
+  function bindSwingPreviewDetailInteractions() {
+    if (swingPreviewState.isDetailToggleBound || !dom.swingPreviewDetailToggleButton) {
+      return;
+    }
+
+    dom.swingPreviewDetailToggleButton.addEventListener('click', () => {
+      swingPreviewState.isDetailExpanded = !swingPreviewState.isDetailExpanded;
+      updateSwingPreviewDetailUi();
+    });
+
+    swingPreviewState.isDetailToggleBound = true;
+  }
+
+  /**
+   * Updates preview-linked UI while keeping the right-side drawer fully manual.
+   */
+  function syncSwingPreviewTelemetryVisibility() {
+    const isVisible = Boolean(swingPreviewState.preview);
+
+    if (dom.swingPreviewHorizontalBar) {
+      dom.swingPreviewHorizontalBar.hidden = !isVisible;
+    }
+
+    if (dom.swingPreviewHeadSpeedAnchor) {
+      dom.swingPreviewHeadSpeedAnchor.hidden = !isVisible;
+    }
+
+    updateSwingPreviewDetailUi();
+  }
 
   function updateSwingPreviewHorizontalAngle(horizontalLaunchAngleDegrees) {
     if (
@@ -147,6 +209,7 @@ export function createViewerHud(dom) {
 
   return {
     initialize(cameraPosition, incomingQuaternion) {
+      bindSwingPreviewDetailInteractions();
       this.updateSocketState('Connecting');
       this.updateFps(0);
       this.updatePacketRate(0);
@@ -162,6 +225,7 @@ export function createViewerHud(dom) {
       this.updateSwingPreviewCapture(null);
       this.updateLaunchPreview(null);
       this.updateLaunchPanelVisible(false);
+      updateSwingPreviewDetailUi();
     },
 
     setStatus(message) {
@@ -217,7 +281,7 @@ export function createViewerHud(dom) {
       dom.ballStateLabel.textContent = phase === 'moving' && movementState
         ? `moving/${movementState}`
         : phase;
-      dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(2)} m/s`;
+      dom.ballSpeedLabel.textContent = `${speedMetersPerSecond.toFixed(1)} m/s`;
     },
 
     updateGroundTransitionDebug(transitionDebug) {
@@ -270,6 +334,7 @@ export function createViewerHud(dom) {
 
     updateLaunchPreview(preview) {
       updateSwingPreviewHorizontalAngle(preview?.horizontalLaunchAngle ?? null);
+      swingPreviewState.preview = preview ?? null;
 
       if (
 
@@ -285,27 +350,27 @@ export function createViewerHud(dom) {
       }
 
       if (!preview) {
-
         dom.previewClubSpeedLabel.textContent = '-';
         dom.previewBallSpeedLabel.textContent = '-';
-  dom.previewSpinRpmLabel.textContent = '-';
+        dom.previewSpinRpmLabel.textContent = '-';
         dom.previewHorizontalLaunchAngleLabel.textContent = '-';
         dom.previewFacePitchLabel.textContent = '-';
         dom.previewDynamicLoftLabel.textContent = '-';
         dom.previewLaunchAngleLabel.textContent = '-';
+        syncSwingPreviewTelemetryVisibility();
         return;
       }
 
-    
       dom.previewClubSpeedLabel.textContent = formatMetersPerSecond(preview.clubHeadSpeedMetersPerSecond);
       dom.previewBallSpeedLabel.textContent = formatMetersPerSecond(preview.ballSpeed);
-          dom.previewSpinRpmLabel.textContent = Number.isFinite(preview.spinSpeed)
-            ? `${formatScalar(preview.spinSpeed, 0)} rpm`
-            : '-';
+      dom.previewSpinRpmLabel.textContent = Number.isFinite(preview.spinSpeed)
+        ? `${formatScalar(preview.spinSpeed, 0)} rpm`
+        : '-';
       dom.previewHorizontalLaunchAngleLabel.textContent = formatDegrees(preview.horizontalLaunchAngle);
       dom.previewFacePitchLabel.textContent = formatDegrees(preview.measuredFacePitchDegrees);
       dom.previewDynamicLoftLabel.textContent = formatDegrees(preview.dynamicLoftDegrees);
       dom.previewLaunchAngleLabel.textContent = formatDegrees(preview.verticalLaunchAngle);
+      syncSwingPreviewTelemetryVisibility();
 
       if (dom.swingPreviewFill) {
         dom.swingPreviewFill.classList.remove('is-flashing');
@@ -355,6 +420,9 @@ export function createViewerHud(dom) {
       if (!Number.isFinite(capturedSpeedMetersPerSecond) || capturedSpeedMetersPerSecond < 0) {
         dom.swingPreviewFill.style.height = '0%';
         dom.swingPreviewBar.setAttribute('aria-label', 'Last swing speed compared to target speed');
+        if (dom.swingPreviewHeadSpeedAnchor) {
+          dom.swingPreviewHeadSpeedAnchor.style.setProperty('--swing-preview-capture-percent', '0%');
+        }
 
         return;
       }
@@ -364,6 +432,9 @@ export function createViewerHud(dom) {
         targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond,
       );
       dom.swingPreviewFill.style.height = `${fillPercent}%`;
+      if (dom.swingPreviewHeadSpeedAnchor) {
+        dom.swingPreviewHeadSpeedAnchor.style.setProperty('--swing-preview-capture-percent', `${fillPercent}%`);
+      }
       dom.swingPreviewBar.setAttribute(
         'aria-label',
         `Last swing speed ${formatMetersPerSecond(capturedSpeedMetersPerSecond)} against target ${formatMetersPerSecond(targetSpeedMetersPerSecond ?? swingPreviewState.targetSpeedMetersPerSecond)}`,
@@ -384,9 +455,18 @@ export function createViewerHud(dom) {
         return;
       }
 
+      const isReadyForNextShot = playerState === 'control' && ballPhase === 'ready';
+      if (isReadyForNextShot && !swingPreviewState.wasReadyForNextShot && swingPreviewState.preview) {
+        this.updateLaunchPreview(null);
+      }
+
+      swingPreviewState.playerState = playerState;
+      swingPreviewState.ballPhase = ballPhase;
+      swingPreviewState.wasReadyForNextShot = isReadyForNextShot;
       dom.playerStateLabel.textContent = playerState;
       dom.ballPhaseLabel.textContent = ballPhase;
       dom.ballMovementLabel.textContent = movementState ?? '-';
+      syncSwingPreviewTelemetryVisibility();
     },
   };
 }
