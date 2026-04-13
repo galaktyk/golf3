@@ -33,7 +33,7 @@ const PUTT_PREVIEW_GRAVITY_ACCELERATION = 9.81;
 const PUTT_AIM_HOLE_CLAMP_MARGIN_METERS = Math.max(BALL_RADIUS * 2, 0.08);
 const PUTT_AIM_HOLE_ALIGNMENT_TOLERANCE_METERS = Math.max(BALL_RADIUS * 3.5, 0.14);
 const PUTT_PREVIEW_HOLE_LENGTH_SCALE = 1.25;
-const AIMING_PREVIEW_POINT_FOLLOW_STIFFNESS = 14;
+const AIMING_PREVIEW_POINT_FOLLOW_STIFFNESS = 100;
 
 /**
  * Owns aiming-preview state, hole-relative target solving, and aiming-marker presentation.
