@@ -1,6 +1,7 @@
 export const SURFACE_TYPES = {
   FAIRWAY: 'fairway',
   GREEN: 'green',
+  HOLE: 'hole',
   ROUGH: 'rough',
   SAND: 'sand',
   WATER: 'water',
@@ -93,6 +94,9 @@ export const SURFACE_TEXTURE_MAP = {
     'Image095AA470_095A4450',
     'Image095B3BF0_095B4480',
     'Image095B4910_095B89A0'
+  ],
+  [SURFACE_TYPES.HOLE]: [
+    'Image0960BED0',
   ],
 };
 

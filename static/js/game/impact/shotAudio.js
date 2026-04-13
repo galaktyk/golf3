@@ -19,6 +19,7 @@ const SHOT_AUDIO_PATHS = {
 const SURFACE_HIT_AUDIO_PATHS = {
   [SURFACE_TYPES.FAIRWAY]: '/assets/audio_clip/hit/ball_fairway.wav',
   [SURFACE_TYPES.GREEN]: '/assets/audio_clip/hit/ball_green.wav',
+  [SURFACE_TYPES.HOLE]: '/assets/audio_clip/hit/ball_holecup.wav',
   [SURFACE_TYPES.ROUGH]: '/assets/audio_clip/hit/ball_rough.wav',
   [SURFACE_TYPES.SAND]: '/assets/audio_clip/hit/ball_sand.wav',
   [SURFACE_TYPES.WATER]: '/assets/audio_clip/hit/ball_water.wav',

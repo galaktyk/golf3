@@ -18,7 +18,6 @@
         <span>swing</span>
       </button>
     </section>
-    <section class="controller-safe-zone" aria-hidden="true"></section>
     <section class="controller-playfield">
       <section id="aim-joystick" class="aim-joystick" aria-label="Aim joystick. Drag to rotate and adjust aim preview. Double tap to toggle aim camera.">
         <div class="aim-joystick-visual" aria-hidden="true">
@@ -30,12 +29,12 @@
         <section class="panel controls-panel">
           <p id="controller-status" class="status-pill">Offline</p>
           <div class="control-row club-row">
-            <button id="club-prev-button" class="action-button secondary club-button" disabled aria-label="Previous club">&lt;</button>
-            <button id="club-next-button" class="action-button secondary club-button" disabled aria-label="Next club">&gt;</button>
+            <button id="club-prev-button" class="action-button secondary club-button" disabled aria-label="Previous club">Club -</button>
+            <button id="club-next-button" class="action-button secondary club-button" disabled aria-label="Next club">Club +</button>
           </div>
           <div class="control-row control-row-top dock-actions-row">
             <button id="connect-button" class="action-button primary">Connect</button>
-            <button id="calibrate-button" class="action-button secondary" disabled>Forward</button>
+            <button id="calibrate-button" class="action-button secondary" disabled>Set Forward</button>
           </div>
         </section>
         <p id="controller-debug" class="orientation-copy">Orientation and gyro waiting</p>
