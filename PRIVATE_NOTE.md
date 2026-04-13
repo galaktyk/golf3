@@ -3,6 +3,20 @@
 
 
 
+the club ui (have split left-right) make the right side collapsable
+have a long button on the right of the ui  [>] when click will expand the right part and change to [<]
+when click [<] will collapse the right part and change to [>]
+
+right part will collapse as default
+
+rigt part ui bg will be color (50,100,150, 0.2) 
+
+
+
+
+----
+
+
 refine default style ~futuristic aero
 
 widget background should be
