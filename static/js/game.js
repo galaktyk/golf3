@@ -23,6 +23,7 @@ import {
   CHARACTER_ROTATION_ACCELERATION_MIN_MULTIPLIER,
   CHARACTER_ROTATION_ACCELERATION_RAMP_SECONDS,
   CHARACTER_ROTATION_SPEED_DEGREES,
+  CLUB_HEAD_AIMING_PREVIEW_LAUNCH_MIN_SPEED_RATIO,
   CLUB_HEAD_CONTACT_RELEASE_DISTANCE,
   CLUB_SWING_WHOOSH_COOLDOWN_MS,
   CLUB_SWING_WHOOSH_MIN_SPEED,
@@ -1183,10 +1184,15 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
+  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond();
+  if (!isLaunchSpeedReadyForCurrentAim(incomingClubHeadSpeedMetersPerSecond)) {
+    return;
+  }
+
   const impact = resolveClubBallImpact(
     characterTelemetry,
     ballTelemetry.position,
-    getIncomingClubHeadSpeedMetersPerSecond(),
+    incomingClubHeadSpeedMetersPerSecond,
     activeClub,
   );
   if (!impact) {
@@ -1201,6 +1207,24 @@ function detectClubBallImpact(characterTelemetry) {
     launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   }
   clubBallContactLatched = true;
+}
+
+/**
+ * Prevents tiny accidental motions from launching the ball when the current aim expects a much faster swing.
+ */
+function isLaunchSpeedReadyForCurrentAim(incomingClubHeadSpeedMetersPerSecond) {
+  if (!Number.isFinite(incomingClubHeadSpeedMetersPerSecond) || incomingClubHeadSpeedMetersPerSecond <= 0) {
+    return false;
+  }
+
+  const currentAimingHeadSpeedMetersPerSecond = aimingPreviewController.getCurrentAimingPreviewHeadSpeed();
+  if (!Number.isFinite(currentAimingHeadSpeedMetersPerSecond) || currentAimingHeadSpeedMetersPerSecond <= 0) {
+    return true;
+  }
+
+  return incomingClubHeadSpeedMetersPerSecond >= (
+    currentAimingHeadSpeedMetersPerSecond * CLUB_HEAD_AIMING_PREVIEW_LAUNCH_MIN_SPEED_RATIO
+  );
 }
 
 /**

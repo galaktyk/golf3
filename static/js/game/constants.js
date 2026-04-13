@@ -118,6 +118,8 @@ export const CLUB_HEAD_LAUNCH_DIRECTION_LOCAL = new THREE.Vector3(0, 0, 1);
 export const CLUB_HEAD_IMPACT_MIN_SPEED = 5;
 // Lower impact threshold specifically for putters.
 export const PUTTER_CLUB_HEAD_IMPACT_MIN_SPEED = 0.5;
+// Ignore live launches when the measured club speed is too small relative to the current aiming preview speed.
+export const CLUB_HEAD_AIMING_PREVIEW_LAUNCH_MIN_SPEED_RATIO = 0.4;
 // Minimum club speed that can trigger the whoosh sound.
 export const CLUB_SWING_WHOOSH_MIN_SPEED = 8;
 // Speed where the whoosh sound reaches its max intensity mapping.
