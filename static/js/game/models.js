@@ -610,23 +610,16 @@ function createHoleMarker() {
 }
 
 function createAimingMarker() {
-  const PUTT_GRID_MAX_ROWS = 48;
-  const PUTT_GRID_COLUMNS = 9;
-  const PUTT_GRID_MAX_CELLS = PUTT_GRID_MAX_ROWS * PUTT_GRID_COLUMNS;
-  const PUTT_GRID_MAX_LINE_SEGMENTS = ((PUTT_GRID_MAX_ROWS + 1) * PUTT_GRID_COLUMNS)
-    + ((PUTT_GRID_COLUMNS + 1) * PUTT_GRID_MAX_ROWS);
   const SLOPE_GRID_ROWS = 9;
   const SLOPE_GRID_COLUMNS = 9;
   const SLOPE_GRID_MAX_CELLS = SLOPE_GRID_ROWS * SLOPE_GRID_COLUMNS;
-  const SLOPE_GRID_MAX_LINE_SEGMENTS = ((SLOPE_GRID_ROWS + 1) * SLOPE_GRID_COLUMNS)
-    + ((SLOPE_GRID_COLUMNS + 1) * SLOPE_GRID_ROWS);
   const PUTT_GRID_CIRCLE_RADIUS_METERS = 0.08;
   const PUTT_GRID_SURFACE_OFFSET_METERS = 0.012;
   const PUTT_GRID_CIRCLE_OFFSET_LIMIT = 0.8;
   const PUTT_GRID_CIRCLE_REFERENCE_HORIZONTAL_SLOPE = 0.6;
   const PUTT_GRID_CIRCLE_MAX_SCALE = 1;
   const PUTT_GRID_COLOR = '#173c25';
-  const PUTT_GRID_OPACITY = 0.8;
+  const PUTT_GRID_OPACITY = 0.65;
   const markerCanvas = document.createElement('canvas');
   const markerContext = markerCanvas.getContext('2d');
   if (!markerContext) {
@@ -679,11 +672,10 @@ function createAimingMarker() {
   const cellMatrix = new THREE.Matrix4();
   const gridVertexA = new THREE.Vector3();
   const gridVertexB = new THREE.Vector3();
-  const gridPositions = new Float32Array(PUTT_GRID_MAX_LINE_SEGMENTS * 2 * 3);
-  const slopeGridPositions = new Float32Array(SLOPE_GRID_MAX_LINE_SEGMENTS * 2 * 3);
   const puttGridLineGeometry = new THREE.BufferGeometry();
   const slopeGridLineGeometry = new THREE.BufferGeometry();
-  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  let puttGridPositions = new Float32Array(0);
+  let slopeGridPositions = new Float32Array(0);
   let lastDistanceLabel = '';
 
   markerCanvas.width = AIMING_MARKER_CANVAS_WIDTH;
@@ -708,7 +700,7 @@ function createAimingMarker() {
   slopeGridRoot.name = 'aiming-hole-slope-grid';
   slopeGridRoot.visible = false;
 
-  puttGridLineGeometry.setAttribute('position', new THREE.BufferAttribute(gridPositions, 3));
+  puttGridLineGeometry.setAttribute('position', new THREE.BufferAttribute(puttGridPositions, 3));
   puttGridLineGeometry.setDrawRange(0, 0);
   slopeGridLineGeometry.setAttribute('position', new THREE.BufferAttribute(slopeGridPositions, 3));
   slopeGridLineGeometry.setDrawRange(0, 0);
@@ -740,12 +732,13 @@ function createAimingMarker() {
     opacity: PUTT_GRID_OPACITY,
     depthWrite: false,
     toneMapped: false,
+    side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
 
-  for (let cellIndex = 0; cellIndex < PUTT_GRID_MAX_CELLS; cellIndex += 1) {
+  for (let cellIndex = 0; cellIndex < SLOPE_GRID_MAX_CELLS; cellIndex += 1) {
     const circle = new THREE.Mesh(puttGridCircleGeometry, puttGridCircleMaterial);
     circle.renderOrder = 992;
     circle.visible = false;
@@ -776,6 +769,37 @@ function createAimingMarker() {
     return segmentIndex + 1;
   };
 
+  const getGridLineSegmentCount = (rowCount, columnCount) => (
+    ((rowCount + 1) * columnCount) + ((columnCount + 1) * rowCount)
+  );
+
+  const ensureGridOverlayCapacity = (gridLineGeometry, gridCircles, gridRoot, rowCount, columnCount, positions) => {
+    const requiredCellCount = rowCount * columnCount;
+    while (gridCircles.length < requiredCellCount) {
+      const circle = new THREE.Mesh(puttGridCircleGeometry, puttGridCircleMaterial);
+      circle.renderOrder = 992;
+      circle.visible = false;
+      gridRoot.add(circle);
+      gridCircles.push(circle);
+    }
+
+    const requiredSegmentCount = getGridLineSegmentCount(rowCount, columnCount);
+    const requiredPositionCount = requiredSegmentCount * 2 * 3;
+    if (positions.length !== requiredPositionCount) {
+      const nextPositions = new Float32Array(requiredPositionCount);
+      gridLineGeometry.setAttribute('position', new THREE.BufferAttribute(nextPositions, 3));
+      return {
+        maxSegments: requiredSegmentCount,
+        positions: nextPositions,
+      };
+    }
+
+    return {
+      maxSegments: requiredSegmentCount,
+      positions,
+    };
+  };
+
   const getVertexRecord = (preview, rowIndex, columnIndex) => preview.vertices[
     rowIndex * (preview.columns + 1) + columnIndex
   ];
@@ -795,11 +819,29 @@ function createAimingMarker() {
     }
   };
 
-  const renderGridOverlay = (preview, gridRoot, gridLineGeometry, gridCircles, gridBaseForward, gridPositionsTarget, maxSegments) => {
+  const renderGridOverlay = (preview, gridRoot, gridLineGeometry, gridCircles, gridBaseForward, positions) => {
     if (!preview?.cells?.length || !preview?.vertices?.length) {
       clearGridOverlay(gridRoot, gridLineGeometry, gridCircles);
-      return;
+      return positions;
     }
+
+    const previewRowCount = Math.max(Math.floor(preview.rows ?? 0), 0);
+    const previewColumnCount = Math.max(Math.floor(preview.columns ?? 0), 0);
+    if (previewRowCount <= 0 || previewColumnCount <= 0) {
+      clearGridOverlay(gridRoot, gridLineGeometry, gridCircles);
+      return positions;
+    }
+
+    const ensuredCapacity = ensureGridOverlayCapacity(
+      gridLineGeometry,
+      gridCircles,
+      gridRoot,
+      previewRowCount,
+      previewColumnCount,
+      positions,
+    );
+    const gridPositionsTarget = ensuredCapacity.positions;
+    const maxSegments = ensuredCapacity.maxSegments;
 
     gridBaseForward.copy(preview.forward ?? WORLD_FORWARD);
     gridBaseForward.y = 0;
@@ -809,16 +851,16 @@ function createAimingMarker() {
     gridBaseForward.normalize();
 
     let segmentCount = 0;
-    for (let rowIndex = 0; rowIndex <= preview.rows; rowIndex += 1) {
-      for (let columnIndex = 0; columnIndex < preview.columns; columnIndex += 1) {
+    for (let rowIndex = 0; rowIndex <= previewRowCount; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < previewColumnCount; columnIndex += 1) {
         copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
         copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex + 1), gridVertexB);
         segmentCount = writeGridSegment(gridPositionsTarget, maxSegments, segmentCount, gridVertexA, gridVertexB);
       }
     }
 
-    for (let columnIndex = 0; columnIndex <= preview.columns; columnIndex += 1) {
-      for (let rowIndex = 0; rowIndex < preview.rows; rowIndex += 1) {
+    for (let columnIndex = 0; columnIndex <= previewColumnCount; columnIndex += 1) {
+      for (let rowIndex = 0; rowIndex < previewRowCount; rowIndex += 1) {
         copyLiftedVertex(getVertexRecord(preview, rowIndex, columnIndex), gridVertexA);
         copyLiftedVertex(getVertexRecord(preview, rowIndex + 1, columnIndex), gridVertexB);
         segmentCount = writeGridSegment(gridPositionsTarget, maxSegments, segmentCount, gridVertexA, gridVertexB);
@@ -907,6 +949,7 @@ function createAimingMarker() {
     }
 
     gridRoot.visible = true;
+    return gridPositionsTarget;
   };
 
   const redrawMarker = () => {
@@ -995,26 +1038,24 @@ function createAimingMarker() {
     },
 
     setPuttGrid(preview) {
-      renderGridOverlay(
+      puttGridPositions = renderGridOverlay(
         preview,
         puttGridRoot,
         puttGridLineGeometry,
         puttGridCircles,
         puttGridBaseForward,
-        gridPositions,
-        PUTT_GRID_MAX_LINE_SEGMENTS,
+        puttGridPositions,
       );
     },
 
     setSlopeGrid(preview) {
-      renderGridOverlay(
+      slopeGridPositions = renderGridOverlay(
         preview,
         slopeGridRoot,
         slopeGridLineGeometry,
         slopeGridCircles,
         slopeGridBaseForward,
         slopeGridPositions,
-        SLOPE_GRID_MAX_LINE_SEGMENTS,
       );
     },
   };

@@ -13,7 +13,6 @@ import {
   COURSE_HOLE_POSITION,
 } from '/static/js/game/constants.js';
 import {
-  buildHoleSlopeGridPreview,
   buildPuttGridPreview,
   createPreviewSurfaceSampler,
   predictFirstContactPoint,
@@ -62,6 +61,11 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
   let aimingTargetDistanceMeters = 5;
   let puttAimDistanceMeters = 5;
   let puttPreviewPinnedRowCount = null;
+
+  /**
+   * Keeps club-category checks consistent anywhere the controller needs to detect putt-mode transitions.
+   */
+  const isPutterClub = (club) => club?.category === 'putter';
 
   const usesLaunchAimingPreview = () => getActiveClub()?.category !== 'putter';
 
@@ -467,10 +471,18 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     }
   };
 
-  const onClubChanged = () => {
+  /**
+   * Refreshes preview state after a club switch and re-pins putt-grid depth when entering putt mode.
+   */
+  const onClubChanged = (previousClub = null, nextClub = getActiveClub()) => {
+    const enteredPuttMode = !isPutterClub(previousClub) && isPutterClub(nextClub);
+
     preserveCurrentTargetDistance();
-    if (!usesLaunchAimingPreview()) {
+    if (isPutterClub(nextClub)) {
       syncPuttAimDistanceToAimingTarget();
+      if (enteredPuttMode) {
+        puttPreviewPinnedRowCount = null;
+      }
       pinPuttPreviewRowCount();
     } else {
       puttPreviewPinnedRowCount = null;
@@ -570,16 +582,8 @@ export function createAimingPreviewController({ viewerScene, hud, ballPhysics, g
     }
 
     aimingPreviewLandingPoint.copy(firstContactPreview.point);
-    if (viewerScene.isAimingCameraEnabled()) {
-      aimingPreview.slopeGrid = buildHoleSlopeGridPreview(
-        viewerScene,
-        aimingPreviewLandingPoint,
-        characterForwardForPreview,
-        resolveHoleWorldPosition(),
-      );
-    } else {
-      aimingPreview.slopeGrid = null;
-    }
+    aimingPreview.slopeGrid = null;
+
     aimingPreview.carryDistanceMeters = setAimingTargetDistanceMeters(firstContactPreview.carryDistanceMeters);
     aimingPreview.isVisible = true;
     aimingPreview.hasTargetPoint = true;

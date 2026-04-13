@@ -1459,8 +1459,9 @@ function setActiveClub(nextClub) {
     return;
   }
 
+  const previousClub = activeClub;
   activeClub = nextClub;
-  aimingPreviewController.onClubChanged();
+  aimingPreviewController.onClubChanged(previousClub, activeClub);
   hud.updateClubDebug(ACTIVE_CLUB_SET, activeClub);
 }
 
