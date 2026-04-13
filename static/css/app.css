@@ -45,6 +45,14 @@ body {
     radial-gradient(circle at top, rgba(111, 214, 255, 0.26), transparent 34%),
     radial-gradient(circle at right, rgba(141, 233, 255, 0.2), transparent 20%),
     linear-gradient(160deg, #f5f9fc 0%, var(--bg) 44%, var(--bg-accent) 100%);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button:focus,
+button:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 body::before {
@@ -737,12 +745,12 @@ p {
 
 .swing-preview-horizontal-pangya-zone {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
+  top: 0px;
+  bottom: 0px;
   left: 50%;
   width: 4px;
   transform: translateX(-50%);
-  border-radius: 999px;
+
   background: rgba(255, 255, 255, 0.98);
 }
 
@@ -875,7 +883,7 @@ p {
   border-radius: 0;
   border-right: 1px solid rgba(109, 127, 143, 0.16);
   border-bottom: 1px solid rgba(109, 127, 143, 0.16);
-  font-size: 0.68rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 

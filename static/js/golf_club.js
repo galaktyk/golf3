@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONTROL_ACTIONS, encodeControlMessage, encodeJoystickMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
+import { installButtonFocusGuard } from '/static/js/ui/focusGuards.js';
 
 const connectButton = document.querySelector('#connect-button');
 const calibrateButton = document.querySelector('#calibrate-button');
@@ -66,6 +67,7 @@ let lastMotionDebugUpdateTimeMs = 0;
 let packetSequence = 0;
 
 neutralInverse.identity();
+installButtonFocusGuard();
 
 connectButton.addEventListener('click', async () => {
   await connectWithMotion();

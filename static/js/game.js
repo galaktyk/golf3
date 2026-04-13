@@ -47,6 +47,7 @@ import { createViewerScene } from '/static/js/game/scene.js';
 import { createAimingPreviewController } from '/static/js/gameplay/aimingPreviewController.js';
 import { createClubSelectionController } from '/static/js/gameplay/clubSelectionController.js';
 import { createViewHudController } from '/static/js/gameplay/viewHudController.js';
+import { installButtonFocusGuard } from '/static/js/ui/focusGuards.js';
 
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
@@ -57,6 +58,7 @@ const incomingSwingState = {
   receivedAtTimeMs: 0,
 };
 let DEBUG_UI_ENABLED = false;
+installButtonFocusGuard();
 document.body.classList.toggle('viewer-debug-enabled', DEBUG_UI_ENABLED);
 const dom = getViewerDom();
 const viewerScene = createViewerScene(dom.canvas);
