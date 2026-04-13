@@ -1,8 +1,34 @@
 
+
+
+
+
+refine default style ~futuristic aero
+
+widget background should be
+gradient 
+bottom 222,222,222
+top 245,245,245
+
+text often dark
+
+
+
+---
+
 wind
 
 ---
-leaf transparent check
+
+
+---
+new chara
+
+---
+
+towmahawk (just a dropdown?)
+
+
 
 ---
 change to webrtc with qrcode for signaling
