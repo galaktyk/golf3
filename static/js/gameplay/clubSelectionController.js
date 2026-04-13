@@ -2,6 +2,29 @@
  * Owns active-club navigation and the direct-select debug UI wiring.
  */
 export function createClubSelectionController({ dom, hud, clubSet, getActiveClub, onSelectClub }) {
+  let isClubDetailExpanded = false;
+
+  const updateClubDetailToggleUi = () => {
+    if (!dom.clubShell || !dom.clubDetailToggleButton || !dom.clubDetailsPanel) {
+      return;
+    }
+
+    dom.clubShell.classList.toggle('is-expanded', isClubDetailExpanded);
+    dom.clubShell.classList.toggle('is-collapsed', !isClubDetailExpanded);
+    dom.clubDetailsPanel.setAttribute('aria-hidden', String(!isClubDetailExpanded));
+    dom.clubDetailToggleButton.setAttribute('aria-expanded', String(isClubDetailExpanded));
+    dom.clubDetailToggleButton.setAttribute(
+      'aria-label',
+      isClubDetailExpanded ? 'Hide club details' : 'Show club details',
+    );
+    dom.clubDetailToggleButton.textContent = isClubDetailExpanded ? '<' : '>';
+  };
+
+  const toggleClubDetails = () => {
+    isClubDetailExpanded = !isClubDetailExpanded;
+    updateClubDetailToggleUi();
+  };
+
   const renderClubDebugButtons = () => {
     if (!dom.clubButtonRow) {
       return;
@@ -47,12 +70,16 @@ export function createClubSelectionController({ dom, hud, clubSet, getActiveClub
     }
 
     renderClubDebugButtons();
+    updateClubDetailToggleUi();
 
     dom.clubPrevButton.addEventListener('click', () => {
       selectPreviousClub();
     });
     dom.clubNextButton.addEventListener('click', () => {
       selectNextClub();
+    });
+    dom.clubDetailToggleButton?.addEventListener('click', () => {
+      toggleClubDetails();
     });
 
     hud.updateClubDebug(clubSet, getActiveClub());

@@ -2,14 +2,19 @@
 
 
 
+the club ui (have split left-right) make the right side a separate sliding box collapsable instead
 
-the club ui (have split left-right) make the right side collapsable
-have a long button on the right of the ui  [>] when click will expand the right part and change to [<]
-when click [<] will collapse the right part and change to [>]
+### left ui
+- stay in place
+- have a long blue button behind it and peaking out to the right edge ">" (hang on the very edge )
+- when click will slide the hidden ui out and change to "<" (stay in the same place)
+- when click "<" will collapse the right part and change to ">"
 
-right part will collapse as default
 
-rigt part ui bg will be color (50,100,150, 0.2) 
+### hidden ui
+- bg color (50,100,150, 0.2)
+- collapse/hide as default
+
 
 
 
@@ -17,14 +22,6 @@ rigt part ui bg will be color (50,100,150, 0.2)
 ----
 
 
-refine default style ~futuristic aero
-
-widget background should be
-gradient 
-bottom 222,222,222
-top 245,245,245
-
-text often dark
 
 
 
