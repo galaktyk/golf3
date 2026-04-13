@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { CONTROL_ACTIONS, encodeControlMessage, encodeJoystickMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
+import { createControllerRtcSession } from '/static/js/session/firebaseRtcSession.js';
+import {
+  loadStoredControllerCode,
+  normalizeRoomCode,
+  saveStoredControllerCode,
+} from '/static/js/session/roomCode.js';
 import { installButtonFocusGuard } from '/static/js/ui/focusGuards.js';
 
 const connectButton = document.querySelector('#connect-button');
@@ -11,6 +17,7 @@ const actualSwingButton = document.querySelector('#actual-swing-button');
 const joystickZone = document.querySelector('#aim-joystick');
 const joystickVisual = joystickZone?.querySelector('.aim-joystick-visual');
 const joystickKnob = joystickZone?.querySelector('.aim-joystick-knob');
+const roomCodeInput = document.querySelector('#room-code-input');
 const statusLabel = document.querySelector('#controller-status');
 const debugLabel = document.querySelector('#controller-debug');
 
@@ -58,8 +65,8 @@ const JOYSTICK_NETWORK_STEP = 0.02;
 let motionEnabled = false;
 let hasOrientation = false;
 let hasMotion = false;
-let orientationSocket = null;
-let controlSocket = null;
+let controllerSession = null;
+let controllerSessionState = null;
 let filteredPerpendicularAngularSpeedRadiansPerSecond = 0;
 let decayingPerpendicularAngularSpeedRadiansPerSecond = 0;
 let lastMotionSampleTimeMs = 0;
@@ -71,6 +78,15 @@ installButtonFocusGuard();
 
 connectButton.addEventListener('click', async () => {
   await connectWithMotion();
+});
+
+roomCodeInput?.addEventListener('input', () => {
+  roomCodeInput.value = normalizeRoomCode(roomCodeInput.value);
+  saveStoredControllerCode(roomCodeInput.value);
+});
+
+window.addEventListener('beforeunload', () => {
+  controllerSession?.close();
 });
 
 calibrateButton.addEventListener('click', () => {
@@ -101,6 +117,10 @@ actualSwingButton?.addEventListener('click', () => {
 
 bindAimJoystick();
 setControlButtonsEnabled(false);
+
+if (roomCodeInput) {
+  roomCodeInput.value = loadStoredControllerCode();
+}
 
 if (orientationEventName) {
   window.addEventListener(orientationEventName, (event) => {
@@ -161,12 +181,12 @@ setInterval(() => {
     return;
   }
 
-  if (!orientationSocket || orientationSocket.readyState !== WebSocket.OPEN || !hasOrientation) {
+  if (!hasOrientation || !controllerSession?.sendSwingPacket) {
     return;
   }
 
   calibratedQuaternion.copy(neutralInverse).multiply(rawQuaternion).normalize();
-  orientationSocket.send(encodeSwingStatePacket({
+  controllerSession.sendSwingPacket(encodeSwingStatePacket({
     quaternion: calibratedQuaternion,
     perpendicularAngularSpeedRadiansPerSecond: getOutboundPerpendicularAngularSpeedRadiansPerSecond(),
     motionAgeMilliseconds: getMotionAgeMilliseconds(),
@@ -211,65 +231,63 @@ async function enableMotion() {
 }
 
 async function connectWithMotion() {
+  const roomCode = normalizeRoomCode(roomCodeInput?.value);
+  if (!roomCode) {
+    statusLabel.textContent = 'Enter client id';
+    roomCodeInput?.focus();
+    return;
+  }
+
   connectButton.disabled = true;
 
   try {
-    await enableMotion();
-    connectSockets();
+    const motionReady = await enableMotion();
+    if (!motionReady) {
+      updateConnectionStatus();
+      return;
+    }
+
+    controllerSession?.close();
+    controllerSession = null;
+    controllerSessionState = null;
+    statusLabel.textContent = 'Joining';
+    debugLabel.textContent = `joining game client ${roomCode}`;
+    saveStoredControllerCode(roomCode);
+    controllerSession = await createControllerRtcSession({
+      roomId: roomCode,
+      onStateChange: handleControllerSessionState,
+    });
+    handleControllerSessionState(controllerSession.getState());
     updateConnectionStatus();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to join room.';
+    statusLabel.textContent = 'Connect error';
+    debugLabel.textContent = message;
+    setControlButtonsEnabled(false);
+    releaseAimJoystick();
   } finally {
     connectButton.disabled = false;
   }
 }
 
-function connectSockets() {
-  connectOrientationSocket();
-  connectControlSocket();
-}
+function handleControllerSessionState(nextState) {
+  const previousState = controllerSessionState;
+  controllerSessionState = nextState;
 
-function connectOrientationSocket() {
-  if (orientationSocket && (orientationSocket.readyState === WebSocket.OPEN || orientationSocket.readyState === WebSocket.CONNECTING)) {
-    return;
+  if (previousState?.controlChannelState === 'open' && nextState.controlChannelState !== 'open') {
+    setControlButtonsEnabled(false);
+    releaseAimJoystick();
   }
 
-  orientationSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=player`);
-
-  orientationSocket.addEventListener('open', () => {
-    updateConnectionStatus();
-  });
-
-  orientationSocket.addEventListener('close', () => {
-    updateConnectionStatus();
-  });
-
-  orientationSocket.addEventListener('error', () => {
-    statusLabel.textContent = 'Server error';
-  });
-}
-
-function connectControlSocket() {
-  if (controlSocket && (controlSocket.readyState === WebSocket.OPEN || controlSocket.readyState === WebSocket.CONNECTING)) {
-    return;
-  }
-
-  controlSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws/control?role=player`);
-
-  controlSocket.addEventListener('open', () => {
+  if (nextState.controlChannelState === 'open') {
     setControlButtonsEnabled(true);
-    updateConnectionStatus();
-  });
+  }
 
-  controlSocket.addEventListener('close', () => {
-    setControlButtonsEnabled(false);
-    releaseAimJoystick();
-    updateConnectionStatus();
-  });
+  if (nextState.errorMessage) {
+    debugLabel.textContent = nextState.errorMessage;
+  }
 
-  controlSocket.addEventListener('error', () => {
-    setControlButtonsEnabled(false);
-    releaseAimJoystick();
-    statusLabel.textContent = 'Control error';
-  });
+  updateConnectionStatus();
 }
 
 function bindAimJoystick() {
@@ -351,11 +369,11 @@ function sendControlTap(action) {
 }
 
 function sendControlState(action, active, value = null) {
-  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+  if (!controllerSession?.sendControlMessage) {
     return;
   }
 
-  controlSocket.send(encodeControlMessage(action, active, value));
+  controllerSession.sendControlMessage(encodeControlMessage(action, active, value));
 }
 
 function setControlButtonsEnabled(enabled) {
@@ -371,10 +389,20 @@ function setControlButtonsEnabled(enabled) {
 }
 
 function updateConnectionStatus() {
-  const orientationReady = orientationSocket?.readyState === WebSocket.OPEN;
-  const controlReady = controlSocket?.readyState === WebSocket.OPEN;
+  const orientationReady = controllerSessionState?.swingChannelState === 'open';
+  const controlReady = controllerSessionState?.controlChannelState === 'open';
+
+  if (controllerSessionState?.errorMessage) {
+    statusLabel.textContent = 'Link error';
+    return;
+  }
 
   if (!orientationReady && !controlReady) {
+    if (controllerSessionState?.signalingState === 'joining-room' || controllerSessionState?.signalingState === 'connecting') {
+      statusLabel.textContent = 'Pairing';
+      return;
+    }
+
     statusLabel.textContent = 'Offline';
     return;
   }
@@ -500,7 +528,7 @@ function getUnsupportedMessage() {
 }
 
 function isAimEnabled() {
-  return controlSocket?.readyState === WebSocket.OPEN;
+  return controllerSessionState?.controlChannelState === 'open';
 }
 
 /**
@@ -590,11 +618,11 @@ function roundJoystickStrength(value) {
 }
 
 function sendJoystickState(axisX, axisY) {
-  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+  if (!controllerSession?.sendControlMessage) {
     return;
   }
 
-  controlSocket.send(encodeJoystickMessage(axisX, axisY));
+  controllerSession.sendControlMessage(encodeJoystickMessage(axisX, axisY));
 }
 
 /**

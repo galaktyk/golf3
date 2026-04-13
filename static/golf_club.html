@@ -28,6 +28,12 @@
       <section class="controller-dock">
         <section class="panel controls-panel">
           <p id="controller-status" class="status-pill">Offline</p>
+          <div class="pairing-field-grid">
+            <label class="pairing-field" for="room-code-input">
+              <span class="debug-label">Game client id</span>
+              <input id="room-code-input" class="launch-debug-input pairing-code-input" type="text" inputmode="latin" autocomplete="one-time-code" maxlength="6" placeholder="ABC123">
+            </label>
+          </div>
           <div class="control-row club-row">
             <button id="club-prev-button" class="action-button secondary club-button" disabled aria-label="Previous club">Club -</button>
             <button id="club-next-button" class="action-button secondary club-button" disabled aria-label="Next club">Club +</button>
@@ -44,7 +50,10 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "/vendor/three/build/three.module.js"
+        "three": "/vendor/three/build/three.module.js",
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"
       }
     }
   </script>

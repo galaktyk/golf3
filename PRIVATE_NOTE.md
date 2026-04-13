@@ -1,14 +1,11 @@
 
 
 
+esp32
 
-the aim preview on non putt is janky im not sure it because it do the distance resolve on simulation or because camera snap happen multiple time during when holding up/down button
+---
 
-
-
-
-
-
+more club ik
 
 ---
 

@@ -48,6 +48,8 @@ import { createViewerScene } from '/static/js/game/scene.js';
 import { createAimingPreviewController } from '/static/js/gameplay/aimingPreviewController.js';
 import { createClubSelectionController } from '/static/js/gameplay/clubSelectionController.js';
 import { createViewHudController } from '/static/js/gameplay/viewHudController.js';
+import { createViewerRtcSession } from '/static/js/session/firebaseRtcSession.js';
+import { loadStoredViewerCode, saveStoredViewerCode } from '/static/js/session/roomCode.js';
 import { installButtonFocusGuard } from '/static/js/ui/focusGuards.js';
 
 const animationClock = new THREE.Clock();
@@ -68,6 +70,7 @@ const character = loadCharacter(viewerScene, (message) => hud.setStatus(message)
 const ballPhysics = createBallPhysics(viewerScene);
 const ballTrail = createBallTrail(BALL_RADIUS);
 const shotImpactAudio = createShotImpactAudio();
+const roomCodeLabel = document.querySelector('#viewer-room-code');
 const practiceSwingBallColor = new THREE.Color('#31e0ff');
 const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
@@ -110,6 +113,9 @@ let aimingPreviewHeadSpeedAnalogHoldSeconds = 0;
 let aimingPreviewHeadSpeedAnalogDirection = 0;
 let practiceSwingBallVisualDirty = true;
 let practiceSwingBallVisualChildCount = -1;
+let viewerSession = null;
+let viewerSessionGeneration = 0;
+let lastViewerTransportState = null;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS = THREE.MathUtils.degToRad(
@@ -149,27 +155,14 @@ aimingPreviewController.syncSwingPreviewTarget();
 initializeLaunchDebugUi();
 clubSelectionController.initializeClubDebugUi();
 
-const socket = new WebSocket(`${getWebSocketBaseUrl()}/ws?role=viewer`);
-const controlSocket = new WebSocket(`${getWebSocketBaseUrl()}/ws/control?role=viewer`);
-socket.binaryType = 'arraybuffer';
-
-socket.addEventListener('open', () => {
-  hud.setStatus('Viewer connected. Waiting for phone data.');
-  hud.updateSocketState('Connected');
+window.addEventListener('beforeunload', () => {
+  viewerSession?.close();
 });
 
-socket.addEventListener('message', (event) => {
-  if (typeof event.data === 'string') {
-    const payload = JSON.parse(event.data);
-    if (payload.type === 'status') {
-      hud.setStatus(payload.playerConnected
-        ? 'Phone connected. Streaming live orientation.'
-        : 'Viewer connected. Waiting for phone data.');
-    }
-    return;
-  }
+void startViewerSession();
 
-  const decodedSwingState = decodeSwingStatePacket(event.data, incomingQuaternion, incomingSwingState);
+function handleIncomingSwingPacket(packet) {
+  const decodedSwingState = decodeSwingStatePacket(packet, incomingQuaternion, incomingSwingState);
   if (!decodedSwingState) {
     return;
   }
@@ -178,24 +171,10 @@ socket.addEventListener('message', (event) => {
   hasIncomingOrientation = true;
   viewHudController.recordPacket();
   hud.updateQuaternion(incomingQuaternion);
-});
+}
 
-socket.addEventListener('close', () => {
-  hud.setStatus('Viewer disconnected from server.');
-  hud.updateSocketState('Disconnected');
-  hud.updatePacketRate(0);
-});
-
-socket.addEventListener('error', () => {
-  hud.updateSocketState('Error');
-});
-
-controlSocket.addEventListener('message', (event) => {
-  if (typeof event.data !== 'string') {
-    return;
-  }
-
-  const payload = JSON.parse(event.data);
+function handleIncomingControlPayload(payloadText) {
+  const payload = JSON.parse(payloadText);
   const joystickMessage = decodeJoystickMessage(payload);
   if (joystickMessage) {
     applyRemoteJoystickInput(joystickMessage.x, joystickMessage.y);
@@ -208,9 +187,9 @@ controlSocket.addEventListener('message', (event) => {
   }
 
   applyRemoteControl(controlMessage.action, controlMessage.active, controlMessage.value);
-});
+}
 
-controlSocket.addEventListener('close', () => {
+function handleRemoteControlDisconnect() {
   resetRemoteJoystickInput();
   if (!rotateCharacterLeft && !rotateCharacterRight) {
     resetCharacterRotationAcceleration();
@@ -218,7 +197,89 @@ controlSocket.addEventListener('close', () => {
   if (!increaseAimingPreviewHeadSpeed && !decreaseAimingPreviewHeadSpeed) {
     resetAimingPreviewHeadSpeedAcceleration();
   }
-});
+}
+
+function updateViewerTransportState(state) {
+  const swingConnected = state.swingChannelState === 'open';
+  const controlConnected = state.controlChannelState === 'open';
+  const fullyConnected = swingConnected && controlConnected;
+  const previousState = lastViewerTransportState;
+  lastViewerTransportState = state;
+
+  if (previousState?.controlChannelState === 'open' && !controlConnected) {
+    handleRemoteControlDisconnect();
+  }
+
+  if (state.errorMessage) {
+    hud.updateSocketState('Error');
+    hud.setStatus(state.errorMessage);
+    return;
+  }
+
+  if (!state.remoteUid) {
+    hud.updateSocketState('Waiting');
+    if (!hasIncomingOrientation) {
+      hud.setStatus('Viewer ready. Waiting for phone connection.');
+    }
+    return;
+  }
+
+  if (!fullyConnected) {
+    hud.updateSocketState('Connecting');
+    if (!hasIncomingOrientation) {
+      hud.setStatus('Phone joined. Establishing direct link.');
+    }
+    return;
+  }
+
+  hud.updateSocketState('Connected');
+  if (!hasIncomingOrientation) {
+    hud.setStatus('Phone connected. Waiting for swing data.');
+  }
+}
+
+async function startViewerSession() {
+  viewerSessionGeneration += 1;
+  const sessionGeneration = viewerSessionGeneration;
+
+  viewerSession?.close();
+  viewerSession = null;
+  lastViewerTransportState = null;
+  hasIncomingOrientation = false;
+  roomCodeLabel.textContent = '------';
+  hud.updateSocketState('Connecting');
+  hud.updatePacketRate(0);
+  handleRemoteControlDisconnect();
+
+  try {
+    const session = await createViewerRtcSession({
+      preferredRoomId: loadStoredViewerCode(),
+      onSwingPacket: handleIncomingSwingPacket,
+      onControlMessage: handleIncomingControlPayload,
+      onStateChange: (state) => {
+        if (sessionGeneration !== viewerSessionGeneration) {
+          return;
+        }
+
+        updateViewerTransportState(state);
+      },
+    });
+
+    if (sessionGeneration !== viewerSessionGeneration) {
+      session.close();
+      return;
+    }
+
+    viewerSession = session;
+    roomCodeLabel.textContent = session.roomId;
+    saveStoredViewerCode(session.roomId);
+    updateViewerTransportState(session.getState());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to create room.';
+    hud.updateSocketState('Error');
+    hud.setStatus(message);
+  }
+}
 
 window.addEventListener('resize', () => {
   viewerScene.resize();

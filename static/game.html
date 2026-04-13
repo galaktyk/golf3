@@ -13,6 +13,10 @@
   <div class="viewer-fps-overlay" aria-live="polite" aria-label="Viewer framerate">
     <span id="viewer-fps" class="viewer-fps-value">0</span>
   </div>
+  <div class="viewer-client-code" aria-live="polite">
+    <span class="viewer-client-code-label">Game Client Code: </span>
+    <span id="viewer-room-code" class="viewer-client-code-value">------</span>
+  </div>
   <div class="hud hud-bottom-right">
     <div class="panel panel-debug" id="viewer-debug-panel">
       <div class="panel-heading">
@@ -233,7 +237,10 @@
     {
       "imports": {
         "three": "/vendor/three/build/three.module.js",
-        "three/addons/": "/vendor/three/examples/jsm/"
+        "three/addons/": "/vendor/three/examples/jsm/",
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js",
+        "firebase/database": "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"
       }
     }
   </script>

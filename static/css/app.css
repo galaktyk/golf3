@@ -119,6 +119,42 @@ body::before {
   text-shadow: 0 1px 10px rgba(255, 255, 255, 0.85);
 }
 
+.viewer-client-code {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  transform: translateX(-50%);
+  z-index: 2;
+
+  justify-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.viewer-client-code-label,
+.viewer-client-code-value {
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow:
+    1px 0 0 rgba(32, 32, 32, 0.95),
+    -1px 0 0 rgba(32, 32, 32, 0.95),
+    0 1px 0 rgba(32, 32, 32, 0.95),
+    0 -1px 0 rgba(32, 32, 32, 0.95);
+}
+
+.viewer-client-code-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.viewer-client-code-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 #scene {
   display: block;
   width: 100vw;
@@ -295,6 +331,24 @@ p {
   gap: 12px;
   padding: 12px;
   width: min(100%, 360px);
+}
+
+.pairing-field-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.pairing-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pairing-code-input {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .controller-dock {
