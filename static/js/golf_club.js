@@ -3,6 +3,7 @@ import { CONTROL_ACTIONS, encodeControlMessage, encodeJoystickMessage, encodeSwi
 import { createControllerRtcSession } from '/static/js/session/firebaseRtcSession.js';
 import {
   isCompleteRoomCode,
+  loadControllerCodeFromUrl,
   loadStoredControllerCode,
   normalizeRoomCode,
   saveStoredControllerCode,
@@ -124,7 +125,12 @@ bindAimJoystick();
 setControlButtonsEnabled(false);
 
 if (roomCodeInput) {
-  roomCodeInput.value = loadStoredControllerCode();
+  const urlRoomCode = loadControllerCodeFromUrl();
+  const initialRoomCode = urlRoomCode || loadStoredControllerCode();
+  roomCodeInput.value = initialRoomCode;
+  if (urlRoomCode) {
+    saveStoredControllerCode(urlRoomCode);
+  }
 }
 
 updatePairingGate();
