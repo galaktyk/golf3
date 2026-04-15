@@ -687,11 +687,6 @@ function animate() {
   viewerScene.renderer.render(viewerScene.scene, viewerScene.camera);
 }
 
-function getWebSocketBaseUrl() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}`;
-}
-
 function updateCharacterRotationInput(deltaSeconds) {
   if (viewerScene.isFreeCameraEnabled()) {
     resetCharacterRotationAcceleration();

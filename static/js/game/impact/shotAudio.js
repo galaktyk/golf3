@@ -4,32 +4,33 @@ import {
   SHOT_AUDIO_MEDIUM_MAX_IMPACT_SPEED,
   SHOT_AUDIO_VOLUME,
 } from '/static/js/game/constants.js';
+import { resolveAssetUrl } from '../../assets.js';
 import { SURFACE_TYPES } from '/static/js/game/surfaceData.js';
 
 const SHOT_AUDIO_PATHS = {
-  light: '/assets/audio_clip/shot/shot_light_normal.wav',
-  medium: '/assets/audio_clip/shot/shot_medium_normal.wav',
-  practice: '/assets/audio_clip/shot/shot_practice.wav',
-  strong: '/assets/audio_clip/shot/shot_strong_normal.wav',
-  pangya: '/assets/audio_clip/shot/pangya.wav',
-  clubChange: '/assets/audio_clip/ui_club_change.wav',
-  whoosh: '/assets/audio_clip/whoosh/whoosh_foley1.wav',
+  light: resolveAssetUrl('audio_clip/shot/shot_light_normal.wav'),
+  medium: resolveAssetUrl('audio_clip/shot/shot_medium_normal.wav'),
+  practice: resolveAssetUrl('audio_clip/shot/shot_practice.wav'),
+  strong: resolveAssetUrl('audio_clip/shot/shot_strong_normal.wav'),
+  pangya: resolveAssetUrl('audio_clip/shot/pangya.wav'),
+  clubChange: resolveAssetUrl('audio_clip/ui_club_change.wav'),
+  whoosh: resolveAssetUrl('audio_clip/whoosh/whoosh_foley1.wav'),
 };
 
 const SURFACE_HIT_AUDIO_PATHS = {
-  [SURFACE_TYPES.FAIRWAY]: '/assets/audio_clip/hit/ball_fairway.wav',
-  [SURFACE_TYPES.GREEN]: '/assets/audio_clip/hit/ball_green.wav',
-  [SURFACE_TYPES.HOLE]: '/assets/audio_clip/hit/ball_holecup.wav',
-  [SURFACE_TYPES.ROUGH]: '/assets/audio_clip/hit/ball_rough.wav',
-  [SURFACE_TYPES.SAND]: '/assets/audio_clip/hit/ball_sand.wav',
-  [SURFACE_TYPES.WATER]: '/assets/audio_clip/hit/ball_water.wav',
-  [SURFACE_TYPES.WOOD]: '/assets/audio_clip/hit/ball_wood.wav',
-  [SURFACE_TYPES.ROCK]: '/assets/audio_clip/hit/ball_rock.wav',
-  [SURFACE_TYPES.LEAF]: '/assets/audio_clip/hit/ball_leaf.wav',
-  [SURFACE_TYPES.ROAD]: '/assets/audio_clip/hit/ball_road.wav',
-  [SURFACE_TYPES.OB]: '/assets/audio_clip/hit/ball_rock.wav',
-  [SURFACE_TYPES.DEFAULT]: '/assets/audio_clip/hit/ball_rock.wav',
-  ice: '/assets/audio_clip/hit/ball_ice.wav',
+  [SURFACE_TYPES.FAIRWAY]: resolveAssetUrl('audio_clip/hit/ball_fairway.wav'),
+  [SURFACE_TYPES.GREEN]: resolveAssetUrl('audio_clip/hit/ball_green.wav'),
+  [SURFACE_TYPES.HOLE]: resolveAssetUrl('audio_clip/hit/ball_holecup.wav'),
+  [SURFACE_TYPES.ROUGH]: resolveAssetUrl('audio_clip/hit/ball_rough.wav'),
+  [SURFACE_TYPES.SAND]: resolveAssetUrl('audio_clip/hit/ball_sand.wav'),
+  [SURFACE_TYPES.WATER]: resolveAssetUrl('audio_clip/hit/ball_water.wav'),
+  [SURFACE_TYPES.WOOD]: resolveAssetUrl('audio_clip/hit/ball_wood.wav'),
+  [SURFACE_TYPES.ROCK]: resolveAssetUrl('audio_clip/hit/ball_rock.wav'),
+  [SURFACE_TYPES.LEAF]: resolveAssetUrl('audio_clip/hit/ball_leaf.wav'),
+  [SURFACE_TYPES.ROAD]: resolveAssetUrl('audio_clip/hit/ball_road.wav'),
+  [SURFACE_TYPES.OB]: resolveAssetUrl('audio_clip/hit/ball_rock.wav'),
+  [SURFACE_TYPES.DEFAULT]: resolveAssetUrl('audio_clip/hit/ball_rock.wav'),
+  ice: resolveAssetUrl('audio_clip/hit/ball_ice.wav'),
 };
 
 const AUDIO_UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'];

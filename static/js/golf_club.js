@@ -486,11 +486,6 @@ function formatQuaternion(quaternion) {
   return `${x.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${y.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${z.toFixed(DEBUG_QUATERNION_DECIMALS)}, ${w.toFixed(DEBUG_QUATERNION_DECIMALS)}`;
 }
 
-function getWebSocketBaseUrl() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}`;
-}
-
 function getOrientationEventName() {
   if ('ondeviceorientationabsolute' in window) {
     return 'deviceorientationabsolute';

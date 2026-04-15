@@ -11,6 +11,9 @@ from fastapi.staticfiles import StaticFiles
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 ASSETS_DIR = BASE_DIR / "assets"
+GAME_PAGE_DIR = BASE_DIR / "game"
+GAME_PAGE_FILE = GAME_PAGE_DIR / "index.html"
+GOLF_CLUB_PAGE_FILE = BASE_DIR / "golf_club.html"
 VENDOR_DIR = BASE_DIR / "node_modules"
 SWING_PACKET_SIZE_BYTES = 16
 SWING_PACKET_VERSION = 1
@@ -117,12 +120,17 @@ async def root() -> RedirectResponse:
 
 @app.get("/game")
 async def game_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "game.html")
+    return FileResponse(GAME_PAGE_FILE)
 
 
 @app.get("/golf_club")
 async def golf_club_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "golf_club.html")
+    return FileResponse(GOLF_CLUB_PAGE_FILE)
+
+
+@app.get("/golf_club.html")
+async def golf_club_html_page() -> FileResponse:
+    return FileResponse(GOLF_CLUB_PAGE_FILE)
 
 
 @app.websocket("/ws")

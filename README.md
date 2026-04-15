@@ -5,6 +5,15 @@ This prototype hosts two browser pages from a FastAPI server on the local networ
 - `/game` renders a Three.js scene with the golf club model.
 - `/golf_club` runs on a phone, reads `DeviceOrientationEvent` and `DeviceMotionEvent`, applies neutral calibration, derives swing speed from gyroscope motion, and streams binary swing-state packets over WebSocket.
 
+## GitHub Pages
+
+The static viewer and controller pages can also be published on GitHub Pages under the repository path:
+
+- `https://galaktyk.github.io/golf3_web/game/`
+- `https://galaktyk.github.io/golf3_web/golf_club.html`
+
+The published pages now resolve CSS, JavaScript, fonts, models, and audio relative to the repository path instead of assuming `https://galaktyk.github.io/` is the site root. Three.js is loaded from jsDelivr so GitHub Pages does not need the local `/vendor` mount used by FastAPI.
+
 ## Run
 
 1. Create a Python environment.

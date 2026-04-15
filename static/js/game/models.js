@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { resolveAssetUrl } from '../assets.js';
 import { buildCourseCollision } from '/static/js/game/collision.js';
 import {
   AIMING_MARKER_CANVAS_HEIGHT,
@@ -83,7 +84,7 @@ export function loadViewerModels(viewerScene, onStatus) {
   );
 
   loader.load(
-    '/assets/models/high_ball_low.glb',
+    resolveAssetUrl('models/high_ball_low.glb'),
     (gltf) => {
       configureFlatShadedMaterials(gltf.scene);
       gltf.scene.updateMatrixWorld(true);
@@ -110,7 +111,7 @@ export function loadViewerModels(viewerScene, onStatus) {
   );
 
   loader.load(
-    '/assets/models/golf_club.glb',
+    resolveAssetUrl('models/golf_club.glb'),
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
       gltf.scene.updateMatrixWorld(true);
@@ -275,7 +276,7 @@ export function loadCharacter(viewerScene, onStatus) {
   };
 
   loader.load(
-    '/assets/models/chara/nuri/nuri_base.glb',
+    resolveAssetUrl('models/chara/nuri/nuri_base.glb'),
     (gltf) => {
       configureUnlitMaterials(gltf.scene);
       characterSceneRoot = gltf.scene;
@@ -310,7 +311,7 @@ export function loadCharacter(viewerScene, onStatus) {
   );
 
   loader.load(
-    '/assets/models/chara/nuri/nuri_swing.glb',
+    resolveAssetUrl('models/chara/nuri/nuri_swing.glb'),
     (gltf) => {
       characterAnimationClip = gltf.animations[0] ?? null;
       initializeCharacterControllerIfReady();
