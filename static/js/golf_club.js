@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONTROL_ACTIONS, encodeControlMessage, encodeJoystickMessage, encodeSwingStatePacket } from '/static/js/protocol.js';
 import { createControllerRtcSession } from '/static/js/session/firebaseRtcSession.js';
 import {
+  isCompleteRoomCode,
   loadStoredControllerCode,
   normalizeRoomCode,
   saveStoredControllerCode,
@@ -238,8 +239,8 @@ async function enableMotion() {
 
 async function connectWithMotion() {
   const roomCode = normalizeRoomCode(roomCodeInput?.value);
-  if (!roomCode) {
-    setStatus('Enter client id');
+  if (!isCompleteRoomCode(roomCode)) {
+    setStatus('Enter 4 digits');
     updatePairingGate();
     return;
   }

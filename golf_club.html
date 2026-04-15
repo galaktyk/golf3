@@ -18,7 +18,7 @@
       <p id="pairing-gate-status" class="status-pill pairing-gate-status">Offline</p>
       <label class="pairing-field" for="room-code-input">
         <span class="debug-label">Game client id</span>
-        <input id="room-code-input" class="launch-debug-input pairing-code-input" type="text" inputmode="latin" autocomplete="one-time-code" maxlength="6" placeholder="ABC123">
+        <input id="room-code-input" class="launch-debug-input pairing-code-input" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="4" placeholder="1234">
       </label>
       <div class="pairing-gate-actions">
         <button id="connect-button" class="action-button primary pairing-gate-button">Connect</button>
