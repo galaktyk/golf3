@@ -92,7 +92,7 @@ roomCodeInput?.addEventListener('input', () => {
 });
 
 window.addEventListener('beforeunload', () => {
-  controllerSession?.close();
+  void controllerSession?.close();
 });
 
 calibrateButton.addEventListener('click', () => {
@@ -262,7 +262,7 @@ async function connectWithMotion() {
       return;
     }
 
-    controllerSession?.close();
+    await controllerSession?.close();
     controllerSession = null;
     controllerSessionState = null;
     setStatus('Joining');

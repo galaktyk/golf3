@@ -118,6 +118,7 @@ let practiceSwingBallVisualChildCount = -1;
 let viewerSession = null;
 let viewerSessionGeneration = 0;
 let lastViewerTransportState = null;
+let viewerSessionRestartPromise = null;
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS = THREE.MathUtils.degToRad(
@@ -158,7 +159,7 @@ initializeLaunchDebugUi();
 clubSelectionController.initializeClubDebugUi();
 
 window.addEventListener('beforeunload', () => {
-  viewerSession?.close();
+  void viewerSession?.close();
 });
 
 void startViewerSession();
@@ -201,6 +202,21 @@ function handleRemoteControlDisconnect() {
   }
 }
 
+/**
+ * Recreates the viewer signaling session on the same code so a re-scan gets a fresh offer after controller loss.
+ */
+function scheduleViewerSessionRestart() {
+  if (viewerSessionRestartPromise) {
+    return;
+  }
+
+  viewerSessionRestartPromise = Promise.resolve()
+    .then(() => startViewerSession())
+    .finally(() => {
+      viewerSessionRestartPromise = null;
+    });
+}
+
 function updateViewerTransportState(state) {
   const swingConnected = state.swingChannelState === 'open';
   const controlConnected = state.controlChannelState === 'open';
@@ -211,6 +227,18 @@ function updateViewerTransportState(state) {
 
   if (previousState?.controlChannelState === 'open' && !controlConnected) {
     handleRemoteControlDisconnect();
+    scheduleViewerSessionRestart();
+  }
+
+  if (previousState?.remoteUid && !state.remoteUid) {
+    scheduleViewerSessionRestart();
+  }
+
+  if (
+    state.remoteUid
+    && (state.connectionState === 'failed' || state.connectionState === 'closed')
+  ) {
+    scheduleViewerSessionRestart();
   }
 
   if (state.errorMessage) {
@@ -244,15 +272,18 @@ function updateViewerTransportState(state) {
 async function startViewerSession() {
   viewerSessionGeneration += 1;
   const sessionGeneration = viewerSessionGeneration;
+  const retainedRoomCode = /^\d{4}$/.test(roomCodeLabel?.textContent ?? '')
+    ? roomCodeLabel.textContent.trim()
+    : loadStoredViewerCode();
 
-  viewerSession?.close();
+  await viewerSession?.close();
   viewerSession = null;
   lastViewerTransportState = null;
   hasIncomingOrientation = false;
-  if (roomCodeLabel) {
-    roomCodeLabel.textContent = '----';
+  if (roomCodeLabel && retainedRoomCode) {
+    roomCodeLabel.textContent = retainedRoomCode;
   }
-  updateViewerPairingUi('----', null);
+  updateViewerPairingUi(retainedRoomCode || '----', null);
   hud.updateSocketState('Connecting');
   hud.updatePacketRate(0);
   handleRemoteControlDisconnect();
@@ -272,7 +303,7 @@ async function startViewerSession() {
     });
 
     if (sessionGeneration !== viewerSessionGeneration) {
-      session.close();
+      await session.close();
       return;
     }
 
@@ -307,6 +338,7 @@ function updateViewerPairingUi(roomCode, transportState) {
   const normalizedRoomCode = String(roomCode ?? '').trim();
   if (!/^\d{4}$/.test(normalizedRoomCode)) {
     roomQrImage.hidden = true;
+    delete roomQrImage.dataset.qrValue;
     roomQrImage.removeAttribute('src');
     roomQrImage.alt = '';
     return;
@@ -318,7 +350,7 @@ function updateViewerPairingUi(roomCode, transportState) {
   qrUrl.searchParams.set('margin', '0');
   qrUrl.searchParams.set('data', controllerUrl);
 
-  if (roomQrImage.dataset.qrValue !== controllerUrl) {
+  if (roomQrImage.dataset.qrValue !== controllerUrl || !roomQrImage.getAttribute('src')) {
     roomQrImage.dataset.qrValue = controllerUrl;
     roomQrImage.src = qrUrl.toString();
     roomQrImage.alt = `QR code linking to ${controllerUrl}`;
