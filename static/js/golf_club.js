@@ -241,7 +241,6 @@ async function connectWithMotion() {
   if (!roomCode) {
     setStatus('Enter client id');
     updatePairingGate();
-    roomCodeInput?.focus();
     return;
   }
 
@@ -322,10 +321,6 @@ function updatePairingGate() {
 
   if (pairingGateStatus) {
     pairingGateStatus.textContent = statusLabel?.textContent?.trim() || 'Offline';
-  }
-
-  if (gateOpen && roomCodeInput && !connectButton.disabled && document.activeElement !== roomCodeInput) {
-    requestAnimationFrame(() => roomCodeInput.focus());
   }
 }
 
