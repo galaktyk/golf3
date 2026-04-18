@@ -52,14 +52,20 @@ import { createViewerRtcSession } from '/static/js/session/firebaseRtcSession.js
 import { buildControllerUrl, loadStoredViewerCode, saveStoredViewerCode } from '/static/js/session/roomCode.js';
 import { installButtonFocusGuard } from '/static/js/ui/focusGuards.js';
 
+const DEBUG_PARAMS = new URLSearchParams(window.location.search);
+const DEBUG_SWING_MODE = DEBUG_PARAMS.get('debugSwing');
+const DEBUG_SWING_LOGGING = DEBUG_SWING_MODE === 'log' || DEBUG_SWING_MODE === '1';
+
 const animationClock = new THREE.Clock();
 const incomingQuaternion = new THREE.Quaternion();
-const incomingSwingState = {
+const simulatedIncomingQuaternion = new THREE.Quaternion();
+const simulatedSwingState = {
   perpendicularAngularSpeedRadiansPerSecond: 0,
   motionAgeMilliseconds: 65535,
   sequence: 0,
   receivedAtTimeMs: 0,
 };
+const pendingSwingSamples = [];
 let DEBUG_UI_ENABLED = false;
 installButtonFocusGuard();
 document.body.classList.toggle('viewer-debug-enabled', DEBUG_UI_ENABLED);
@@ -78,6 +84,10 @@ const PRACTICE_SWING_BALL_OPACITY = 0.26;
 const ballMaterialVisualState = new WeakMap();
 const PUTT_AIM_DISTANCE_ADJUST_MIN_RATE_METERS_PER_SECOND = 0.25;
 const PUTT_AIM_DISTANCE_ADJUST_MAX_RATE_METERS_PER_SECOND = 18;
+const SWING_SIMULATION_STEP_SECONDS = 1 / 120;
+const SWING_SIMULATION_MAX_CATCHUP_SECONDS = 0.25;
+const SWING_SIMULATION_MAX_STEPS_PER_FRAME = 30;
+const SWING_PACKET_BUFFER_LIMIT = 96;
 
 viewerScene.scene.add(ballTrail.root);
 
@@ -119,6 +129,12 @@ let viewerSession = null;
 let viewerSessionGeneration = 0;
 let lastViewerTransportState = null;
 let viewerSessionRestartPromise = null;
+let swingSimulationAccumulatorSeconds = 0;
+let swingSimulationTimeMs = performance.now();
+let latestAcceptedSwingSequence = null;
+let lastSwingSimulationLogTimeMs = 0;
+let lastImpactRejectLogTimeMs = 0;
+let lastImpactRejectSignature = '';
 
 const CHARACTER_ROTATION_SPEED_RADIANS = THREE.MathUtils.degToRad(CHARACTER_ROTATION_SPEED_DEGREES);
 const AIMING_CAMERA_ENTRY_VERTICAL_TOLERANCE_RADIANS = THREE.MathUtils.degToRad(
@@ -165,15 +181,167 @@ window.addEventListener('beforeunload', () => {
 void startViewerSession();
 
 function handleIncomingSwingPacket(packet) {
-  const decodedSwingState = decodeSwingStatePacket(packet, incomingQuaternion, incomingSwingState);
+  const decodedSwingState = decodeSwingStatePacket(packet, incomingQuaternion, {});
   if (!decodedSwingState) {
     return;
   }
 
-  incomingSwingState.receivedAtTimeMs = performance.now();
-  hasIncomingOrientation = true;
+  const receivedAtTimeMs = performance.now();
+  if (!enqueueIncomingSwingSample(incomingQuaternion, decodedSwingState, receivedAtTimeMs)) {
+    return;
+  }
+
   viewHudController.recordPacket();
   hud.updateQuaternion(incomingQuaternion);
+}
+
+/**
+ * Buffers incoming swing samples so club simulation can replay them on a fixed timestep instead of at render rate.
+ */
+function enqueueIncomingSwingSample(quaternion, swingState, receivedAtTimeMs) {
+  if (!Number.isFinite(swingState?.sequence)) {
+    return false;
+  }
+
+  if (!isNewerSwingSequence(swingState.sequence, latestAcceptedSwingSequence)) {
+    logSwingDebug('drop stale packet', {
+      sequence: swingState.sequence,
+      latestAcceptedSwingSequence,
+    });
+    return false;
+  }
+
+  latestAcceptedSwingSequence = swingState.sequence;
+  pendingSwingSamples.push({
+    quaternion: quaternion.clone(),
+    perpendicularAngularSpeedRadiansPerSecond: Number.isFinite(swingState.perpendicularAngularSpeedRadiansPerSecond)
+      ? swingState.perpendicularAngularSpeedRadiansPerSecond
+      : 0,
+    motionAgeMilliseconds: Number.isFinite(swingState.motionAgeMilliseconds)
+      ? swingState.motionAgeMilliseconds
+      : 65535,
+    sequence: swingState.sequence,
+    receivedAtTimeMs,
+  });
+
+  if (pendingSwingSamples.length > SWING_PACKET_BUFFER_LIMIT) {
+    logSwingDebug('trim packet buffer', {
+      beforeTrim: pendingSwingSamples.length,
+      limit: SWING_PACKET_BUFFER_LIMIT,
+    });
+    pendingSwingSamples.splice(0, pendingSwingSamples.length - SWING_PACKET_BUFFER_LIMIT);
+  }
+
+  return true;
+}
+
+function isNewerSwingSequence(sequence, referenceSequence) {
+  if (!Number.isFinite(referenceSequence)) {
+    return true;
+  }
+
+  const delta = (sequence - referenceSequence + 65536) % 65536;
+  return delta > 0 && delta < 32768;
+}
+
+/**
+ * Applies all swing packets that had arrived by the current fixed-step simulation time.
+ */
+function consumeSwingSamplesUpTo(simulationTimeMs) {
+  let consumedAnySamples = false;
+
+  while (pendingSwingSamples.length > 0 && pendingSwingSamples[0].receivedAtTimeMs <= simulationTimeMs) {
+    const sample = pendingSwingSamples.shift();
+    simulatedIncomingQuaternion.copy(sample.quaternion);
+    simulatedSwingState.perpendicularAngularSpeedRadiansPerSecond = sample.perpendicularAngularSpeedRadiansPerSecond;
+    simulatedSwingState.motionAgeMilliseconds = sample.motionAgeMilliseconds;
+    simulatedSwingState.sequence = sample.sequence;
+    simulatedSwingState.receivedAtTimeMs = sample.receivedAtTimeMs;
+    consumedAnySamples = true;
+  }
+
+  if (consumedAnySamples) {
+    hasIncomingOrientation = true;
+  }
+}
+
+/**
+ * Advances club animation/contact sampling at a stable rate so low render FPS does not thin out swing history.
+ */
+function stepSwingSimulation(deltaSeconds) {
+  const clampedDeltaSeconds = Math.min(Math.max(deltaSeconds, 0), SWING_SIMULATION_MAX_CATCHUP_SECONDS);
+  swingSimulationAccumulatorSeconds = Math.min(
+    swingSimulationAccumulatorSeconds + clampedDeltaSeconds,
+    SWING_SIMULATION_MAX_CATCHUP_SECONDS,
+  );
+
+  let stepCount = 0;
+  while (
+    swingSimulationAccumulatorSeconds >= SWING_SIMULATION_STEP_SECONDS
+    && stepCount < SWING_SIMULATION_MAX_STEPS_PER_FRAME
+  ) {
+    swingSimulationTimeMs += SWING_SIMULATION_STEP_SECONDS * 1000;
+    consumeSwingSamplesUpTo(swingSimulationTimeMs);
+    character.update(
+      SWING_SIMULATION_STEP_SECONDS,
+      hasIncomingOrientation ? simulatedIncomingQuaternion : null,
+    );
+    detectClubBallImpact(character.getDebugTelemetry(), swingSimulationTimeMs);
+    swingSimulationAccumulatorSeconds -= SWING_SIMULATION_STEP_SECONDS;
+    stepCount += 1;
+  }
+
+  if (stepCount === 0 && pendingSwingSamples.length > 0) {
+    consumeSwingSamplesUpTo(swingSimulationTimeMs);
+  }
+
+  if (
+    stepCount > 1
+    || pendingSwingSamples.length > 2
+    || swingSimulationAccumulatorSeconds >= SWING_SIMULATION_STEP_SECONDS
+  ) {
+    logSwingSimulationState(stepCount, clampedDeltaSeconds);
+  }
+}
+
+/**
+ * Keeps fixed-step catch-up logs readable by throttling repeated state dumps.
+ */
+function logSwingSimulationState(stepCount, renderDeltaSeconds) {
+  if (!DEBUG_SWING_LOGGING) {
+    return;
+  }
+
+  const now = performance.now();
+  if (now - lastSwingSimulationLogTimeMs < 250) {
+    return;
+  }
+
+  lastSwingSimulationLogTimeMs = now;
+  console.debug('[swing-debug] simulation', {
+    renderDeltaMs: Math.round(renderDeltaSeconds * 1000),
+    stepCount,
+    pendingSwingSamples: pendingSwingSamples.length,
+    accumulatorMs: Number((swingSimulationAccumulatorSeconds * 1000).toFixed(1)),
+    sequence: simulatedSwingState.sequence,
+    motionAgeMilliseconds: simulatedSwingState.motionAgeMilliseconds,
+  });
+}
+
+/**
+ * Emits targeted swing logs only when explicit debug mode is enabled.
+ */
+function logSwingDebug(message, details = null) {
+  if (!DEBUG_SWING_LOGGING) {
+    return;
+  }
+
+  if (details) {
+    console.debug(`[swing-debug] ${message}`, details);
+    return;
+  }
+
+  console.debug(`[swing-debug] ${message}`);
 }
 
 function handleIncomingControlPayload(payloadText) {
@@ -280,6 +448,15 @@ async function startViewerSession() {
   viewerSession = null;
   lastViewerTransportState = null;
   hasIncomingOrientation = false;
+  pendingSwingSamples.length = 0;
+  swingSimulationAccumulatorSeconds = 0;
+  swingSimulationTimeMs = performance.now();
+  latestAcceptedSwingSequence = null;
+  simulatedIncomingQuaternion.identity();
+  simulatedSwingState.perpendicularAngularSpeedRadiansPerSecond = 0;
+  simulatedSwingState.motionAgeMilliseconds = 65535;
+  simulatedSwingState.sequence = 0;
+  simulatedSwingState.receivedAtTimeMs = 0;
   if (roomCodeLabel && retainedRoomCode) {
     roomCodeLabel.textContent = retainedRoomCode;
   }
@@ -711,12 +888,11 @@ function animate() {
   updateRemoteControlInput(deltaSeconds);
   updateCharacterRotationInput(deltaSeconds);
   updateAimingPreviewHeadSpeedInput(deltaSeconds);
-  character.update(deltaSeconds, hasIncomingOrientation ? incomingQuaternion : null);
+  stepSwingSimulation(deltaSeconds);
   const characterTelemetry = character.getDebugTelemetry();
   aimingPreviewController.updateIfNeeded(playerState);
   aimingPreviewController.updatePresentation(deltaSeconds);
   updateClubWhooshAudio();
-  detectClubBallImpact(characterTelemetry);
   ballPhysics.update(deltaSeconds);
   const surfaceImpactEvents = ballPhysics.consumeSurfaceImpactEvents();
   for (const surfaceImpactEvent of surfaceImpactEvents) {
@@ -1306,7 +1482,7 @@ function applyRemoteControl(action, active, value = null) {
   }
 }
 
-function detectClubBallImpact(characterTelemetry) {
+function detectClubBallImpact(characterTelemetry, simulationTimeMs = performance.now()) {
   releaseClubBallContactLatch(characterTelemetry.clubHeadPosition);
 
   const ballTelemetry = ballPhysics.getDebugTelemetry();
@@ -1318,18 +1494,42 @@ function detectClubBallImpact(characterTelemetry) {
     return;
   }
 
-  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond();
+  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond(
+    simulatedSwingState,
+    simulationTimeMs,
+  );
   if (!isLaunchSpeedReadyForCurrentAim(incomingClubHeadSpeedMetersPerSecond)) {
+    logImpactRejectIfNeeded('aim_speed_gate', {
+      incomingClubHeadSpeedMetersPerSecond,
+      requiredMinimumClubHeadSpeedMetersPerSecond:
+        aimingPreviewController.getCurrentAimingPreviewHeadSpeed()
+        * CLUB_HEAD_AIMING_PREVIEW_LAUNCH_MIN_SPEED_RATIO,
+      pendingSwingSamples: pendingSwingSamples.length,
+      sequence: simulatedSwingState.sequence,
+    });
     return;
   }
+
+  const impactDebug = DEBUG_SWING_LOGGING ? {} : null;
 
   const impact = resolveClubBallImpact(
     characterTelemetry,
     ballTelemetry.position,
     incomingClubHeadSpeedMetersPerSecond,
     activeClub,
+    impactDebug,
   );
   if (!impact) {
+    logImpactRejectIfNeeded(impactDebug?.reason ?? 'resolve_failed', {
+      estimatedClubHeadSpeedMetersPerSecond: incomingClubHeadSpeedMetersPerSecond,
+      historyLength: impactDebug?.historyLength ?? characterTelemetry.clubHeadSampleHistory?.length ?? 0,
+      minimumImpactSpeedMetersPerSecond: impactDebug?.minimumImpactSpeedMetersPerSecond ?? null,
+      geometryRejectCount: impactDebug?.geometryRejectCount ?? 0,
+      backwardSweepRejectCount: impactDebug?.backwardSweepRejectCount ?? 0,
+      closestForwardAlignment: impactDebug?.closestForwardAlignment ?? null,
+      pendingSwingSamples: pendingSwingSamples.length,
+      sequence: simulatedSwingState.sequence,
+    });
     return;
   }
 
@@ -1341,6 +1541,25 @@ function detectClubBallImpact(characterTelemetry) {
     launchBall(impact.launchData, impact.referenceForward, impact.impactSpeedMetersPerSecond);
   }
   clubBallContactLatched = true;
+}
+
+/**
+ * Throttles repeated reject messages so sustained misses stay readable in the console.
+ */
+function logImpactRejectIfNeeded(reason, details) {
+  if (!DEBUG_SWING_LOGGING) {
+    return;
+  }
+
+  const signature = `${reason}|${details?.sequence ?? 'na'}|${details?.historyLength ?? 'na'}|${details?.geometryRejectCount ?? 'na'}`;
+  const now = performance.now();
+  if (signature === lastImpactRejectSignature && now - lastImpactRejectLogTimeMs < 180) {
+    return;
+  }
+
+  lastImpactRejectSignature = signature;
+  lastImpactRejectLogTimeMs = now;
+  console.debug(`[swing-debug] impact reject: ${reason}`, details);
 }
 
 /**
@@ -1373,7 +1592,10 @@ function updateClubWhooshAudio() {
     return;
   }
 
-  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond();
+  const incomingClubHeadSpeedMetersPerSecond = getIncomingClubHeadSpeedMetersPerSecond(
+    simulatedSwingState,
+    swingSimulationTimeMs,
+  );
   const now = performance.now();
   if (clubWhooshLatched && incomingClubHeadSpeedMetersPerSecond < CLUB_SWING_WHOOSH_REARM_SPEED) {
     clubWhooshLatched = false;
@@ -1390,21 +1612,18 @@ function updateClubWhooshAudio() {
   }
 }
 
-function getIncomingClubHeadSpeedMetersPerSecond() {
-
-
-
+function getIncomingClubHeadSpeedMetersPerSecond(swingState = simulatedSwingState, referenceTimeMs = performance.now()) {
   if (
-    !Number.isFinite(incomingSwingState.perpendicularAngularSpeedRadiansPerSecond)
-    || incomingSwingState.perpendicularAngularSpeedRadiansPerSecond <= 0
+    !Number.isFinite(swingState.perpendicularAngularSpeedRadiansPerSecond)
+    || swingState.perpendicularAngularSpeedRadiansPerSecond <= 0
   ) {
     return 0;
   }
 
-  const receiveAgeMilliseconds = incomingSwingState.receivedAtTimeMs > 0
-    ? Math.max(performance.now() - incomingSwingState.receivedAtTimeMs, 0)
+  const receiveAgeMilliseconds = swingState.receivedAtTimeMs > 0
+    ? Math.max(referenceTimeMs - swingState.receivedAtTimeMs, 0)
     : 65535;
-  const totalAgeMilliseconds = incomingSwingState.motionAgeMilliseconds + receiveAgeMilliseconds;
+  const totalAgeMilliseconds = swingState.motionAgeMilliseconds + receiveAgeMilliseconds;
   if (totalAgeMilliseconds > 250) {
     return 0;
   }
@@ -1412,7 +1631,7 @@ function getIncomingClubHeadSpeedMetersPerSecond() {
   const effectiveLengthMeters = Number.isFinite(activeClub?.effectiveLengthMeters)
     ? activeClub.effectiveLengthMeters
     : 0.9;
-  return incomingSwingState.perpendicularAngularSpeedRadiansPerSecond
+  return swingState.perpendicularAngularSpeedRadiansPerSecond
     * effectiveLengthMeters
     * PHONE_ANGULAR_SPEED_TO_CLUB_HEAD_SPEED_GAIN;
 }
