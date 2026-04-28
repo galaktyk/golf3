@@ -22,6 +22,33 @@ const COURSE_DEFINITIONS = [
     hole: new THREE.Vector3(-0.000422, -5.09763 , -216.9),
     aliases: ['lagoon2', 'lagoon_2', 'blue-lagoon-2', '2'],
   },
+  {
+    id: 'wiz_wiz_1',
+    name: 'Wiz Wiz 1',
+    par: 4,
+    modelPath: resolveAssetUrl('models/maps/wiz_wiz_1.glb'),
+    tee: new THREE.Vector3(0.000024, -1.28543, -7.43164),
+    hole: new THREE.Vector3(21.5223, -5.28773, -393.675),
+    aliases: ['wiz1', 'wiz_wiz_1', 'wiz-wiz-1'],
+  },
+  {
+    id: 'wiz_wiz_2',
+    name: 'Wiz Wiz 2',
+    par: 5,
+    modelPath: resolveAssetUrl('models/maps/wiz_wiz_2.glb'),
+    tee: new THREE.Vector3(-0.000004, -1.28576, -7.42901),
+    hole: new THREE.Vector3(-6.37351, -12.4968, -476.544),
+    aliases: ['wiz2', 'wiz_wiz_2', 'wiz-wiz-2'],
+  },
+  {
+    id: 'wiz_wiz_3',
+    name: 'Wiz Wiz 3',
+    par: 4,
+    modelPath: resolveAssetUrl('models/maps/wiz_wiz_3.glb'),
+    tee: new THREE.Vector3(0.021414, -1.28487, -7.56164),
+    hole: new THREE.Vector3(-0.011929, -10.3085, -225.437),
+    aliases: ['wiz3', 'wiz_wiz_3', 'wiz-wiz-3'],
+  },
 ];
 
 const COURSE_ID_LOOKUP = new Map();
