@@ -1,7 +1,5 @@
 
 
-bright purple practice ball
-
 ---
 landing summary
 

@@ -2,3 +2,4 @@
 node_modules/
 __pycache__/
 .certs/
+PRIVATE_NOTE.md
