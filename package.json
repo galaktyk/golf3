@@ -1,0 +1,15 @@
+{
+  "name": "golf3",
+  "version": "1.0.0",
+  "description": "This prototype hosts two browser pages from a FastAPI server on the local network:",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.183.2"
+  }
+}
