@@ -544,13 +544,7 @@ export function createViewerScene(canvas) {
       }
 
       desiredFacingDirection.normalize();
-      currentFacingDirection.subVectors(ballPosition, camera.position);
-      currentFacingDirection.y = 0;
-      if (currentFacingDirection.lengthSq() <= 1e-8) {
-        getCharacterForward(currentFacingDirection);
-      } else {
-        currentFacingDirection.normalize();
-      }
+      getCharacterForward(currentFacingDirection);
 
       const rotationDelta = Math.atan2(
         (currentFacingDirection.z * desiredFacingDirection.x) - (currentFacingDirection.x * desiredFacingDirection.z),
